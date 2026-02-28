@@ -1,0 +1,57 @@
+gitea:
+  admin:
+    existingSecret: forgejo-admin-credentials
+    email: "trevato@trevato.dev"
+  additionalConfigFromEnvs:
+    - name: FORGEJO__database__PASSWD
+      valueFrom:
+        secretKeyRef:
+          name: forgejo-db-config
+          key: password
+  config:
+    server:
+      DOMAIN: forgejo.dev.test
+      ROOT_URL: https://forgejo.dev.test
+      SSH_DOMAIN: forgejo.dev.test
+      SSH_PORT: 22
+      SSH_LISTEN_PORT: 2222
+      LFS_START_SERVER: true
+    database:
+      DB_TYPE: postgres
+      HOST: postgres-rw.postgres.svc.cluster.local:5432
+      NAME: forgejo
+      USER: forgejo
+      SSL_MODE: disable
+    packages:
+      ENABLED: true
+    service:
+      DISABLE_REGISTRATION: false
+      DEFAULT_ALLOW_CREATE_ORGANIZATION: true
+    repository:
+      DEFAULT_PRIVATE: true
+    oauth2:
+      ENABLE: true
+    openid:
+      ENABLE_OPENID_SIGNIN: true
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: forgejo.dev.test
+      paths:
+        - path: /
+          pathType: Prefix
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+postgresql:
+  enabled: false
+
+redis-cluster:
+  enabled: false
+
+redis:
+  enabled: false

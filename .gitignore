@@ -1,0 +1,4 @@
+.env
+certs/ca.key
+certs/wildcard.key
+.DS_Store

@@ -1,0 +1,20 @@
+config:
+  oidc:
+    secret:
+      create: false
+      name: "oidc"
+    issuerURL: https://forgejo.dev.test
+    scopes: "openid,profile,email,groups"
+
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - host: headlamp.dev.test
+      paths:
+        - path: /
+          type: ImplementationSpecific
+
+env:
+  - name: HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY
+    value: "true"
