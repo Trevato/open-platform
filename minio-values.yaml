@@ -1,0 +1,19 @@
+mode: standalone
+replicas: 1
+existingSecret: minio-credentials
+persistence:
+  enabled: true
+  size: 20Gi
+resources:
+  requests:
+    memory: 256Mi
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - s3.dev.test
+consoleIngress:
+  enabled: true
+  ingressClassName: traefik
+  hosts:
+    - minio.dev.test

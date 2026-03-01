@@ -2,6 +2,8 @@ config:
   oidc:
     secret:
       create: false
+    externalSecret:
+      enabled: true
       name: "oidc"
     issuerURL: https://forgejo.dev.test
     scopes: "openid,profile,email,groups"

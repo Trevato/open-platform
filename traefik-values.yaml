@@ -1,0 +1,13 @@
+api:
+  dashboard: true
+  insecure: true
+logs:
+  access:
+    enabled: true
+ports:
+  web:
+    exposedPort: 80
+  websecure:
+    exposedPort: 443
+service:
+  type: LoadBalancer

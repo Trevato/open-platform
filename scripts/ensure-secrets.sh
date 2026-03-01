@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Creates bootstrap K8s secrets from .env
+# Idempotent — safe to run on every deploy
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+ENV_FILE="$ROOT_DIR/.env"
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Error: .env not found. Run: cp .env.example .env"
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$ENV_FILE"
+
+apply_secret() {
+  kubectl create secret generic "$@" --dry-run=client -o yaml | kubectl apply -f -
+}
+
+echo "Ensuring bootstrap secrets..."
+
+apply_secret forgejo-admin-credentials -n forgejo \
+  --from-literal=username="${FORGEJO_ADMIN_USER}" \
+  --from-literal=password="${FORGEJO_ADMIN_PASSWORD}"
+
+apply_secret forgejo-db-config -n forgejo \
+  --from-literal=password="${FORGEJO_DB_PASSWORD}"
+
+apply_secret forgejo-db-credentials -n postgres \
+  --from-literal=username=forgejo \
+  --from-literal=password="${FORGEJO_DB_PASSWORD}"
+
+apply_secret minio-credentials -n minio \
+  --from-literal=rootUser="${MINIO_ROOT_USER}" \
+  --from-literal=rootPassword="${MINIO_ROOT_PASSWORD}"
+
+# Woodpecker secret: preserve OAuth2 fields if they exist from a previous deploy
+if kubectl get secret woodpecker-secrets -n woodpecker >/dev/null 2>&1; then
+  EXISTING_CLIENT=$(kubectl get secret woodpecker-secrets -n woodpecker -o jsonpath='{.data.WOODPECKER_FORGEJO_CLIENT}' 2>/dev/null || true)
+  EXISTING_SECRET=$(kubectl get secret woodpecker-secrets -n woodpecker -o jsonpath='{.data.WOODPECKER_FORGEJO_SECRET}' 2>/dev/null || true)
+  if [ -n "$EXISTING_CLIENT" ] && [ -n "$EXISTING_SECRET" ]; then
+    apply_secret woodpecker-secrets -n woodpecker \
+      --from-literal=WOODPECKER_AGENT_SECRET="${WOODPECKER_AGENT_SECRET}" \
+      --from-literal=WOODPECKER_FORGEJO_CLIENT="$(echo "$EXISTING_CLIENT" | base64 -d)" \
+      --from-literal=WOODPECKER_FORGEJO_SECRET="$(echo "$EXISTING_SECRET" | base64 -d)"
+  else
+    apply_secret woodpecker-secrets -n woodpecker \
+      --from-literal=WOODPECKER_AGENT_SECRET="${WOODPECKER_AGENT_SECRET}"
+  fi
+else
+  apply_secret woodpecker-secrets -n woodpecker \
+    --from-literal=WOODPECKER_AGENT_SECRET="${WOODPECKER_AGENT_SECRET}"
+fi
+
+echo "Bootstrap secrets ready."

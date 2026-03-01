@@ -1,0 +1,121 @@
+repositories:
+  - name: traefik
+    url: https://traefik.github.io/charts
+  - name: cnpg
+    url: https://cloudnative-pg.github.io/charts
+  - name: minio
+    url: https://charts.min.io/
+  - name: headlamp
+    url: https://kubernetes-sigs.github.io/headlamp/
+  - name: woodpecker
+    url: https://woodpecker-ci.org/
+
+helmDefaults:
+  wait: true
+  timeout: 300
+  createNamespace: true
+
+releases:
+  # ─── Layer 0: Infrastructure ───────────────────────────────────────────
+
+  - name: traefik
+    namespace: kube-system
+    chart: traefik/traefik
+    values:
+      - traefik-values.yaml
+    labels:
+      tier: infra
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            kubectl apply -f manifests/namespaces.yaml
+            ./scripts/ensure-secrets.sh
+            kubectl create secret tls wildcard-tls \
+              --cert=certs/wildcard.crt \
+              --key=certs/wildcard.key \
+              -n kube-system \
+              --dry-run=client -o yaml | kubectl apply -f -
+      - events: ["postsync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "manifests/traefik-tls.yaml"]
+
+  - name: cnpg
+    namespace: cnpg-system
+    chart: cnpg/cloudnative-pg
+    labels:
+      tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            echo "Waiting for CNPG operator to be ready..."
+            kubectl wait --for=condition=available deployment/cnpg-cloudnative-pg \
+              -n cnpg-system --timeout=120s
+            kubectl apply -f manifests/postgres-cluster.yaml
+
+  # ─── Layer 1: Storage ──────────────────────────────────────────────────
+
+  - name: minio
+    namespace: minio
+    chart: minio/minio
+    values:
+      - minio-values.yaml
+    needs:
+      - kube-system/traefik
+    labels:
+      tier: infra
+
+  # ─── Layer 2: Identity ─────────────────────────────────────────────────
+
+  - name: forgejo
+    namespace: forgejo
+    chart: oci://code.forgejo.org/forgejo-helm/forgejo
+    version: 16.2.0
+    values:
+      - forgejo-values.yaml
+    needs:
+      - cnpg-system/cnpg
+    labels:
+      tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - "kubectl apply -f manifests/oidc-rbac.yaml && ./scripts/setup-oauth2.sh"
+
+  # ─── Layer 3: Consumers ────────────────────────────────────────────────
+
+  - name: headlamp
+    namespace: headlamp
+    chart: headlamp/headlamp
+    values:
+      - headlamp-values.yaml
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+
+  - name: woodpecker
+    namespace: woodpecker
+    chart: woodpecker/woodpecker
+    values:
+      - woodpecker-values.yaml
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "manifests/woodpecker-rbac.yaml"]
