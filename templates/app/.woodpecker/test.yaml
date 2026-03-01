@@ -1,0 +1,23 @@
+when:
+  - event: pull_request
+
+steps:
+  - name: install
+    image: oven/bun:1
+    commands:
+      - bun install --frozen-lockfile
+
+  - name: lint
+    image: oven/bun:1
+    commands:
+      - bun lint
+
+  - name: typecheck
+    image: oven/bun:1
+    commands:
+      - bun run typecheck
+
+  - name: test
+    image: oven/bun:1
+    commands:
+      - bun test

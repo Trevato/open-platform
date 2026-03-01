@@ -9,6 +9,8 @@ repositories:
     url: https://kubernetes-sigs.github.io/headlamp/
   - name: woodpecker
     url: https://woodpecker-ci.org/
+  - name: fluxcd-community
+    url: https://fluxcd-community.github.io/helm-charts
 
 helmDefaults:
   wait: true
@@ -91,7 +93,7 @@ releases:
         command: "sh"
         args:
           - "-c"
-          - "kubectl apply -f manifests/oidc-rbac.yaml && ./scripts/setup-oauth2.sh"
+          - "kubectl apply -f manifests/oidc-rbac.yaml && ./scripts/setup-oauth2.sh && ./scripts/setup-system-org.sh"
 
   # ─── Layer 3: Consumers ────────────────────────────────────────────────
 
@@ -119,3 +121,17 @@ releases:
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "manifests/woodpecker-rbac.yaml"]
+
+  # ─── Layer 4: GitOps ───────────────────────────────────────────────
+
+  - name: flux
+    namespace: flux-system
+    chart: fluxcd-community/flux2
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: platform
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "./scripts/setup-flux.sh"

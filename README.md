@@ -1,22 +1,29 @@
 # Open Platform
 
-Self-hosted developer infrastructure on Kubernetes. Git hosting, CI/CD, object storage, and cluster management — all authenticated through a single identity provider.
+Self-hosted developer infrastructure on Kubernetes. Git hosting, CI/CD, object storage, GitOps, and cluster management — all authenticated through a single identity provider.
 
 ```
-forgejo.dev.test    Git, packages, SSO
-ci.dev.test         CI/CD pipelines
+forgejo.dev.test    Git, packages, container registry, SSO
+ci.dev.test         CI/CD pipelines (Woodpecker)
 headlamp.dev.test   Kubernetes dashboard
 minio.dev.test      S3-compatible storage
+demo-app.dev.test   Demo app (deployed from template)
 ```
 
 ## Deploy
 
 ```bash
 cp .env.example .env   # fill in passwords (use openssl rand -base64 16)
-make deploy            # everything — secrets, services, OAuth2 apps
+make deploy            # everything — secrets, services, OAuth2, system org, GitOps
 ```
 
-Secrets are created automatically. OAuth2 applications are registered in Forgejo via its API. All services come up in dependency order. Takes about 60 seconds from a clean cluster.
+On first deploy, the platform:
+1. Bootstraps all services via Helmfile
+2. Creates a `system` org in Forgejo with an app template and demo app
+3. Installs Flux and connects it to `system/open-platform`
+4. Flux adopts all releases — the platform is now self-managing
+
+After that, push changes to `system/open-platform` on Forgejo → Flux reconciles → platform updates.
 
 ## First-Time Setup
 
@@ -47,6 +54,39 @@ make lint       # validate all releases
 make teardown   # destroy all Open Platform releases (with confirmation)
 ```
 
+## How It Works
+
+### Bootstrap (Helmfile)
+
+[Helmfile](https://github.com/helmfile/helmfile) orchestrates seven Helm releases with dependency ordering. Shell scripts handle the parts that need API calls:
+
+- `scripts/ensure-secrets.sh` — creates K8s secrets from `.env`
+- `scripts/setup-oauth2.sh` — registers OAuth2 apps in Forgejo
+- `scripts/setup-system-org.sh` — creates system org, pushes template and platform config
+- `scripts/setup-flux.sh` — connects Flux to `system/open-platform`
+
+### Steady State (Flux)
+
+After bootstrap, [Flux](https://fluxcd.io/) watches `system/open-platform` on Forgejo and reconciles all platform services. The platform config lives in `platform/` — HelmRelease resources with inlined values, organized into dependency layers:
+
+```
+infra-controllers (traefik, cnpg)
+        ↓
+infra-configs (minio, postgres, namespaces, TLS)
+        ↓
+identity (forgejo, OIDC RBAC)
+        ↓
+apps (headlamp, woodpecker)
+```
+
+### App Development (Woodpecker)
+
+The `system/template` repo is a Bun/TypeScript app scaffold with:
+- **PR pipeline**: lint, typecheck, test
+- **Deploy pipeline**: Kaniko build → push to Forgejo container registry → kubectl deploy
+
+Create a new app: use `system/template` as a template in Forgejo → new repo with CI/CD ready to go.
+
 ## Prerequisites
 
 - [Colima](https://github.com/abiosoft/colima) with k3s runtime
@@ -54,15 +94,6 @@ make teardown   # destroy all Open Platform releases (with confirmation)
 - `curl` and `jq` (used by automation scripts)
 - `*.dev.test` resolving to your cluster (via `/etc/hosts` or local DNS)
 - Self-signed CA trusted by your browser (see `certs/`)
-
-## How It Works
-
-[Helmfile](https://github.com/helmfile/helmfile) orchestrates six Helm releases with dependency ordering. Raw Kubernetes manifests (namespaces, RBAC, TLS config) are applied via hooks. Two shell scripts handle secret management:
-
-- `scripts/ensure-secrets.sh` — creates bootstrap K8s secrets from `.env` (runs before any release)
-- `scripts/setup-oauth2.sh` — registers OAuth2 apps in Forgejo via API, stores credentials as K8s secrets (runs after Forgejo is up)
-
-Both are idempotent. Running `make deploy` ten times produces the same result as running it once.
 
 ## Secrets
 
