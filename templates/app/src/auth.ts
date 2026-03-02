@@ -32,13 +32,15 @@ const config: NextAuthConfig = {
   callbacks: {
     jwt({ token, profile }) {
       if (profile) {
-        token.username = (profile as Record<string, unknown>).login;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        token.username = (profile as any).login;
       }
       return token;
     },
     session({ session, token }) {
       if (token.username) {
-        (session.user as Record<string, unknown>).username = token.username;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (session.user as any).username = token.username;
       }
       return session;
     },

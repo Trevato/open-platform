@@ -60,6 +60,8 @@ spec:
                   optional: true
             - name: NEXTAUTH_URL
               value: "https://PROJECT_NAME.dev.test"
+            - name: AUTH_TRUST_HOST
+              value: "true"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/certs/ca-certificates.crt"
           resources:

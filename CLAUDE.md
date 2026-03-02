@@ -285,7 +285,17 @@ kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base6
 - **Woodpecker redirect URI** — `http://ci.dev.test/authorize` (HTTP, not HTTPS).
 - **Woodpecker image builds** — must use Kaniko (not docker-buildx) with the K8s backend. `skip_tls_verify: true` for self-signed Forgejo container registry.
 - **Forgejo SSH** — listens on port 2222 internally, exposed on port 22 via ingress/service.
-- **Forgejo container registry** — images at `forgejo.dev.test/<owner>/<image>:<tag>`. Requires personal access token with `write:packages` scope.
+- **Forgejo container registry** — images at `forgejo.dev.test/<owner>/<image>:<tag>`. Admin password works for registry auth; PATs may fail on the v2 token endpoint.
+- **Forgejo webhook `ALLOWED_HOST_LIST`** — default blocks outgoing webhooks to external IPs. Must set `webhook.ALLOWED_HOST_LIST: "*.dev.test"` in Forgejo config for Woodpecker webhooks to work.
+- **Kaniko `repo` value** — must NOT include the registry hostname (it's prepended from `registry` setting). Use `repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}`.
+- **Custom clone step** — default Woodpecker clone fails with self-signed certs. All workflows use `clone: [{name: clone, image: woodpeckerci/plugin-git, settings: {skip_verify: true}}]`.
+- **Woodpecker TLS** — `WOODPECKER_FORGEJO_SKIP_VERIFY: "true"` required for server→Forgejo API communication with self-signed certs.
+- **CNPG peer auth** — only `postgres` user can use local socket auth. Schema runs as postgres superuser, then GRANT ALL ON ALL TABLES/SEQUENCES to the app user.
+- **CREATE DATABASE requires separate psql -c calls** — semicolons in a single `-c` run in a transaction block, but CREATE DATABASE can't run in a transaction. Split into separate kubectl exec calls.
+- **kubectl run with --overrides** — don't combine `-- sh -c "..."` args with `--overrides` JSON that specifies `command/args`. Use overrides-only for minio/mc pods.
+- **next-auth v5 not stable** — pin to `5.0.0-beta.25` instead of `^5.0.0`.
+- **AUTH_TRUST_HOST** — required in k8s deployment env for NextAuth behind Traefik proxy.
+- **Docker registry in k3s (Colima)** — Colima uses Docker runtime. Add CA cert to `/etc/docker/certs.d/forgejo.dev.test/ca.crt` inside VM. Also create `/etc/rancher/k3s/registries.yaml` with `insecure_skip_verify: true`. Restart both docker and k3s.
 - **Helmfile global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
 - **OAuth2-Proxy redirect** — callback at `https://oauth2.dev.test/oauth2/callback`. Cookie domain `.dev.test` allows SSO across all preview subdomains.
 - **Preview auth annotation** — preview ingresses use `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd` to trigger ForwardAuth.

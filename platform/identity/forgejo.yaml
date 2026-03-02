@@ -59,6 +59,8 @@ spec:
           ENABLE: true
         openid:
           ENABLE_OPENID_SIGNIN: true
+        webhook:
+          ALLOWED_HOST_LIST: "*.dev.test"
     ingress:
       enabled: true
       className: traefik

@@ -1,3 +1,9 @@
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      skip_verify: true
+
 when:
   - event: push
     branch: main
@@ -7,7 +13,7 @@ steps:
     image: woodpeckerci/plugin-kaniko
     settings:
       registry: forgejo.dev.test
-      repo: forgejo.dev.test/${CI_REPO_OWNER}/${CI_REPO_NAME}
+      repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
       tags:
         - "${CI_COMMIT_SHA:0:8}"
         - latest
@@ -35,17 +41,17 @@ steps:
           --docker-password=$${REGISTRY_TOKEN} \
           -n ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
       - |
-        export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
-        kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -tc \
-          "SELECT 1 FROM pg_database WHERE datname = '${CI_REPO_NAME}'" | grep -q 1 || \
-        kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -c \
-          "CREATE DATABASE ${CI_REPO_NAME}; CREATE USER ${CI_REPO_NAME} WITH PASSWORD '${CI_REPO_NAME}'; GRANT ALL PRIVILEGES ON DATABASE ${CI_REPO_NAME} TO ${CI_REPO_NAME}; ALTER DATABASE ${CI_REPO_NAME} OWNER TO ${CI_REPO_NAME};"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = '${CI_REPO_NAME}'" | grep -q 1 || {
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE ${CI_REPO_NAME}"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER ${CI_REPO_NAME} WITH PASSWORD '${CI_REPO_NAME}'" || true
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${CI_REPO_NAME} TO ${CI_REPO_NAME}"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER DATABASE ${CI_REPO_NAME} OWNER TO ${CI_REPO_NAME}"
+        }
       - |
         kubectl run minio-provision-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
-          --image=minio/mc:latest -n minio -- sh -c \
-          "mc alias set minio http://minio.minio.svc:9000 \$$(cat /minio/rootUser) \$$(cat /minio/rootPassword) && \
-           mc mb --ignore-existing minio/${CI_REPO_NAME}" \
-          --overrides='{"spec":{"containers":[{"name":"mc","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+          --image=minio/mc:latest -n minio \
+          --overrides='{"spec":{"containers":[{"name":"minio-provision-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
     environment:
       REGISTRY_USER:
         from_secret: registry_username
@@ -60,8 +66,9 @@ steps:
     commands:
       - |
         if [ -f schema.sql ]; then
-          export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
-          kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -d ${CI_REPO_NAME} < schema.sql
+          kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d ${CI_REPO_NAME} < schema.sql
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -d ${CI_REPO_NAME} -c \
+            "GRANT ALL ON ALL TABLES IN SCHEMA public TO ${CI_REPO_NAME}; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${CI_REPO_NAME};"
         fi
 
   - name: deploy
