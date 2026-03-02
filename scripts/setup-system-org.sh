@@ -327,8 +327,13 @@ kubectl run minio-social-init --rm -i --restart=Never \
   --image=minio/mc:latest -n minio \
   --overrides='{"spec":{"containers":[{"name":"minio-social-init","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/social && mc anonymous set download minio/social"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
 
-# Deploy social app (placeholder — Woodpecker replaces with real app on first pipeline)
-echo "Deploying social app placeholder..."
+# Build and deploy social app
+echo "Building social app image..."
+echo "${ADMIN_PASS}" | docker login forgejo.dev.test -u "${ADMIN_USER}" --password-stdin >/dev/null 2>&1
+docker build -q -t forgejo.dev.test/system/social:initial "${ROOT_DIR}/apps/social"
+docker push -q forgejo.dev.test/system/social:initial
+
+echo "Deploying social app..."
 kubectl apply -n social -f - <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
@@ -344,18 +349,67 @@ spec:
       labels:
         app: social
     spec:
+      imagePullSecrets:
+        - name: forgejo-registry
       containers:
         - name: app
-          image: traefik/whoami
+          image: forgejo.dev.test/system/social:initial
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - containerPort: 3000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://social:social@postgres-rw.postgres.svc.cluster.local:5432/social"
+            - name: S3_ENDPOINT
+              value: "http://minio.minio.svc:9000"
+            - name: S3_BUCKET
+              value: "social"
+            - name: S3_PUBLIC_URL
+              value: "https://s3.dev.test"
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: rootUser
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: rootPassword
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: social-auth
+                  key: secret
+            - name: AUTH_FORGEJO_ID
+              valueFrom:
+                secretKeyRef:
+                  name: social-auth
+                  key: client-id
+            - name: AUTH_FORGEJO_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: social-auth
+                  key: client-secret
+            - name: BETTER_AUTH_URL
+              value: "https://social.dev.test"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/etc/ssl/custom/ca.crt"
+          volumeMounts:
+            - name: platform-ca
+              mountPath: /etc/ssl/custom
+              readOnly: true
           resources:
             requests:
-              memory: "64Mi"
-              cpu: "50m"
-            limits:
+              cpu: "100m"
               memory: "128Mi"
-              cpu: "200m"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: platform-ca
+          configMap:
+            name: platform-ca
 ---
 apiVersion: v1
 kind: Service
@@ -366,7 +420,7 @@ spec:
     app: social
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 3000
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -2,6 +2,7 @@
 
 deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
 	helmfile sync
+	./scripts/setup-oidc.sh
 
 deploy-infra: ## Deploy infrastructure only (traefik, cnpg, minio, forgejo)
 	helmfile sync -l tier=infra

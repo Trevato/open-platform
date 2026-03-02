@@ -246,8 +246,9 @@ Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
 | `scripts/ensure-secrets.sh` | traefik presync | Creates namespaces + bootstrap K8s secrets from `.env` |
 | `scripts/setup-oauth2.sh` | forgejo postsync | Creates OAuth2 apps via Forgejo API + K8s secrets |
 | `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social app, seeds demo-app, provisions social infra |
-| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Activates repos in Woodpecker, creates CI secrets (registry creds) |
+| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Creates Forgejo API token, prints Woodpecker activation instructions |
 | `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
+| `scripts/setup-oidc.sh` | after helmfile sync | Updates k3s OIDC client ID to match Headlamp, restarts k3s if needed |
 
 All scripts are idempotent — safe to run on every `make deploy`.
 
