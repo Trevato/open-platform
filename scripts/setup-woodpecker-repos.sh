@@ -59,16 +59,55 @@ fi
 # Always establish a session (needed for repo activation which requires session+CSRF)
 echo "Logging into Woodpecker via Forgejo OAuth2..."
 
-# Step 1: Login to Forgejo
-curl -sSk -c "${FORGEJO_COOKIES}" -X POST \
+# Step 1: Login to Forgejo (follow redirect to capture session cookie)
+curl -sSk -c "${FORGEJO_COOKIES}" -L \
   -d "user_name=${ADMIN_USER}&password=${ADMIN_PASS}" \
-  -o /dev/null "https://forgejo.dev.test/user/login"
+  -o /dev/null "${FORGEJO_URL}/user/login"
 
-# Step 2: Complete OAuth2 flow (Forgejo → Woodpecker callback)
-curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
-  -o /dev/null "${WP_URL}/authorize"
+# Step 2: Start OAuth2 flow — get Forgejo authorize URL from Woodpecker redirect
+AUTHORIZE_URL=$(curl -sSk -b "${FORGEJO_COOKIES}" -o /dev/null -D - "${WP_URL}/authorize" 2>&1 \
+  | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
 
-# Step 3: Extract session and CSRF
+if [ -z "$AUTHORIZE_URL" ]; then
+  echo "Warning: Woodpecker did not redirect to Forgejo — skipping."
+  exit 0
+fi
+
+# Step 3: Fetch Forgejo authorize — may show grant page (first time) or auto-redirect (already authorized)
+AUTHORIZE_HEADERS=$(curl -sSk -b "${FORGEJO_COOKIES}" -c "${FORGEJO_COOKIES}" \
+  -o "${COOKIE_DIR}/grant_body" -D - "${AUTHORIZE_URL}" 2>&1)
+
+AUTHORIZE_STATUS=$(echo "$AUTHORIZE_HEADERS" | grep -E '^HTTP' | tail -1 | awk '{print $2}')
+
+if [ "$AUTHORIZE_STATUS" = "303" ] || [ "$AUTHORIZE_STATUS" = "302" ]; then
+  # Already authorized — Forgejo redirected with auth code. Follow the callback.
+  CALLBACK_URL=$(echo "$AUTHORIZE_HEADERS" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+  curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+    -o /dev/null "${CALLBACK_URL}"
+else
+  # First time — grant page shown. Extract form fields and submit.
+  GRANT_PAGE=$(cat "${COOKIE_DIR}/grant_body")
+  GRANT_STATE=$(echo "$GRANT_PAGE" | sed -n 's/.*name="state" value="\([^"]*\)".*/\1/p')
+  GRANT_CLIENT=$(echo "$GRANT_PAGE" | sed -n 's/.*name="client_id" value="\([^"]*\)".*/\1/p')
+  GRANT_REDIRECT=$(echo "$GRANT_PAGE" | sed -n 's/.*name="redirect_uri" value="\([^"]*\)".*/\1/p')
+
+  if [ -z "$GRANT_STATE" ] || [ -z "$GRANT_CLIENT" ]; then
+    echo "Warning: Could not parse Forgejo grant page — skipping."
+    exit 0
+  fi
+
+  # Submit grant form — Forgejo redirects to Woodpecker callback with auth code
+  curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+    --data-urlencode "client_id=${GRANT_CLIENT}" \
+    --data-urlencode "state=${GRANT_STATE}" \
+    --data-urlencode "scope=" \
+    --data-urlencode "nonce=" \
+    --data-urlencode "redirect_uri=${GRANT_REDIRECT}" \
+    --data-urlencode "granted=true" \
+    -o /dev/null "${FORGEJO_URL}/login/oauth/grant"
+fi
+
+# Step 4: Extract session and CSRF
 WP_SESSION=$(grep user_sess "${WP_COOKIES}" 2>/dev/null | awk '{print $NF}' || echo "")
 WP_CSRF=$(curl -sSk -b "${WP_COOKIES}" "${WP_URL}/web-config.js" 2>/dev/null \
   | grep WOODPECKER_CSRF | sed 's/.*= "//;s/".*//' || echo "")
