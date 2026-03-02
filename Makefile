@@ -26,6 +26,8 @@ urls: ## Print service URLs
 	@echo "Headlamp:   https://headlamp.dev.test"
 	@echo "MinIO:      https://minio.dev.test"
 	@echo "MinIO S3:   https://s3.dev.test"
+	@echo "Social:     https://social.dev.test"
+	@echo "Demo App:   https://demo-app.dev.test"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

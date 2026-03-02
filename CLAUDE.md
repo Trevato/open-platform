@@ -11,6 +11,8 @@ Browser ──► Traefik (ingress) ──┬── forgejo.dev.test ──► F
                                 ├── minio.dev.test ───► MinIO Console
                                 ├── s3.dev.test ──────► MinIO S3 API
                                 ├── oauth2.dev.test ──► OAuth2-Proxy (preview auth)
+                                ├── social.dev.test ──► Social App (posts, images, Forgejo auth)
+                                ├── demo-app.dev.test ► Demo App (from template)
                                 └── *.dev.test ───────► Apps (from template)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
@@ -54,7 +56,7 @@ Flux (flux-system) ──► system/open-platform on Forgejo ──► reconcile
 - **Auth**: Forgejo OAuth2 integration. Redirect URI: `http://ci.dev.test/authorize`
 - **Backend**: Kubernetes-native (pipelines run as pods)
 - **Secrets**: `woodpecker-secrets` — contains `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`. Loaded via `extraSecretNamesForEnvFrom`.
-- **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, pods, ingresses, jobs, namespaces, and pods/exec. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
+- **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, configmaps, pods, ingresses, jobs, namespaces, and pods/exec. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
 - **Image builds**: Uses Kaniko (woodpeckerci/plugin-kaniko) — works in K8s backend without Docker daemon. `skip_tls_verify: true` for self-signed Forgejo registry.
 
 ### MinIO (Object Storage)
@@ -101,8 +103,9 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | Repo | Purpose |
 |------|---------|
 | `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services. |
-| `system/template` | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
+| `system/template` | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
 | `system/demo-app` | Created from template. Deployed at `demo-app.dev.test`. |
+| `system/social` | Social media app — posts feed, image uploads, Forgejo OAuth2 auth. Includes `feat/markdown-posts` PR as a working example of preview environments. Deployed at `social.dev.test`. |
 
 ## Namespace Layout
 
@@ -118,6 +121,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
 | `demo-app` | Demo application |
+| `social` | Social media app (posts, images, auth) |
 
 ## Deployment
 
@@ -166,7 +170,7 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 2. **traefik postsync**: apply `manifests/traefik-tls.yaml` (TLSStore)
 3. **cnpg postsync**: wait for operator readiness, apply `manifests/postgres-cluster.yaml`
 4. **forgejo postsync**: apply `manifests/oidc-rbac.yaml`, run `scripts/setup-oauth2.sh`, run `scripts/setup-system-org.sh`
-5. **woodpecker postsync**: apply `manifests/woodpecker-rbac.yaml`
+5. **woodpecker postsync**: apply `manifests/woodpecker-rbac.yaml`, run `scripts/setup-woodpecker-repos.sh`
 6. **flux postsync**: run `scripts/setup-flux.sh` (GitRepository, root Kustomization, wait for reconciliation)
 
 ### Platform Config (`platform/`)
@@ -181,15 +185,18 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 ### App Template (`templates/app/`)
 | Path | Contents |
 |------|----------|
-| `src/auth.ts` | Forgejo OAuth2 custom provider + NextAuth config |
+| `src/auth.ts` | Forgejo OAuth2 via better-auth + genericOAuth plugin |
+| `src/lib/auth-client.ts` | Client-side auth (createAuthClient + genericOAuthClient) |
+| `src/app/api/auth/[...all]/route.ts` | better-auth route handler via toNextJsHandler |
+| `src/app/components/sign-in-button.tsx` | SignInButton + SignOutButton client components |
 | `src/app/` | Next.js App Router pages, API routes, components |
 | `src/lib/db.ts` | pg Pool via DATABASE_URL |
 | `src/lib/s3.ts` | S3Client for MinIO |
 | `Dockerfile` | Multi-stage Node 20 Alpine, Next.js standalone output |
-| `package.json` | next 15, react 19, pg, @aws-sdk/client-s3, next-auth |
+| `package.json` | next 15, react 19, pg, @aws-sdk/client-s3, better-auth |
 | `tsconfig.json` | Next.js App Router TypeScript config |
 | `next.config.js` | `output: "standalone"` |
-| `schema.sql` | Declarative DB schema (applied via psql in CI) |
+| `schema.sql` | Declarative DB schema — better-auth tables (user, session, account, verification) + app tables |
 | `seed/` | SQL seed files + S3 seed data (applied in preview envs) |
 | `k8s/` | Deployment (DB, S3, auth env vars), Service, Ingress |
 | `.woodpecker/deploy.yml` | Main branch: Kaniko build → provision → schema → deploy |
@@ -198,10 +205,13 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 | `.woodpecker/reset.yml` | Manual: wipe and re-seed preview data |
 | `PLATFORM.md` | Platform conventions, env vars, setup guide |
 
+### Social App (`apps/social/`)
+Source for `system/social` repo. Complete app (feat/markdown-posts version). `apps/social-overrides/` contains main-branch variants of `page.tsx` and `package.json` (without markdown rendering). Bootstrap creates main by overlaying overrides, then creates the feature branch with the originals and opens a PR.
+
 ### Manifests (`manifests/`)
 | File | Purpose |
 |------|---------|
-| `namespaces.yaml` | All user-created namespaces (including demo-app) |
+| `namespaces.yaml` | All user-created namespaces (including demo-app, social) |
 | `postgres-cluster.yaml` | CNPG Cluster resource |
 | `woodpecker-rbac.yaml` | Woodpecker agent + pipeline RBAC |
 | `traefik-tls.yaml` | Default TLSStore for wildcard cert |
@@ -217,12 +227,14 @@ Created by `scripts/ensure-secrets.sh` (runs as traefik presync hook):
 - `minio-credentials` (minio ns) — rootUser, rootPassword
 - `woodpecker-secrets` (woodpecker ns) — WOODPECKER_AGENT_SECRET (preserves OAuth2 fields if they exist)
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — cookie-secret (auto-generated if not set)
+- `platform-ca` configmap (kube-system ns) — CA cert from `certs/ca.crt` for app TLS verification
 
 ### OAuth2 Secrets (auto-generated)
 Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
 - `oidc` (headlamp ns) — `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`
 - `woodpecker-secrets` (woodpecker ns) — merges `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET` into existing secret
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — merges `client-id`, `client-secret` into existing cookie-secret
+- `social-auth` (social ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
 
 ### Flux Secrets
 Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
@@ -233,7 +245,8 @@ Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
 |--------|---------|---------|
 | `scripts/ensure-secrets.sh` | traefik presync | Creates namespaces + bootstrap K8s secrets from `.env` |
 | `scripts/setup-oauth2.sh` | forgejo postsync | Creates OAuth2 apps via Forgejo API + K8s secrets |
-| `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template, seeds demo-app |
+| `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social app, seeds demo-app, provisions social infra |
+| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Activates repos in Woodpecker, creates CI secrets (registry creds) |
 | `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
 
 All scripts are idempotent — safe to run on every `make deploy`.
@@ -293,8 +306,11 @@ kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base6
 - **CNPG peer auth** — only `postgres` user can use local socket auth. Schema runs as postgres superuser, then GRANT ALL ON ALL TABLES/SEQUENCES to the app user.
 - **CREATE DATABASE requires separate psql -c calls** — semicolons in a single `-c` run in a transaction block, but CREATE DATABASE can't run in a transaction. Split into separate kubectl exec calls.
 - **kubectl run with --overrides** — don't combine `-- sh -c "..."` args with `--overrides` JSON that specifies `command/args`. Use overrides-only for minio/mc pods.
-- **next-auth v5 not stable** — pin to `5.0.0-beta.25` instead of `^5.0.0`.
-- **AUTH_TRUST_HOST** — required in k8s deployment env for NextAuth behind Traefik proxy.
+- **better-auth sign-in is POST** — `/api/auth/sign-in/oauth2` returns `{"url":"...","redirect":true}` JSON. Must use client-side `authClient.signIn.oauth2()`, not `<a href>` links.
+- **better-auth callback URL** — `/api/auth/oauth2/callback/{providerId}` (e.g., `/api/auth/oauth2/callback/forgejo`).
+- **better-auth env vars** — `BETTER_AUTH_SECRET` (session encryption), `BETTER_AUTH_URL` (public app URL). Replaces `AUTH_SECRET`/`NEXTAUTH_URL`/`AUTH_TRUST_HOST`.
+- **better-auth DB tables** — `user`, `session`, `account`, `verification` with camelCase quoted column names. Must exist before app starts (created via schema.sql in CI).
+- **platform-ca configmap** — Created in `kube-system` during bootstrap from `certs/ca.crt`. CI provisioning copies it to app namespaces. Mounted at `/etc/ssl/custom/ca.crt`, referenced by `NODE_EXTRA_CA_CERTS`. Required for Node.js to verify Forgejo's self-signed TLS during OAuth flows.
 - **Docker registry in k3s (Colima)** — Colima uses Docker runtime. Add CA cert to `/etc/docker/certs.d/forgejo.dev.test/ca.crt` inside VM. Also create `/etc/rancher/k3s/registries.yaml` with `insecure_skip_verify: true`. Restart both docker and k3s.
 - **Helmfile global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
 - **OAuth2-Proxy redirect** — callback at `https://oauth2.dev.test/oauth2/callback`. Cookie domain `.dev.test` allows SSO across all preview subdomains.

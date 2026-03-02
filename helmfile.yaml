@@ -121,8 +121,10 @@ releases:
     hooks:
       - events: ["postsync"]
         showlogs: true
-        command: "kubectl"
-        args: ["apply", "-f", "manifests/woodpecker-rbac.yaml"]
+        command: "sh"
+        args:
+          - "-c"
+          - "kubectl apply -f manifests/woodpecker-rbac.yaml && ./scripts/setup-woodpecker-repos.sh"
 
   - name: oauth2-proxy
     namespace: oauth2-proxy

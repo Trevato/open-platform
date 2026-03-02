@@ -1,0 +1,35 @@
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      skip_verify: true
+
+when:
+  - event: manual
+
+steps:
+  - name: reset
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+      - kubectl exec -n postgres postgres-1 -- psql -U postgres -c "DROP DATABASE IF EXISTS $$PREVIEW_DB"
+      - kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $$PREVIEW_DB OWNER $$PREVIEW_DB"
+      - |
+        if [ -f schema.sql ]; then
+          kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB < schema.sql
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c \
+            "GRANT ALL ON ALL TABLES IN SCHEMA public TO $$PREVIEW_DB; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $$PREVIEW_DB;"
+        fi
+      - |
+        for f in $$(ls seed/sql/*.sql 2>/dev/null | sort); do
+          kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB < "$$f"
+        done
+      - |
+        kubectl run minio-reset-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+          --image=minio/mc:latest -n minio \
+          --overrides='{"spec":{"containers":[{"name":"minio-reset-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && (mc rb --force minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}' || true) && mc mb minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'

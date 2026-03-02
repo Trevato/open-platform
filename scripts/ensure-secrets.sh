@@ -60,4 +60,12 @@ OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(openssl rand -base64
 apply_secret oauth2-proxy-secrets -n oauth2-proxy \
   --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
 
+# Platform CA configmap — apps mount this for TLS to Forgejo
+CA_CERT="$ROOT_DIR/certs/ca.crt"
+if [ -f "$CA_CERT" ]; then
+  kubectl create configmap platform-ca -n kube-system \
+    --from-file=ca.crt="$CA_CERT" \
+    --dry-run=client -o yaml | kubectl apply -f -
+fi
+
 echo "Bootstrap secrets ready."

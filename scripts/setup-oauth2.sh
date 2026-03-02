@@ -9,9 +9,10 @@ FORGEJO_URL="https://forgejo.dev.test"
 API_URL="${FORGEJO_URL}/api/v1"
 
 OAUTH2_APPS=(
-  "Headlamp|https://headlamp.dev.test/oidc-callback"
-  "Woodpecker|http://ci.dev.test/authorize"
-  "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback"
+  "Headlamp|https://headlamp.dev.test/oidc-callback|true"
+  "Woodpecker|http://ci.dev.test/authorize|true"
+  "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback|true"
+  "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo|false"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -46,7 +47,9 @@ declare -A CLIENT_SECRETS
 
 for entry in "${OAUTH2_APPS[@]}"; do
   APP_NAME="${entry%%|*}"
-  REDIRECT_URI="${entry##*|}"
+  REMAINDER="${entry#*|}"
+  REDIRECT_URI="${REMAINDER%%|*}"
+  CONFIDENTIAL="${REMAINDER##*|}"
 
   EXISTING=$(echo "$EXISTING_APPS" | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name)')
 
@@ -60,7 +63,7 @@ for entry in "${OAUTH2_APPS[@]}"; do
     RESPONSE=$(curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" \
       -X POST "${API_URL}/user/applications/oauth2" \
       -H "Content-Type: application/json" \
-      -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": [\"${REDIRECT_URI}\"], \"confidential_client\": true}")
+      -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": [\"${REDIRECT_URI}\"], \"confidential_client\": ${CONFIDENTIAL}}")
 
     CLIENT_IDS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_id')
     CLIENT_SECRETS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_secret')
@@ -128,6 +131,23 @@ else
     exit 1
   fi
   echo "OAuth2-Proxy credentials already in secret."
+fi
+
+# Social auth secret — includes BETTER_AUTH_SECRET for session encryption
+if [ -n "${CLIENT_SECRETS[Social]}" ]; then
+  echo "Creating Social auth secret..."
+  AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
+  apply_secret social-auth -n social \
+    --from-literal=client-id="${CLIENT_IDS[Social]}" \
+    --from-literal=client-secret="${CLIENT_SECRETS[Social]}" \
+    --from-literal=secret="${AUTH_SECRET}"
+else
+  if ! kubectl get secret social-auth -n social -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+    echo "Warning: Social OAuth2 app exists but 'social-auth' secret is missing."
+    echo "Delete the app in Forgejo and re-run, or create the secret manually."
+    exit 1
+  fi
+  echo "Social auth secret already exists."
 fi
 
 echo "OAuth2 setup complete."

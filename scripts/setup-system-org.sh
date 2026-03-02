@@ -205,4 +205,187 @@ spec:
 EOF
 
 echo "Demo app deployed at https://demo-app.dev.test"
+
+# ── Create and deploy social app ──────────────────────────────────────────
+
+create_repo "social" "Social media app — posts, images, auth"
+
+# Push social app content (main branch + feature branch with PR)
+push_social() {
+  local REPO_URL="https://${ADMIN_USER}:${ADMIN_PASS}@forgejo.dev.test/system/social.git"
+  local SOURCE_DIR="${ROOT_DIR}/apps/social"
+  local OVERRIDES_DIR="${ROOT_DIR}/apps/social-overrides"
+
+  # Check if repo already has commits
+  local COMMIT_COUNT
+  COMMIT_COUNT=$(api "${API_URL}/repos/system/social/commits?limit=1&sha=main" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+
+  if [ "$COMMIT_COUNT" != "0" ]; then
+    echo "Repo 'system/social' already has content — skipping push."
+    return 0
+  fi
+
+  echo "Pushing content to 'system/social'..."
+
+  local TMP_DIR
+  TMP_DIR=$(mktemp -d)
+
+  # Copy full app (feat/markdown-posts version)
+  cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
+  cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+
+  cd "${TMP_DIR}"
+  git init -q
+  git checkout -b main
+
+  # For main branch: overlay with non-markdown versions and remove PostBody
+  cp "${OVERRIDES_DIR}/page.tsx" src/app/page.tsx
+  cp "${OVERRIDES_DIR}/package.json" package.json
+  rm -f src/app/components/post-body.tsx
+
+  git add .
+  git -c user.name="Open Platform" -c user.email="system@dev.test" \
+    commit -q -m "social media app: posts feed, image uploads, forgejo auth"
+  GIT_SSL_CAINFO="${CA_CERT}" git push -q "${REPO_URL}" main 2>/dev/null
+
+  # Create feature branch with markdown additions
+  git checkout -b feat/markdown-posts
+
+  # Restore original files from source (with PostBody)
+  cp "${SOURCE_DIR}/src/app/page.tsx" src/app/page.tsx
+  cp "${SOURCE_DIR}/package.json" package.json
+  mkdir -p src/app/components
+  cp "${SOURCE_DIR}/src/app/components/post-body.tsx" src/app/components/post-body.tsx
+
+  git add .
+  git -c user.name="Open Platform" -c user.email="system@dev.test" \
+    commit -q -m "feat: render post bodies as markdown"
+  GIT_SSL_CAINFO="${CA_CERT}" git push -q "${REPO_URL}" feat/markdown-posts 2>/dev/null
+
+  cd "${ROOT_DIR}"
+  rm -rf "${TMP_DIR}"
+  echo "Pushed content to 'system/social' (main + feat/markdown-posts)."
+}
+
+push_social
+
+# Create PR for the markdown feature branch
+PR_EXISTS=$(api "${API_URL}/repos/system/social/pulls?state=open&head=feat/markdown-posts" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+if [ "$PR_EXISTS" = "0" ]; then
+  api -X POST "${API_URL}/repos/system/social/pulls" \
+    -H "Content-Type: application/json" \
+    -d '{"title": "feat: render post bodies as markdown", "body": "Adds markdown rendering for post bodies using react-markdown.\n\n- New `PostBody` client component with styled markdown elements\n- Supports bold, italic, links, code blocks, lists, and blockquotes\n- Adds `react-markdown` dependency", "head": "feat/markdown-posts", "base": "main"}' >/dev/null
+  echo "Created PR for feat/markdown-posts."
+else
+  echo "PR for feat/markdown-posts already exists."
+fi
+
+# Provision social app infrastructure
+echo "Provisioning social app infrastructure..."
+
+# Copy shared secrets/configmaps into social namespace
+kubectl get secret minio-credentials -n minio -o json | \
+  jq '.metadata.namespace = "social" | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp)' | \
+  kubectl apply -f -
+kubectl get configmap platform-ca -n kube-system -o json | \
+  jq '.metadata.namespace = "social" | del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp)' | \
+  kubectl apply -f -
+
+# Create forgejo-registry secret for image pulls
+kubectl create secret docker-registry forgejo-registry \
+  --docker-server=forgejo.dev.test \
+  --docker-username="${ADMIN_USER}" \
+  --docker-password="${ADMIN_PASS}" \
+  -n social --dry-run=client -o yaml | kubectl apply -f -
+
+# Create database and user
+SOCIAL_DB_CREATED=""
+kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+  "SELECT 1 FROM pg_database WHERE datname = 'social'" | grep -q 1 || {
+  kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE social"
+  kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER social WITH PASSWORD 'social'" || true
+  kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE social TO social"
+  kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER DATABASE social OWNER TO social"
+  SOCIAL_DB_CREATED="true"
+}
+
+# Apply schema (idempotent via CREATE TABLE IF NOT EXISTS)
+kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d social < "${ROOT_DIR}/apps/social/schema.sql"
+kubectl exec -n postgres postgres-1 -- psql -U postgres -d social -c \
+  "GRANT ALL ON ALL TABLES IN SCHEMA public TO social; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO social;"
+
+# Run seed data only on first creation
+if [ "${SOCIAL_DB_CREATED}" = "true" ]; then
+  echo "Seeding social database..."
+  for f in $(ls "${ROOT_DIR}/apps/social/seed/sql/"*.sql 2>/dev/null | sort); do
+    kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d social < "$f"
+  done
+fi
+
+# Create S3 bucket with public download access
+kubectl run minio-social-init --rm -i --restart=Never \
+  --image=minio/mc:latest -n minio \
+  --overrides='{"spec":{"containers":[{"name":"minio-social-init","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/social && mc anonymous set download minio/social"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+
+# Deploy social app (placeholder — Woodpecker replaces with real app on first pipeline)
+echo "Deploying social app placeholder..."
+kubectl apply -n social -f - <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: social
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: social
+  template:
+    metadata:
+      labels:
+        app: social
+    spec:
+      containers:
+        - name: app
+          image: traefik/whoami
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: social
+spec:
+  selector:
+    app: social
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: social
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: social.dev.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: social
+                port:
+                  number: 80
+EOF
+
+echo "Social app deployed at https://social.dev.test"
 echo "System org setup complete."

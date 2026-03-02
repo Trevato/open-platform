@@ -36,5 +36,10 @@ spec:
         exposedPort: 80
       websecure:
         exposedPort: 443
+    providers:
+      kubernetesCRD:
+        allowExternalNameServices: true
+      kubernetesIngress:
+        allowExternalNameServices: true
     service:
       type: LoadBalancer
