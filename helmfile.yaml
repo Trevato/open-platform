@@ -124,7 +124,7 @@ releases:
         command: "sh"
         args:
           - "-c"
-          - "kubectl apply -f manifests/woodpecker-rbac.yaml && ./scripts/setup-woodpecker-repos.sh"
+          - "kubectl apply -f manifests/woodpecker-rbac.yaml && (./scripts/setup-woodpecker-repos.sh || echo 'Warning: Woodpecker repo setup incomplete — run manually later.')"
 
   - name: oauth2-proxy
     namespace: oauth2-proxy

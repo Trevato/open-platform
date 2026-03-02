@@ -269,6 +269,17 @@ push_social() {
 
 push_social
 
+# Wait for Forgejo to index both branches before creating PR
+echo "Waiting for branches to be indexed..."
+for i in $(seq 1 15); do
+  MAIN_OK=$(api "${API_URL}/repos/system/social/branches/main" 2>/dev/null | jq -r '.name // empty' || echo "")
+  FEAT_OK=$(api "${API_URL}/repos/system/social/branches/feat/markdown-posts" 2>/dev/null | jq -r '.name // empty' || echo "")
+  if [ -n "$MAIN_OK" ] && [ -n "$FEAT_OK" ]; then
+    break
+  fi
+  sleep 1
+done
+
 # Create PR for the markdown feature branch
 PR_EXISTS=$(api "${API_URL}/repos/system/social/pulls?state=open&head=feat/markdown-posts" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
 if [ "$PR_EXISTS" = "0" ]; then

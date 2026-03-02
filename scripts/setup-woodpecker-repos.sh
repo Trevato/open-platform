@@ -32,6 +32,21 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
+# ── Wait for Forgejo API ─────────────────────────────────────────────────────
+
+echo "Waiting for Forgejo API..."
+for i in $(seq 1 30); do
+  if forgejo_api "${FORGEJO_API}/settings/api" >/dev/null 2>&1; then
+    echo "Forgejo API is ready."
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "Warning: Forgejo API not responding — skipping repo setup."
+    exit 0
+  fi
+  sleep 2
+done
+
 # ── Get or create a Forgejo personal access token ────────────────────────────
 
 TOKEN_NAME="woodpecker-bootstrap"
