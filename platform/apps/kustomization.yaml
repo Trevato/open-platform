@@ -4,3 +4,4 @@ resources:
   - headlamp.yaml
   - woodpecker.yaml
   - woodpecker-rbac.yaml
+  - oauth2-proxy.yaml

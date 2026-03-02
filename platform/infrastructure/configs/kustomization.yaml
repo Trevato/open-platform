@@ -5,3 +5,4 @@ resources:
   - traefik-tls.yaml
   - minio.yaml
   - postgres-cluster.yaml
+  - oauth2-proxy-middleware.yaml

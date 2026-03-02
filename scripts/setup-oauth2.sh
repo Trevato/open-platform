@@ -11,6 +11,7 @@ API_URL="${FORGEJO_URL}/api/v1"
 OAUTH2_APPS=(
   "Headlamp|https://headlamp.dev.test/oidc-callback"
   "Woodpecker|http://ci.dev.test/authorize"
+  "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -108,6 +109,25 @@ else
     exit 1
   fi
   echo "Woodpecker OAuth2 credentials already in secret."
+fi
+
+# OAuth2-Proxy secret — merge client creds into existing cookie-secret
+if [ -n "${CLIENT_SECRETS[OAuth2-Proxy]}" ]; then
+  echo "Creating OAuth2-Proxy secret..."
+  # Preserve existing cookie-secret from bootstrap
+  COOKIE_SECRET=$(kubectl get secret oauth2-proxy-secrets -n oauth2-proxy -o jsonpath='{.data.cookie-secret}' 2>/dev/null | base64 -d || openssl rand -base64 32 | head -c 32)
+
+  apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+    --from-literal=client-id="${CLIENT_IDS[OAuth2-Proxy]}" \
+    --from-literal=client-secret="${CLIENT_SECRETS[OAuth2-Proxy]}" \
+    --from-literal=cookie-secret="${COOKIE_SECRET}"
+else
+  if ! kubectl get secret oauth2-proxy-secrets -n oauth2-proxy -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+    echo "Warning: OAuth2-Proxy app exists but secret is missing client credentials."
+    echo "Delete the app in Forgejo and re-run, or update the secret manually."
+    exit 1
+  fi
+  echo "OAuth2-Proxy credentials already in secret."
 fi
 
 echo "OAuth2 setup complete."

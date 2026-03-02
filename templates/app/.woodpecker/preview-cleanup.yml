@@ -1,0 +1,25 @@
+when:
+  - event: pull_request_closed
+
+steps:
+  - name: cleanup
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+      - kubectl delete deployment,service,ingress -l app=$$PREVIEW_NAME -n ${CI_REPO_NAME} --ignore-not-found
+      - |
+        export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
+        kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -c \
+          "DROP DATABASE IF EXISTS $$PREVIEW_DB; DROP USER IF EXISTS $$PREVIEW_DB;"
+      - |
+        kubectl run minio-cleanup-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+          --image=minio/mc:latest -n minio -- sh -c \
+          "mc alias set minio http://minio.minio.svc:9000 \$$(cat /minio/rootUser) \$$(cat /minio/rootPassword) && \
+           mc rb --force minio/$$PREVIEW_BUCKET" \
+          --overrides='{"spec":{"containers":[{"name":"mc","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc rb --force minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}' || true"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'

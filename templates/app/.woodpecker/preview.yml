@@ -1,0 +1,190 @@
+when:
+  - event: pull_request
+
+steps:
+  - name: build
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      registry: forgejo.dev.test
+      repo: forgejo.dev.test/${CI_REPO_OWNER}/${CI_REPO_NAME}
+      tags:
+        - "pr-${CI_COMMIT_PULL_REQUEST}"
+      skip_tls_verify: true
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_token
+
+  - name: provision
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
+        kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = '$$PREVIEW_DB'" | grep -q 1 || \
+        kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -c \
+          "CREATE DATABASE $$PREVIEW_DB; CREATE USER $$PREVIEW_DB WITH PASSWORD '$$PREVIEW_DB'; GRANT ALL PRIVILEGES ON DATABASE $$PREVIEW_DB TO $$PREVIEW_DB; ALTER DATABASE $$PREVIEW_DB OWNER TO $$PREVIEW_DB;"
+      - |
+        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        kubectl run minio-preview-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+          --image=minio/mc:latest -n minio -- sh -c \
+          "mc alias set minio http://minio.minio.svc:9000 \$$(cat /minio/rootUser) \$$(cat /minio/rootPassword) && \
+           mc mb --ignore-existing minio/$$PREVIEW_BUCKET" \
+          --overrides='{"spec":{"containers":[{"name":"mc","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+
+  - name: schema
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        if [ -f schema.sql ]; then
+          export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+          export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
+          kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -d $$PREVIEW_DB < schema.sql
+        fi
+
+  - name: seed-sql
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PGPASSWORD=$$(kubectl get secret -n postgres postgres-superuser -o jsonpath='{.data.password}' | base64 -d)
+        for f in $$(ls seed/sql/*.sql 2>/dev/null | sort); do
+          kubectl exec -i -n postgres postgres-1 -- env PGPASSWORD="$$PGPASSWORD" psql -U postgres -d $$PREVIEW_DB < "$$f"
+        done
+
+  - name: seed-data
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        if [ -d seed/data ] && [ "$$(ls -A seed/data 2>/dev/null)" ]; then
+          kubectl run minio-seed-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+            --image=minio/mc:latest -n minio -- sh -c \
+            "mc alias set minio http://minio.minio.svc:9000 \$$(cat /minio/rootUser) \$$(cat /minio/rootPassword) && \
+             mc cp --recursive /data/ minio/$$PREVIEW_BUCKET/" \
+            --overrides='{"spec":{"containers":[{"name":"mc","image":"minio/mc:latest","volumeMounts":[{"name":"creds","mountPath":"/minio"},{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}},{"name":"data","configMap":{"name":"seed-data"}}]}}'
+        fi
+
+  - name: deploy-preview
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        kubectl apply -f - <<EOPREVIEW
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: $$PREVIEW_NAME
+          namespace: ${CI_REPO_NAME}
+          labels:
+            app: $$PREVIEW_NAME
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: $$PREVIEW_NAME
+          template:
+            metadata:
+              labels:
+                app: $$PREVIEW_NAME
+            spec:
+              imagePullSecrets:
+                - name: forgejo-registry
+              containers:
+                - name: app
+                  image: forgejo.dev.test/${CI_REPO_OWNER}/${CI_REPO_NAME}:pr-${CI_COMMIT_PULL_REQUEST}
+                  ports:
+                    - containerPort: 3000
+                  env:
+                    - name: DATABASE_URL
+                      value: "postgresql://$$PREVIEW_DB:$$PREVIEW_DB@postgres-rw.postgres.svc.cluster.local:5432/$$PREVIEW_DB"
+                    - name: S3_ENDPOINT
+                      value: "http://minio.minio.svc:9000"
+                    - name: S3_BUCKET
+                      value: "$$PREVIEW_BUCKET"
+                    - name: S3_ACCESS_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: minio-credentials
+                          key: rootUser
+                    - name: S3_SECRET_KEY
+                      valueFrom:
+                        secretKeyRef:
+                          name: minio-credentials
+                          key: rootPassword
+                    - name: NODE_EXTRA_CA_CERTS
+                      value: "/etc/ssl/certs/ca-certificates.crt"
+                  resources:
+                    requests:
+                      cpu: "100m"
+                      memory: "128Mi"
+                    limits:
+                      cpu: "300m"
+                      memory: "384Mi"
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: $$PREVIEW_NAME
+          namespace: ${CI_REPO_NAME}
+        spec:
+          selector:
+            app: $$PREVIEW_NAME
+          ports:
+            - port: 80
+              targetPort: 3000
+        ---
+        apiVersion: networking.k8s.io/v1
+        kind: Ingress
+        metadata:
+          name: $$PREVIEW_NAME
+          namespace: ${CI_REPO_NAME}
+          annotations:
+            traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd
+        spec:
+          ingressClassName: traefik
+          rules:
+            - host: $$PREVIEW_NAME.dev.test
+              http:
+                paths:
+                  - path: /
+                    pathType: Prefix
+                    backend:
+                      service:
+                        name: $$PREVIEW_NAME
+                        port:
+                          number: 80
+        EOPREVIEW
+      - kubectl rollout status deployment/$$PREVIEW_NAME -n ${CI_REPO_NAME} --timeout=120s
+
+  - name: comment-url
+    image: bitnami/kubectl:latest
+    commands:
+      - |
+        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        curl -sk -X POST \
+          -H "Authorization: token $${FORGEJO_TOKEN}" \
+          -H "Content-Type: application/json" \
+          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_NAME.dev.test\"}" \
+          "https://forgejo.dev.test/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"
+    environment:
+      FORGEJO_TOKEN:
+        from_secret: forgejo_token

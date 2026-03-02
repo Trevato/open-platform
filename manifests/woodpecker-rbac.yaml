@@ -5,16 +5,19 @@ metadata:
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch", "patch", "update", "create"]
+    verbs: ["get", "list", "watch", "patch", "update", "create", "delete"]
   - apiGroups: [""]
-    resources: ["services", "secrets", "pods", "pods/log"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    resources: ["services", "secrets", "pods", "pods/log", "pods/exec"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
-    verbs: ["get", "list", "watch", "create", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["batch"]
     resources: ["jobs"]
     verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "create"]
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -10,7 +10,8 @@ Browser ──► Traefik (ingress) ──┬── forgejo.dev.test ──► F
                                 ├── headlamp.dev.test ─► Headlamp (K8s dashboard)
                                 ├── minio.dev.test ───► MinIO Console
                                 ├── s3.dev.test ──────► MinIO S3 API
-                                └── demo-app.dev.test ─► Demo App (from template)
+                                ├── oauth2.dev.test ──► OAuth2-Proxy (preview auth)
+                                └── *.dev.test ───────► Apps (from template)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -22,7 +23,7 @@ Flux (flux-system) ──► system/open-platform on Forgejo ──► reconcile
 ### Two deployment models
 
 - **Flux** manages the platform. `platform/` directory contains HelmReleases + manifests, pushed to `system/open-platform` on Forgejo. Changes auto-apply via Flux reconciliation.
-- **Woodpecker CI** deploys apps. App template includes PR workflows (lint, test) and deploy workflows (Kaniko build → Forgejo registry → kubectl deploy).
+- **Woodpecker CI** deploys apps. App template includes 4 workflows: deploy (main branch), preview (PR — isolated DB/bucket per PR), preview-cleanup (PR close), and reset (manual data wipe).
 
 ## Services
 
@@ -53,7 +54,7 @@ Flux (flux-system) ──► system/open-platform on Forgejo ──► reconcile
 - **Auth**: Forgejo OAuth2 integration. Redirect URI: `http://ci.dev.test/authorize`
 - **Backend**: Kubernetes-native (pipelines run as pods)
 - **Secrets**: `woodpecker-secrets` — contains `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`. Loaded via `extraSecretNamesForEnvFrom`.
-- **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, pods, ingresses, and jobs. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
+- **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, pods, ingresses, jobs, namespaces, and pods/exec. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
 - **Image builds**: Uses Kaniko (woodpeckerci/plugin-kaniko) — works in K8s backend without Docker daemon. `skip_tls_verify: true` for self-signed Forgejo registry.
 
 ### MinIO (Object Storage)
@@ -73,6 +74,18 @@ Flux (flux-system) ──► system/open-platform on Forgejo ──► reconcile
 - **Resources**: 256Mi–1Gi memory, 100m–1000m CPU, 10Gi storage
 - **Max connections**: 200
 
+### OAuth2-Proxy (Preview Auth)
+- **Config**: `platform/apps/oauth2-proxy.yaml` (Flux HelmRelease), inline values in `helmfile.yaml` (bootstrap)
+- **Namespace**: `oauth2-proxy`
+- **Domain**: `oauth2.dev.test`
+- **Helm chart**: `oauth2-proxy/oauth2-proxy`
+- **Provider**: OIDC with Forgejo as issuer (`https://forgejo.dev.test`)
+- **Role**: Protects preview environments. Traefik ForwardAuth middleware redirects unauthenticated users to Forgejo login before accessing PR preview deployments.
+- **Upstream**: `static://200` — Traefik handles proxying, oauth2-proxy only validates auth
+- **Secrets**: `oauth2-proxy-secrets` (oauth2-proxy ns) — `client-id`, `client-secret`, `cookie-secret`. Created by `scripts/setup-oauth2.sh` (OAuth2 creds) and `scripts/ensure-secrets.sh` (cookie secret bootstrap).
+- **Traefik Middleware**: `oauth2-proxy-auth` in oauth2-proxy namespace — ForwardAuth CRD pointing to `http://oauth2-proxy.oauth2-proxy.svc:4180/oauth2/auth`. Preview ingresses reference: `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd`
+- **TLS**: `ssl_insecure_skip_verify = true` for self-signed Forgejo
+
 ### Flux (GitOps)
 - **Config**: `helmfile.yaml` (bootstrap), `scripts/setup-flux.sh` (bootstrap resources)
 - **Namespace**: `flux-system`
@@ -88,8 +101,8 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | Repo | Purpose |
 |------|---------|
 | `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services. |
-| `system/template` | App template — Bun/TypeScript scaffold with Dockerfile, K8s manifests, Woodpecker CI workflows. Marked as template repo. |
-| `system/demo-app` | Created from template. Deployed at `demo-app.dev.test` (traefik/whoami initially). |
+| `system/template` | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
+| `system/demo-app` | Created from template. Deployed at `demo-app.dev.test`. |
 
 ## Namespace Layout
 
@@ -102,6 +115,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `headlamp` | Headlamp |
 | `woodpecker` | Woodpecker server + agent + pipeline pods |
 | `minio` | MinIO |
+| `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
 | `demo-app` | Demo application |
 
@@ -134,7 +148,7 @@ make status   # check release status
 | 0 — Infrastructure | traefik, cnpg | `tier: infra` |
 | 1 — Storage | minio | `tier: infra` |
 | 2 — Identity | forgejo | `tier: infra` |
-| 3 — Consumers | headlamp, woodpecker | `tier: apps` |
+| 3 — Consumers | headlamp, woodpecker, oauth2-proxy | `tier: apps` |
 | 4 — GitOps | flux | `tier: platform` |
 
 ### Flux Kustomization Layers (Ongoing Management)
@@ -143,7 +157,7 @@ make status   # check release status
 | infra-controllers | traefik, cnpg | `platform/infrastructure/controllers/` |
 | infra-configs | minio, postgres, namespaces, TLS | `platform/infrastructure/configs/` |
 | identity | forgejo, OIDC RBAC | `platform/identity/` |
-| apps | headlamp, woodpecker, RBAC | `platform/apps/` |
+| apps | headlamp, woodpecker, oauth2-proxy, RBAC | `platform/apps/` |
 
 Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 
@@ -160,20 +174,29 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 |------|----------|
 | `platform/cluster/` | Flux Kustomization resources defining layer ordering |
 | `platform/infrastructure/controllers/` | HelmReleases for traefik, cnpg |
-| `platform/infrastructure/configs/` | Namespaces, TLSStore, minio HelmRelease, postgres cluster |
+| `platform/infrastructure/configs/` | Namespaces, TLSStore, minio HelmRelease, postgres cluster, oauth2-proxy ForwardAuth middleware |
 | `platform/identity/` | Forgejo HelmRelease (OCIRepository), OIDC RBAC |
 | `platform/apps/` | Headlamp + Woodpecker HelmReleases, RBAC |
 
 ### App Template (`templates/app/`)
 | Path | Contents |
 |------|----------|
-| `src/index.ts` | Bun HTTP server |
-| `Dockerfile` | Multi-stage Bun build |
-| `package.json` | Scripts: dev, lint, typecheck, test |
-| `tsconfig.json` | Strict TypeScript config |
-| `k8s/` | Deployment (traefik/whoami), Service, Ingress |
-| `.woodpecker/test.yaml` | PR pipeline: install, lint, typecheck, test |
-| `.woodpecker/deploy.yaml` | Deploy pipeline: Kaniko build, push to Forgejo, kubectl deploy |
+| `src/auth.ts` | Forgejo OAuth2 custom provider + NextAuth config |
+| `src/app/` | Next.js App Router pages, API routes, components |
+| `src/lib/db.ts` | pg Pool via DATABASE_URL |
+| `src/lib/s3.ts` | S3Client for MinIO |
+| `Dockerfile` | Multi-stage Node 20 Alpine, Next.js standalone output |
+| `package.json` | next 15, react 19, pg, @aws-sdk/client-s3, next-auth |
+| `tsconfig.json` | Next.js App Router TypeScript config |
+| `next.config.js` | `output: "standalone"` |
+| `schema.sql` | Declarative DB schema (applied via psql in CI) |
+| `seed/` | SQL seed files + S3 seed data (applied in preview envs) |
+| `k8s/` | Deployment (DB, S3, auth env vars), Service, Ingress |
+| `.woodpecker/deploy.yml` | Main branch: Kaniko build → provision → schema → deploy |
+| `.woodpecker/preview.yml` | PR: build → provision → schema → seed → deploy preview → PR comment |
+| `.woodpecker/preview-cleanup.yml` | PR close: delete preview resources, DB, bucket |
+| `.woodpecker/reset.yml` | Manual: wipe and re-seed preview data |
+| `PLATFORM.md` | Platform conventions, env vars, setup guide |
 
 ### Manifests (`manifests/`)
 | File | Purpose |
@@ -193,11 +216,13 @@ Created by `scripts/ensure-secrets.sh` (runs as traefik presync hook):
 - `forgejo-db-credentials` (postgres ns) — username, password (for CNPG bootstrap)
 - `minio-credentials` (minio ns) — rootUser, rootPassword
 - `woodpecker-secrets` (woodpecker ns) — WOODPECKER_AGENT_SECRET (preserves OAuth2 fields if they exist)
+- `oauth2-proxy-secrets` (oauth2-proxy ns) — cookie-secret (auto-generated if not set)
 
 ### OAuth2 Secrets (auto-generated)
 Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
 - `oidc` (headlamp ns) — `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`
 - `woodpecker-secrets` (woodpecker ns) — merges `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET` into existing secret
+- `oauth2-proxy-secrets` (oauth2-proxy ns) — merges `client-id`, `client-secret` into existing cookie-secret
 
 ### Flux Secrets
 Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
@@ -262,6 +287,8 @@ kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base6
 - **Forgejo SSH** — listens on port 2222 internally, exposed on port 22 via ingress/service.
 - **Forgejo container registry** — images at `forgejo.dev.test/<owner>/<image>:<tag>`. Requires personal access token with `write:packages` scope.
 - **Helmfile global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
+- **OAuth2-Proxy redirect** — callback at `https://oauth2.dev.test/oauth2/callback`. Cookie domain `.dev.test` allows SSO across all preview subdomains.
+- **Preview auth annotation** — preview ingresses use `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd` to trigger ForwardAuth.
 - **Flux + helmfile coexistence** — helmfile bootstraps releases, Flux adopts them via matching HelmReleases. Flux's helm-controller runs `helm upgrade --install` — if values match, it's a no-op. After bootstrap, Flux owns the releases.
 
 ## Development Conventions
@@ -275,4 +302,4 @@ kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base6
 - **Automation scripts**: in `scripts/` directory
 - **Domain convention**: `<service>.dev.test`
 - **Deployment**: helmfile bootstraps, Flux manages ongoing; Makefile provides workflow targets
-- **CI/CD**: Woodpecker with `.woodpecker/` directory (test.yaml for PRs, deploy.yaml for main)
+- **CI/CD**: Woodpecker with `.woodpecker/` directory (deploy.yml for main, preview.yml for PRs, preview-cleanup.yml for PR close, reset.yml for manual data reset)

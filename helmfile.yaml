@@ -9,6 +9,8 @@ repositories:
     url: https://kubernetes-sigs.github.io/headlamp/
   - name: woodpecker
     url: https://woodpecker-ci.org/
+  - name: oauth2-proxy
+    url: https://oauth2-proxy.github.io/manifests
   - name: fluxcd-community
     url: https://fluxcd-community.github.io/helm-charts
 
@@ -121,6 +123,37 @@ releases:
         showlogs: true
         command: "kubectl"
         args: ["apply", "-f", "manifests/woodpecker-rbac.yaml"]
+
+  - name: oauth2-proxy
+    namespace: oauth2-proxy
+    chart: oauth2-proxy/oauth2-proxy
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+    values:
+      - config:
+          existingSecret: oauth2-proxy-secrets
+          configFile: |
+            provider = "oidc"
+            oidc_issuer_url = "https://forgejo.dev.test"
+            redirect_url = "https://oauth2.dev.test/oauth2/callback"
+            upstreams = ["static://200"]
+            email_domains = ["*"]
+            skip_provider_button = true
+            ssl_insecure_skip_verify = true
+            cookie_secure = true
+            cookie_domains = [".dev.test"]
+            whitelist_domains = [".dev.test"]
+        ingress:
+          enabled: true
+          className: traefik
+          hosts:
+            - oauth2.dev.test
+          pathType: Prefix
+        service:
+          type: ClusterIP
+          portNumber: 4180
 
   # ─── Layer 4: GitOps ───────────────────────────────────────────────
 

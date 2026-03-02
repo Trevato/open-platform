@@ -55,4 +55,9 @@ else
     --from-literal=WOODPECKER_AGENT_SECRET="${WOODPECKER_AGENT_SECRET}"
 fi
 
+# Generate a random cookie secret for oauth2-proxy if not set
+OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(openssl rand -base64 32 | head -c 32)}"
+apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+  --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
+
 echo "Bootstrap secrets ready."
