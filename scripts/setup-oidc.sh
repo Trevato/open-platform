@@ -30,10 +30,18 @@ colima ssh -- sudo systemctl restart k3s
 echo "Waiting for k3s..."
 for i in $(seq 1 30); do
   if kubectl get nodes >/dev/null 2>&1; then
-    echo "k3s is ready. Headlamp OIDC configured."
-    exit 0
+    echo "k3s is ready."
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "Warning: k3s took too long to restart."
+    exit 1
   fi
   sleep 2
 done
 
-echo "Warning: k3s took too long to restart. Check: colima ssh -- sudo journalctl -u k3s -n 20"
+# k3s restart clears the traefik helm release — re-sync it
+echo "Re-syncing Traefik..."
+helmfile sync -l name=traefik >/dev/null 2>&1
+
+echo "Headlamp OIDC configured."
