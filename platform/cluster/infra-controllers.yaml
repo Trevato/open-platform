@@ -10,6 +10,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: open-platform
-  path: ./platform/infrastructure/controllers
+  path: ./infrastructure/controllers
   prune: true
   wait: true

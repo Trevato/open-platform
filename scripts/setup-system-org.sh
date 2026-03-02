@@ -104,10 +104,32 @@ api -X PATCH "${API_URL}/repos/system/template" \
   -d '{"template": true}' >/dev/null
 echo "Marked as template."
 
+# Wait for Forgejo to index the template content before generating from it
+echo "Waiting for template to be ready..."
+for i in $(seq 1 15); do
+  BRANCH=$(api "${API_URL}/repos/system/template" 2>/dev/null | jq -r '.default_branch // empty')
+  if [ -n "$BRANCH" ]; then
+    break
+  fi
+  sleep 1
+done
+
 # ── Create demo-app from template ────────────────────────────────────────────
 
 if api "${API_URL}/repos/system/demo-app" >/dev/null 2>&1; then
-  echo "Repo 'system/demo-app' already exists."
+  # Check if it's empty (failed previous generate)
+  DEMO_BRANCH=$(api "${API_URL}/repos/system/demo-app" 2>/dev/null | jq -r '.default_branch // empty')
+  if [ -n "$DEMO_BRANCH" ]; then
+    echo "Repo 'system/demo-app' already exists with content."
+  else
+    echo "Repo 'system/demo-app' exists but is empty — recreating..."
+    api -X DELETE "${API_URL}/repos/system/demo-app" >/dev/null
+    sleep 1
+    api -X POST "${API_URL}/repos/system/template/generate" \
+      -H "Content-Type: application/json" \
+      -d '{"owner": "system", "name": "demo-app", "description": "Demo application", "private": false, "git_content": true}' >/dev/null
+    echo "Recreated 'system/demo-app' from template."
+  fi
 else
   echo "Creating 'system/demo-app' from template..."
   api -X POST "${API_URL}/repos/system/template/generate" \
