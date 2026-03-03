@@ -13,7 +13,7 @@ interface Game {
 }
 
 interface ScoreRow {
-  rank: string | number;
+  rank: number;
   player_name: string;
   player_id: string;
   score: number;

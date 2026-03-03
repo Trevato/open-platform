@@ -11,7 +11,7 @@ API_URL="${FORGEJO_URL}/api/v1"
 
 OAUTH2_APPS=(
   "Headlamp|https://headlamp.dev.test/oidc-callback|true"
-  "Woodpecker|http://ci.dev.test/authorize,http://ci.product-garden.com/authorize|true"
+  "Woodpecker|http://ci.dev.test/authorize,https://ci.product-garden.com/authorize|true"
   "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback|true"
   "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo,https://social.product-garden.com/api/auth/oauth2/callback/forgejo|false"
   "Minecraft|https://minecraft.dev.test/api/auth/oauth2/callback/forgejo,https://minecraft.product-garden.com/api/auth/oauth2/callback/forgejo|false"
