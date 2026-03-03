@@ -2,13 +2,13 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: minecraft-manager
-  namespace: PROJECT_NAME
+  namespace: APP_NAMESPACE
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: minecraft-manager
-  namespace: PROJECT_NAME
+  namespace: APP_NAMESPACE
 rules:
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -24,11 +24,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: minecraft-manager
-  namespace: PROJECT_NAME
+  namespace: APP_NAMESPACE
 subjects:
   - kind: ServiceAccount
     name: minecraft-manager
-    namespace: PROJECT_NAME
+    namespace: APP_NAMESPACE
 roleRef:
   kind: Role
   name: minecraft-manager

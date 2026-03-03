@@ -122,8 +122,8 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `minio` | MinIO |
 | `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
-| `social` | Social media app (posts, images, auth) |
-| `minecraft` | Minecraft server hosting app + managed MC server pods |
+| `op-system-social` | Social media app (posts, images, auth) |
+| `op-system-minecraft` | Minecraft server hosting app + managed MC server pods |
 
 ## Deployment
 
@@ -221,7 +221,7 @@ Source for `system/minecraft` repo. Minecraft server hosting app — users creat
 ### Manifests (`manifests/`)
 | File | Purpose |
 |------|---------|
-| `namespaces.yaml` | All user-created namespaces (including social, minecraft) |
+| `namespaces.yaml` | All user-created namespaces (workloads use `op-{org}-{repo}` convention) |
 | `postgres-cluster.yaml` | CNPG Cluster resource |
 | `woodpecker-rbac.yaml` | Woodpecker agent + pipeline RBAC |
 | `traefik-tls.yaml` | Default TLSStore for wildcard cert |
@@ -244,8 +244,8 @@ Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
 - `oidc` (headlamp ns) — `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`
 - `woodpecker-secrets` (woodpecker ns) — merges `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET` into existing secret
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — merges `client-id`, `client-secret` into existing cookie-secret
-- `social-auth` (social ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
-- `minecraft-auth` (minecraft ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
+- `social-auth` (op-system-social ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
+- `minecraft-auth` (op-system-minecraft ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
 
 ### Flux Secrets
 Created by `scripts/setup-flux.sh` (runs as flux postsync hook):

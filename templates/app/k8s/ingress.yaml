@@ -2,7 +2,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: PROJECT_NAME
-  namespace: PROJECT_NAME
+  namespace: APP_NAMESPACE
 spec:
   ingressClassName: traefik
   rules:

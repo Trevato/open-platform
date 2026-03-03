@@ -138,12 +138,12 @@ fi
 if [ -n "${CLIENT_SECRETS[Social]}" ]; then
   echo "Creating Social auth secret..."
   AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
-  apply_secret social-auth -n social \
+  apply_secret social-auth -n op-system-social \
     --from-literal=client-id="${CLIENT_IDS[Social]}" \
     --from-literal=client-secret="${CLIENT_SECRETS[Social]}" \
     --from-literal=secret="${AUTH_SECRET}"
 else
-  if ! kubectl get secret social-auth -n social -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+  if ! kubectl get secret social-auth -n op-system-social -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
     echo "Warning: Social OAuth2 app exists but 'social-auth' secret is missing."
     echo "Delete the app in Forgejo and re-run, or create the secret manually."
     exit 1
@@ -155,12 +155,12 @@ fi
 if [ -n "${CLIENT_SECRETS[Minecraft]}" ]; then
   echo "Creating Minecraft auth secret..."
   AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
-  apply_secret minecraft-auth -n minecraft \
+  apply_secret minecraft-auth -n op-system-minecraft \
     --from-literal=client-id="${CLIENT_IDS[Minecraft]}" \
     --from-literal=client-secret="${CLIENT_SECRETS[Minecraft]}" \
     --from-literal=secret="${AUTH_SECRET}"
 else
-  if ! kubectl get secret minecraft-auth -n minecraft -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+  if ! kubectl get secret minecraft-auth -n op-system-minecraft -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
     echo "Warning: Minecraft OAuth2 app exists but 'minecraft-auth' secret is missing."
     echo "Delete the app in Forgejo and re-run, or create the secret manually."
     exit 1

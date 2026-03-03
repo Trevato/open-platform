@@ -28,10 +28,9 @@ done
 
 # ── Phase 2: Remove app deployments (not managed by helmfile) ───────────────
 
-echo "Phase 2: Removing app deployments and stateful data..."
-for ns in social minecraft; do
-  kubectl delete deploy,svc,ingress --all -n "$ns" --timeout=15s 2>/dev/null || true
-done
+echo "Phase 2: Removing workload namespaces..."
+# Delete all op-* workload namespaces (label-based cleanup catches everything)
+kubectl delete ns -l platform.dev.test/tier=workload --timeout=30s 2>/dev/null || true
 # Delete Woodpecker PVCs to prevent stale DB state on next deploy
 kubectl delete pvc --all -n woodpecker --timeout=15s 2>/dev/null || true
 
@@ -75,7 +74,7 @@ done
 # ── Phase 6: Force-finalize stuck namespaces ────────────────────────────────
 
 echo "Phase 6: Cleaning up namespaces..."
-PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo headlamp woodpecker minio oauth2-proxy social minecraft"
+PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo headlamp woodpecker minio oauth2-proxy"
 
 for ns in $PLATFORM_NAMESPACES; do
   # Delete namespace (may already be terminating)
@@ -87,6 +86,15 @@ sleep 3
 
 # Force-finalize any still stuck
 for ns in $PLATFORM_NAMESPACES; do
+  if kubectl get ns "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
+    echo "  Force-finalizing $ns..."
+    kubectl get ns "$ns" -o json | jq '.spec.finalizers = []' | \
+      kubectl replace --raw "/api/v1/namespaces/$ns/finalize" -f - 2>/dev/null || true
+  fi
+done
+
+# Force-finalize any stuck workload namespaces (op-*)
+for ns in $(kubectl get ns -l platform.dev.test/tier=workload -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
   if kubectl get ns "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
     echo "  Force-finalizing $ns..."
     kubectl get ns "$ns" -o json | jq '.spec.finalizers = []' | \

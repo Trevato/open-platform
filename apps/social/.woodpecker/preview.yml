@@ -33,26 +33,40 @@ steps:
         from_secret: registry_token
     commands:
       - |
-        kubectl get configmap platform-ca -n ${CI_REPO_NAME} 2>/dev/null || \
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        kubectl create namespace $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
+        kubectl label namespace $$PREVIEW_NS \
+          platform.dev.test/managed=true \
+          platform.dev.test/org=${CI_REPO_OWNER} \
+          platform.dev.test/repo=${CI_REPO_NAME} \
+          platform.dev.test/tier=workload \
+          platform.dev.test/environment=preview \
+          platform.dev.test/pr=${CI_COMMIT_PULL_REQUEST} \
+          --overwrite
+      - |
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        kubectl get configmap platform-ca -n $$PREVIEW_NS 2>/dev/null || \
           kubectl get configmap platform-ca -n kube-system -o json | \
           sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
-          sed 's/"namespace": *"kube-system"/"namespace": "'${CI_REPO_NAME}'"/' | \
+          sed 's/"namespace": *"kube-system"/"namespace": "'$$PREVIEW_NS'"/' | \
           kubectl apply -f -
       - |
-        kubectl get secret minio-credentials -n ${CI_REPO_NAME} 2>/dev/null || \
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        kubectl get secret minio-credentials -n $$PREVIEW_NS 2>/dev/null || \
           kubectl get secret minio-credentials -n minio -o json | \
           sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
-          sed 's/"namespace": *"minio"/"namespace": "'${CI_REPO_NAME}'"/' | \
+          sed 's/"namespace": *"minio"/"namespace": "'$$PREVIEW_NS'"/' | \
           kubectl apply -f -
       - |
-        kubectl get secret forgejo-registry -n ${CI_REPO_NAME} 2>/dev/null || \
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        kubectl get secret forgejo-registry -n $$PREVIEW_NS 2>/dev/null || \
           kubectl create secret docker-registry forgejo-registry \
           --docker-server=forgejo.dev.test \
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
-          -n ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
+          -n $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
       - |
-        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PREVIEW_DB="op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}"
         kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
           "SELECT 1 FROM pg_database WHERE datname = '$$PREVIEW_DB'" | grep -q 1 || {
           kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $$PREVIEW_DB"
@@ -62,13 +76,14 @@ steps:
           touch .db-created
         }
       - |
-        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         kubectl run minio-preview-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
           --image=minio/mc:latest -n minio \
-          --overrides='{"spec":{"containers":[{"name":"minio-preview-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}' && mc anonymous set download minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+          --overrides='{"spec":{"containers":[{"name":"minio-preview-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}' && mc anonymous set download minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
       - |
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
-        if kubectl get secret $$PREVIEW_NAME-auth -n ${CI_REPO_NAME} 2>/dev/null; then
+        if kubectl get secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS 2>/dev/null; then
           echo "Preview auth secret exists, skipping OAuth2 app creation"
         else
           FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
@@ -82,7 +97,7 @@ steps:
           CLIENT_SECRET=$(echo "$$RESPONSE" | grep -o '"client_secret":"[^"]*"' | head -1 | cut -d'"' -f4)
           AUTH_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
           kubectl create secret generic $$PREVIEW_NAME-auth \
-            -n ${CI_REPO_NAME} \
+            -n $$PREVIEW_NS \
             --from-literal=client-id="$$CLIENT_ID" \
             --from-literal=client-secret="$$CLIENT_SECRET" \
             --from-literal=secret="$$AUTH_SECRET" \
@@ -98,7 +113,7 @@ steps:
     commands:
       - |
         if [ -f schema.sql ]; then
-          export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+          export PREVIEW_DB="op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}"
           kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB < schema.sql
           kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c \
             "GRANT ALL ON ALL TABLES IN SCHEMA public TO $$PREVIEW_DB; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $$PREVIEW_DB;"
@@ -112,7 +127,7 @@ steps:
     commands:
       - |
         if [ ! -f .db-created ]; then echo "DB already existed, skipping seed"; exit 0; fi
-        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        export PREVIEW_DB="op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}"
         for f in $$(ls seed/sql/*.sql 2>/dev/null | sort); do
           kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB < "$$f"
         done
@@ -125,11 +140,11 @@ steps:
     commands:
       - |
         if [ ! -f .db-created ]; then echo "DB already existed, skipping seed"; exit 0; fi
-        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         if [ -d seed/data ] && [ "$$(ls seed/data/*.* 2>/dev/null)" ]; then
           kubectl run minio-seed-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
             --image=minio/mc:latest -n minio \
-            --overrides='{"spec":{"containers":[{"name":"minio-seed-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc cp --recursive /data/ minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}'/"],"volumeMounts":[{"name":"creds","mountPath":"/minio"},{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}},{"name":"data","configMap":{"name":"seed-data"}}]}}'
+            --overrides='{"spec":{"containers":[{"name":"minio-seed-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc cp --recursive /data/ minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}'/"],"volumeMounts":[{"name":"creds","mountPath":"/minio"},{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}},{"name":"data","configMap":{"name":"seed-data"}}]}}'
         fi
 
   - name: deploy-preview
@@ -139,15 +154,16 @@ steps:
         serviceAccountName: woodpecker-pipeline
     commands:
       - |
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
-        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
-        export PREVIEW_BUCKET="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_DB="op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}"
+        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         kubectl apply -f - <<EOPREVIEW
         apiVersion: apps/v1
         kind: Deployment
         metadata:
           name: $$PREVIEW_NAME
-          namespace: ${CI_REPO_NAME}
+          namespace: $$PREVIEW_NS
           labels:
             app: $$PREVIEW_NAME
         spec:
@@ -228,7 +244,7 @@ steps:
         kind: Service
         metadata:
           name: $$PREVIEW_NAME
-          namespace: ${CI_REPO_NAME}
+          namespace: $$PREVIEW_NS
         spec:
           selector:
             app: $$PREVIEW_NAME
@@ -240,7 +256,7 @@ steps:
         kind: Ingress
         metadata:
           name: $$PREVIEW_NAME
-          namespace: ${CI_REPO_NAME}
+          namespace: $$PREVIEW_NS
           annotations:
             traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-redirect@kubernetescrd,oauth2-proxy-oauth2-proxy-auth@kubernetescrd
         spec:
@@ -257,7 +273,10 @@ steps:
                         port:
                           number: 80
         EOPREVIEW
-      - kubectl rollout status deployment/$$PREVIEW_NAME -n ${CI_REPO_NAME} --timeout=120s
+      - |
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        kubectl rollout status deployment/$$PREVIEW_NAME -n $$PREVIEW_NS --timeout=120s
 
   - name: comment-url
     image: bitnami/kubectl:latest
