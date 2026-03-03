@@ -5,8 +5,7 @@ import pool from "@/lib/db";
 import { LeaderboardTable } from "@/app/components/leaderboard-table";
 import { Podium } from "@/app/components/podium";
 import { PeriodFilter } from "@/app/components/period-filter";
-import { SubmitScore } from "@/app/components/submit-score";
-import { SignInButton } from "@/app/components/sign-in-button";
+import { GameLoader } from "@/app/components/games/game-loader";
 
 export const dynamic = "force-dynamic";
 
@@ -75,28 +74,9 @@ export default async function GamePage({ params, searchParams }: Props) {
         </p>
       </div>
 
-      {/* Submit Score */}
+      {/* Play */}
       <div style={{ marginBottom: 32 }}>
-        {session?.user ? (
-          <SubmitScore gameSlug={slug} />
-        ) : (
-          <div
-            style={{
-              background: "#1a1a24",
-              borderRadius: 12,
-              padding: 24,
-              border: "1px solid #2a2a3a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span style={{ color: "#888", fontSize: 14 }}>
-              Sign in to submit your score
-            </span>
-            <SignInButton />
-          </div>
-        )}
+        <GameLoader slug={slug} isLoggedIn={!!session?.user} />
       </div>
 
       {/* Podium */}

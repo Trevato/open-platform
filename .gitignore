@@ -3,3 +3,12 @@ certs/*.key
 .DS_Store
 .claude/
 scripts/.git-askpass
+
+# Build artifacts
+node_modules/
+bun.lock
+*.tsbuildinfo
+.next/
+
+# Tool-generated
+.playwright-mcp/

@@ -80,6 +80,9 @@ push_content() {
   cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
   # Also copy dotfiles (like .woodpecker/)
   cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+  # Remove build artifacts that may exist locally
+  rm -rf "${TMP_DIR}/node_modules" "${TMP_DIR}/.next" "${TMP_DIR}/bun.lock"
+  rm -f "${TMP_DIR}/tsconfig.tsbuildinfo"
 
   cd "${TMP_DIR}"
   git init -q
@@ -154,6 +157,9 @@ push_social() {
   # Copy full app (feat/markdown-posts version)
   cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
   cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+  # Remove build artifacts that may exist locally
+  rm -rf "${TMP_DIR}/node_modules" "${TMP_DIR}/.next" "${TMP_DIR}/bun.lock"
+  rm -f "${TMP_DIR}/tsconfig.tsbuildinfo"
 
   cd "${TMP_DIR}"
   git init -q

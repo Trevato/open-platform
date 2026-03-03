@@ -13,8 +13,10 @@ interface Rsvp {
   status: "going" | "maybe" | "not_going";
 }
 
-function formatFullDate(dateStr: string, timeStr: string | null): string {
-  const date = new Date(dateStr + "T00:00:00");
+function formatFullDate(dateStr: string | Date, timeStr: string | null): string {
+  const str = dateStr instanceof Date ? dateStr.toISOString() : String(dateStr);
+  const plain = str.split("T")[0];
+  const date = new Date(plain + "T00:00:00");
   const dayName = date.toLocaleDateString("en-US", { weekday: "long" });
   const monthName = date.toLocaleDateString("en-US", { month: "long" });
   const day = date.getDate();
@@ -117,7 +119,9 @@ export default async function EventDetailPage({
     : null;
 
   const isOrganizer = session?.user?.id === event.organizer_id;
-  const isPast = new Date(event.event_date + "T23:59:59") < new Date();
+  const dateStr = event.event_date instanceof Date ? event.event_date.toISOString() : String(event.event_date);
+  const plainDate = dateStr.split("T")[0];
+  const isPast = new Date(plainDate + "T23:59:59") < new Date();
 
   return (
     <main style={{ minHeight: "100vh" }}>

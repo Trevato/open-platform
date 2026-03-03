@@ -88,6 +88,18 @@ steps:
             "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_NAME; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_NAME;"
         fi
 
+  - name: seed
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
+      - |
+        for f in seed/sql/*.sql; do
+          [ -f "$f" ] && kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $DB_NAME < "$f"
+        done
+
   - name: deploy
     image: bitnami/kubectl:latest
     backend_options:

@@ -144,7 +144,7 @@ export default async function Home() {
                   marginTop: 4,
                 }}
               >
-                View Leaderboard
+                Play Now
               </span>
             </Link>
           ))}

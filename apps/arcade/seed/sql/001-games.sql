@@ -1,7 +1,9 @@
-INSERT INTO games (slug, name, description, icon) VALUES
-  ('snake', 'Snake', 'Classic snake game. Eat food, grow longer, dont hit walls.', '🐍'),
-  ('tetris', 'Tetris', 'Stack blocks, clear lines, chase the high score.', '🧱'),
-  ('breakout', 'Breakout', 'Bounce the ball, break all the bricks.', '🏓'),
-  ('memory', 'Memory Match', 'Flip cards, find pairs. Fewer moves = higher score.', '🧠'),
-  ('typing', 'Speed Typing', 'Type the words as fast as you can. WPM is your score.', '⌨️')
-ON CONFLICT (slug) DO NOTHING;
+INSERT INTO games (slug, name, description, icon, max_score) VALUES
+  ('snake', 'Snake', 'Arrow keys to move. Eat food, grow longer, avoid walls and yourself.', '🐍', 397),
+  ('tetris', 'Tetris', 'Arrows to move, Up to rotate, Space to drop. Clear lines, chase the high score.', '🧱', NULL),
+  ('breakout', 'Breakout', 'Mouse or arrows to move paddle. Break bricks, build combos, survive.', '🏓', NULL),
+  ('memory', 'Memory Match', 'Click cards to flip them. Find all pairs fast for the highest score.', '🧠', 1000),
+  ('typing', 'Speed Typing', 'Type the words as fast and accurately as you can. 30 seconds on the clock.', '⌨️', NULL)
+ON CONFLICT (slug) DO UPDATE SET
+  description = EXCLUDED.description,
+  max_score = EXCLUDED.max_score;

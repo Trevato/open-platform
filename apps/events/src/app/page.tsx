@@ -10,7 +10,7 @@ interface EventRow {
   id: number;
   title: string;
   description: string | null;
-  event_date: string;
+  event_date: string | Date;
   event_time: string | null;
   location: string | null;
   cover_image_url: string | null;
@@ -19,8 +19,15 @@ interface EventRow {
   maybe_count: number;
 }
 
-function formatEventDate(dateStr: string): { month: string; day: string } {
-  const date = new Date(dateStr + "T00:00:00");
+function parseEventDate(dateStr: string | Date): Date {
+  // node-pg may return DATE columns as Date objects or ISO strings
+  const str = dateStr instanceof Date ? dateStr.toISOString() : String(dateStr);
+  const plain = str.split("T")[0];
+  return new Date(plain + "T00:00:00");
+}
+
+function formatEventDate(dateStr: string | Date): { month: string; day: string } {
+  const date = parseEventDate(dateStr);
   return {
     month: date.toLocaleDateString("en-US", { month: "short" }).toUpperCase(),
     day: date.getDate().toString(),
@@ -38,7 +45,9 @@ function formatTime(timeStr: string | null): string {
 
 function EventCard({ event }: { event: EventRow }) {
   const { month, day } = formatEventDate(event.event_date);
-  const isPast = new Date(event.event_date + "T23:59:59") < new Date();
+  const str = event.event_date instanceof Date ? event.event_date.toISOString() : String(event.event_date);
+  const plain = str.split("T")[0];
+  const isPast = new Date(plain + "T23:59:59") < new Date();
   const attendeeCount = event.going_count + event.maybe_count;
 
   return (
@@ -210,12 +219,17 @@ export default async function Home() {
   `);
 
   const events = result.rows as EventRow[];
-  const upcoming = events.filter(
-    (e) => new Date(e.event_date + "T23:59:59") >= new Date(),
-  );
-  const past = events.filter(
-    (e) => new Date(e.event_date + "T23:59:59") < new Date(),
-  );
+  const now = new Date();
+  const upcoming = events.filter((e) => {
+    const str = e.event_date instanceof Date ? e.event_date.toISOString() : String(e.event_date);
+    const plain = str.split("T")[0];
+    return new Date(plain + "T23:59:59") >= now;
+  });
+  const past = events.filter((e) => {
+    const str = e.event_date instanceof Date ? e.event_date.toISOString() : String(e.event_date);
+    const plain = str.split("T")[0];
+    return new Date(plain + "T23:59:59") < now;
+  });
 
   return (
     <main style={{ minHeight: "100vh" }}>
