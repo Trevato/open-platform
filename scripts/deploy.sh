@@ -48,9 +48,22 @@ fi
 
 # ── Phase 4: Woodpecker setup + pipeline triggers ───────────────────────────
 # Runs AFTER recovery so Forgejo and Woodpecker are fully stable.
+# Requires Cloudflare tunnel — the Woodpecker OAuth flow uses the public domain.
 
 echo ""
 echo "Phase 4: Woodpecker repo setup + pipeline triggers..."
+
+# Wait for Cloudflare tunnel to establish (Woodpecker OAuth uses public URLs)
+echo "Waiting for Cloudflare tunnel..."
+for i in $(seq 1 30); do
+  if curl -sSk -o /dev/null -w "%{http_code}" "https://forgejo.product-garden.com/api/v1/settings/api" 2>/dev/null | grep -q "200"; then
+    echo "Cloudflare tunnel ready."
+    break
+  fi
+  [ "$i" -eq 30 ] && echo "Warning: Cloudflare tunnel not responding — proceeding anyway."
+  sleep 5
+done
+
 "${SCRIPT_DIR}/setup-woodpecker-repos.sh"
 
 # ── Done ─────────────────────────────────────────────────────────────────────

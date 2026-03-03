@@ -61,6 +61,7 @@ spec:
           ENABLE_OPENID_SIGNIN: true
         webhook:
           ALLOWED_HOST_LIST: "*.dev.test,*.product-garden.com"
+          SKIP_TLS_VERIFY: true
     ingress:
       enabled: true
       className: traefik
