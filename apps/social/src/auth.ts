@@ -3,7 +3,10 @@ import { genericOAuth } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import pool from "@/lib/db";
 
-const issuer = process.env.AUTH_FORGEJO_ISSUER || "https://forgejo.dev.test";
+// Browser-facing URL (used for OAuth authorize redirect — must be publicly reachable)
+const forgejoUrl = process.env.AUTH_FORGEJO_URL || "https://forgejo.product-garden.com";
+// Server-side URL (used for token exchange and API calls — resolved via CoreDNS internally)
+const forgejoInternalUrl = process.env.AUTH_FORGEJO_INTERNAL_URL || "https://forgejo.dev.test";
 
 export const auth = betterAuth({
   database: pool,
@@ -17,9 +20,9 @@ export const auth = betterAuth({
           providerId: "forgejo",
           clientId: process.env.AUTH_FORGEJO_ID!,
           clientSecret: process.env.AUTH_FORGEJO_SECRET!,
-          authorizationUrl: `${issuer}/login/oauth/authorize`,
-          tokenUrl: `${issuer}/login/oauth/access_token`,
-          userInfoUrl: `${issuer}/api/v1/user`,
+          authorizationUrl: `${forgejoUrl}/login/oauth/authorize`,
+          tokenUrl: `${forgejoInternalUrl}/login/oauth/access_token`,
+          userInfoUrl: `${forgejoInternalUrl}/api/v1/user`,
           pkce: true,
           scopes: [],
           mapProfileToUser: (profile) => ({

@@ -16,3 +16,13 @@ spec:
                 name: PROJECT_NAME
                 port:
                   number: 80
+    - host: PROJECT_NAME.product-garden.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: PROJECT_NAME
+                port:
+                  number: 80

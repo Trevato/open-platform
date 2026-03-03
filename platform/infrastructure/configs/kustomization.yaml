@@ -6,3 +6,4 @@ resources:
   - minio.yaml
   - postgres-cluster.yaml
   - oauth2-proxy-middleware.yaml
+  - cloudflared.yaml

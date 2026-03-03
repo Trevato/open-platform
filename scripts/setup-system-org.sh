@@ -20,6 +20,30 @@ api() {
   curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
 }
 
+# Git credential helper — avoids embedding passwords in URLs or process args
+git_push() {
+  local REPO_NAME="$1"
+  local BRANCH="$2"
+  local REPO_URL="https://forgejo.dev.test/system/${REPO_NAME}.git"
+
+  GIT_SSL_CAINFO="${CA_CERT}" \
+  GIT_ASKPASS="${SCRIPT_DIR}/.git-askpass" \
+  GIT_USERNAME="${ADMIN_USER}" \
+  GIT_PASSWORD="${ADMIN_PASS}" \
+    git push -q "${REPO_URL}" "${BRANCH}" 2>/dev/null
+}
+
+# Create askpass helper (git calls this for username and password)
+cat > "${SCRIPT_DIR}/.git-askpass" <<'ASKPASS'
+#!/bin/sh
+case "$1" in
+  *Username*|*username*) echo "$GIT_USERNAME" ;;
+  *Password*|*password*) echo "$GIT_PASSWORD" ;;
+esac
+ASKPASS
+chmod +x "${SCRIPT_DIR}/.git-askpass"
+trap "rm -f ${SCRIPT_DIR}/.git-askpass" EXIT
+
 # ── Create system org ────────────────────────────────────────────────────────
 
 if api "${API_URL}/orgs/system" >/dev/null 2>&1; then
@@ -37,7 +61,6 @@ fi
 push_content() {
   local REPO_NAME="$1"
   local SOURCE_DIR="$2"
-  local REPO_URL="https://${ADMIN_USER}:${ADMIN_PASS}@forgejo.dev.test/system/${REPO_NAME}.git"
 
   # Check if repo already has commits
   local COMMIT_COUNT
@@ -63,7 +86,7 @@ push_content() {
   git checkout -b main
   git add .
   git -c user.name="Open Platform" -c user.email="system@dev.test" commit -q -m "Initial commit"
-  GIT_SSL_CAINFO="${CA_CERT}" git push -q "${REPO_URL}" main 2>/dev/null
+  git_push "${REPO_NAME}" main
   cd "${ROOT_DIR}"
 
   echo "Pushed content to 'system/${REPO_NAME}'."
@@ -110,7 +133,6 @@ create_repo "social" "Social media app — posts, images, auth"
 
 # Push social app content (main branch + feature branch with PR)
 push_social() {
-  local REPO_URL="https://${ADMIN_USER}:${ADMIN_PASS}@forgejo.dev.test/system/social.git"
   local SOURCE_DIR="${ROOT_DIR}/apps/social"
   local OVERRIDES_DIR="${ROOT_DIR}/apps/social-overrides"
 
@@ -127,6 +149,7 @@ push_social() {
 
   local TMP_DIR
   TMP_DIR=$(mktemp -d)
+  trap "rm -rf ${TMP_DIR}" RETURN
 
   # Copy full app (feat/markdown-posts version)
   cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
@@ -144,7 +167,7 @@ push_social() {
   git add .
   git -c user.name="Open Platform" -c user.email="system@dev.test" \
     commit -q -m "social media app: posts feed, image uploads, forgejo auth"
-  GIT_SSL_CAINFO="${CA_CERT}" git push -q "${REPO_URL}" main 2>/dev/null
+  git_push social main
 
   # Create feature branch with markdown additions
   git checkout -b feat/markdown-posts
@@ -158,10 +181,9 @@ push_social() {
   git add .
   git -c user.name="Open Platform" -c user.email="system@dev.test" \
     commit -q -m "feat: render post bodies as markdown"
-  GIT_SSL_CAINFO="${CA_CERT}" git push -q "${REPO_URL}" feat/markdown-posts 2>/dev/null
+  git_push social feat/markdown-posts
 
   cd "${ROOT_DIR}"
-  rm -rf "${TMP_DIR}"
   echo "Pushed content to 'system/social' (main + feat/markdown-posts)."
 }
 
@@ -193,5 +215,15 @@ fi
 
 create_repo "minecraft" "Minecraft server manager — create and manage servers"
 push_content "minecraft" "${ROOT_DIR}/apps/minecraft"
+
+# ── Create and push arcade app ─────────────────────────────────────────────
+
+create_repo "arcade" "Game leaderboard platform — scores, rankings, player profiles"
+push_content "arcade" "${ROOT_DIR}/apps/arcade"
+
+# ── Create and push events app ────────────────────────────────────────────
+
+create_repo "events" "Event planning and RSVP platform"
+push_content "events" "${ROOT_DIR}/apps/events"
 
 echo "System org setup complete."

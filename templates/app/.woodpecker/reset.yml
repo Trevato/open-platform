@@ -17,7 +17,7 @@ steps:
         serviceAccountName: woodpecker-pipeline
     commands:
       - |
-        export PREVIEW_DB="op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}"
+        export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
       - kubectl exec -n postgres postgres-1 -- psql -U postgres -c "DROP DATABASE IF EXISTS $$PREVIEW_DB"
       - kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $$PREVIEW_DB OWNER $$PREVIEW_DB"

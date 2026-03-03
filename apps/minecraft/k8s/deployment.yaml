@@ -62,7 +62,11 @@ spec:
                   key: client-secret
                   optional: true
             - name: BETTER_AUTH_URL
-              value: "https://PROJECT_NAME.dev.test"
+              value: "https://PROJECT_NAME.product-garden.com"
+            - name: AUTH_FORGEJO_URL
+              value: "https://forgejo.product-garden.com"
+            - name: AUTH_FORGEJO_INTERNAL_URL
+              value: "https://forgejo.dev.test"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
             - name: MINECRAFT_NAMESPACE

@@ -1,5 +1,5 @@
 .env
-certs/ca.key
-certs/wildcard.key
+certs/*.key
 .DS_Store
 .claude/
+scripts/.git-askpass

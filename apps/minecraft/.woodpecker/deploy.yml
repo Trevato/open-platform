@@ -30,7 +30,7 @@ steps:
         serviceAccountName: woodpecker-pipeline
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
-      - DB_NAME="op_${CI_REPO_OWNER}_${CI_REPO_NAME}"
+      - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
       - kubectl create namespace $APP_NS --dry-run=client -o yaml | kubectl apply -f -
       - |
         kubectl label namespace $APP_NS \
@@ -80,8 +80,7 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     commands:
-      - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
-      - DB_NAME="op_${CI_REPO_OWNER}_${CI_REPO_NAME}"
+      - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
       - |
         if [ -f schema.sql ]; then
           kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $DB_NAME < schema.sql
@@ -96,7 +95,7 @@ steps:
         serviceAccountName: woodpecker-pipeline
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
-      - DB_NAME="op_${CI_REPO_OWNER}_${CI_REPO_NAME}"
+      - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
       - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - kubectl apply -f k8s/rbac.yaml

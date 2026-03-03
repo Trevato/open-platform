@@ -31,15 +31,24 @@ spec:
     logs:
       access:
         enabled: true
+    deployment:
+      kind: DaemonSet
+    updateStrategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxUnavailable: 1
+        maxSurge: 0
     ports:
       web:
         exposedPort: 80
+        hostPort: 80
       websecure:
         exposedPort: 443
+        hostPort: 443
     providers:
       kubernetesCRD:
         allowExternalNameServices: true
       kubernetesIngress:
         allowExternalNameServices: true
     service:
-      type: LoadBalancer
+      type: ClusterIP

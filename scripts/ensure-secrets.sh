@@ -16,6 +16,19 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
+# Validate required variables
+MISSING=()
+for VAR in FORGEJO_ADMIN_USER FORGEJO_ADMIN_PASSWORD FORGEJO_DB_PASSWORD MINIO_ROOT_USER MINIO_ROOT_PASSWORD WOODPECKER_AGENT_SECRET; do
+  if [ -z "${!VAR:-}" ]; then
+    MISSING+=("$VAR")
+  fi
+done
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo "Error: Missing required .env variables: ${MISSING[*]}"
+  echo "Run: cp .env.example .env  — then fill in the values."
+  exit 1
+fi
+
 apply_secret() {
   kubectl create secret generic "$@" --dry-run=client -o yaml | kubectl apply -f -
 }
@@ -76,6 +89,16 @@ if kubectl get secret oauth2-proxy-secrets -n oauth2-proxy >/dev/null 2>&1; then
 else
   apply_secret oauth2-proxy-secrets -n oauth2-proxy \
     --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
+fi
+
+# Cloudflare tunnel credentials (for *.product-garden.com public access)
+if [ -n "${CLOUDFLARE_TUNNEL_SECRET:-}" ] && [ -n "${CLOUDFLARE_TUNNEL_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_TAG:-}" ]; then
+  kubectl create secret generic cloudflared-credentials -n cloudflare \
+    --from-literal=credentials.json="{\"AccountTag\":\"${CLOUDFLARE_ACCOUNT_TAG}\",\"TunnelID\":\"${CLOUDFLARE_TUNNEL_ID}\",\"TunnelSecret\":\"${CLOUDFLARE_TUNNEL_SECRET}\"}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "Cloudflare tunnel credentials ready."
+else
+  echo "Skipping Cloudflare tunnel credentials (not configured in .env)."
 fi
 
 # Platform CA configmap — apps mount this for TLS to Forgejo

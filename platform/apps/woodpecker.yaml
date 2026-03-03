@@ -32,11 +32,13 @@ spec:
         WOODPECKER_FORGEJO_URL: "https://forgejo.dev.test"
         WOODPECKER_FORGEJO_SKIP_VERIFY: "true"
         WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: "true"
-        WOODPECKER_HOST: "http://ci.dev.test"
+        WOODPECKER_HOST: "https://ci.product-garden.com"
         WOODPECKER_ADMIN: "trevato"
         WOODPECKER_OPEN: "true"
       extraSecretNamesForEnvFrom:
         - woodpecker-secrets
+      nodeSelector:
+        kubernetes.io/hostname: otavert-vxrail
       persistentVolume:
         enabled: true
         size: 10Gi
@@ -45,6 +47,10 @@ spec:
         ingressClassName: traefik
         hosts:
           - host: ci.dev.test
+            paths:
+              - path: /
+                pathType: Prefix
+          - host: ci.product-garden.com
             paths:
               - path: /
                 pathType: Prefix

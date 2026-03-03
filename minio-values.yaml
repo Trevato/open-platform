@@ -7,6 +7,8 @@ persistence:
 resources:
   requests:
     memory: 256Mi
+nodeSelector:
+  kubernetes.io/hostname: otavert-vxrail
 ingress:
   enabled: true
   ingressClassName: traefik

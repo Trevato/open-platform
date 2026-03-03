@@ -162,10 +162,20 @@ wp_api() {
 # ── Phase 2: Repo activation ─────────────────────────────────────────────────
 
 # Discover all system org repos (except open-platform and template)
-REPOS=($(forgejo_api "${FORGEJO_API}/orgs/system/repos?limit=50" 2>/dev/null | \
+REPO_LIST=$(forgejo_api "${FORGEJO_API}/orgs/system/repos?limit=50" 2>/dev/null | \
   jq -r '.[].full_name' 2>/dev/null | \
   grep -v "^system/open-platform$" | \
-  grep -v "^system/template$"))
+  grep -v "^system/template$" || true)
+
+if [ -z "$REPO_LIST" ]; then
+  echo "No deployable repos found in system org — skipping activation."
+  REPOS=()
+else
+  REPOS=()
+  while IFS= read -r line; do
+    REPOS+=("$line")
+  done <<< "$REPO_LIST"
+fi
 
 for REPO_FULL in "${REPOS[@]}"; do
   # Check if already active
@@ -267,9 +277,11 @@ trigger_main_pipeline() {
   return 1
 }
 
-for REPO_FULL in "${REPOS[@]}"; do
-  trigger_main_pipeline "$REPO_FULL" || true
-done
+if [ ${#REPOS[@]} -gt 0 ]; then
+  for REPO_FULL in "${REPOS[@]}"; do
+    trigger_main_pipeline "$REPO_FULL" || true
+  done
+fi
 
 # Trigger social PR preview pipeline (close/reopen to fire webhook)
 PR_NUMBER=$(forgejo_api "${FORGEJO_API}/repos/system/social/pulls?state=open&head=feat/markdown-posts" 2>/dev/null | jq -r '.[0].number // empty')

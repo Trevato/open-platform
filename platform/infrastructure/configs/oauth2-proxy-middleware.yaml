@@ -61,8 +61,8 @@ spec:
               cpu: 10m
               memory: 16Mi
             limits:
-              cpu: 50m
-              memory: 32Mi
+              cpu: 100m
+              memory: 128Mi
       volumes:
         - name: html
           configMap:

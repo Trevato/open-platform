@@ -6,14 +6,17 @@ set -euo pipefail
 # Runs as a forgejo postsync hook after the pod is ready.
 
 FORGEJO_URL="https://forgejo.dev.test"
+FORGEJO_PUBLIC_URL="https://forgejo.product-garden.com"
 API_URL="${FORGEJO_URL}/api/v1"
 
 OAUTH2_APPS=(
   "Headlamp|https://headlamp.dev.test/oidc-callback|true"
-  "Woodpecker|http://ci.dev.test/authorize|true"
+  "Woodpecker|http://ci.dev.test/authorize,http://ci.product-garden.com/authorize|true"
   "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback|true"
-  "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo|false"
-  "Minecraft|https://minecraft.dev.test/api/auth/oauth2/callback/forgejo|false"
+  "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo,https://social.product-garden.com/api/auth/oauth2/callback/forgejo|false"
+  "Minecraft|https://minecraft.dev.test/api/auth/oauth2/callback/forgejo,https://minecraft.product-garden.com/api/auth/oauth2/callback/forgejo|false"
+  "Arcade|https://arcade.dev.test/api/auth/oauth2/callback/forgejo,https://arcade.product-garden.com/api/auth/oauth2/callback/forgejo|false"
+  "Events|https://events.dev.test/api/auth/oauth2/callback/forgejo,https://events.product-garden.com/api/auth/oauth2/callback/forgejo|false"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -49,22 +52,47 @@ declare -A CLIENT_SECRETS
 for entry in "${OAUTH2_APPS[@]}"; do
   APP_NAME="${entry%%|*}"
   REMAINDER="${entry#*|}"
-  REDIRECT_URI="${REMAINDER%%|*}"
+  REDIRECT_URIS_CSV="${REMAINDER%%|*}"
   CONFIDENTIAL="${REMAINDER##*|}"
+
+  # Build JSON array from comma-separated redirect URIs
+  REDIRECT_URIS_JSON=$(echo "$REDIRECT_URIS_CSV" | tr ',' '\n' | jq -R . | jq -s .)
 
   EXISTING=$(echo "$EXISTING_APPS" | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name)')
 
   if [ -n "$EXISTING" ]; then
-    echo "OAuth2 app '${APP_NAME}' already exists — skipping creation."
     CLIENT_IDS["$APP_NAME"]=$(echo "$EXISTING" | jq -r '.client_id')
-    # Existing apps don't return the secret — check if K8s secret already has it
-    CLIENT_SECRETS["$APP_NAME"]=""
+    APP_ID=$(echo "$EXISTING" | jq -r '.id')
+
+    # Check if redirect URIs need updating (sorted comparison)
+    CURRENT_URIS=$(echo "$EXISTING" | jq -r '.redirect_uris // [] | sort')
+    DESIRED_URIS=$(echo "$REDIRECT_URIS_JSON" | jq -r 'sort')
+
+    if [ "$CURRENT_URIS" = "$DESIRED_URIS" ]; then
+      echo "OAuth2 app '${APP_NAME}' already exists with correct redirect URIs — skipping."
+    else
+      echo "OAuth2 app '${APP_NAME}' exists — updating redirect URIs."
+      echo "  Current: ${CURRENT_URIS}"
+      echo "  Desired: ${DESIRED_URIS}"
+      # WARNING: PATCH regenerates client_secret. Capture it to update K8s secrets.
+      PATCH_RESPONSE=$(curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        -X PATCH "${API_URL}/user/applications/oauth2/${APP_ID}" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": ${REDIRECT_URIS_JSON}, \"confidential_client\": ${CONFIDENTIAL}}")
+      CLIENT_SECRETS["$APP_NAME"]=$(echo "$PATCH_RESPONSE" | jq -r '.client_secret')
+      echo "  Updated '${APP_NAME}' — new client_secret captured."
+    fi
+
+    # If no new secret from PATCH, check K8s secret existence later
+    if [ -z "${CLIENT_SECRETS[$APP_NAME]+x}" ]; then
+      CLIENT_SECRETS["$APP_NAME"]=""
+    fi
   else
     echo "Creating OAuth2 app '${APP_NAME}'..."
     RESPONSE=$(curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" \
       -X POST "${API_URL}/user/applications/oauth2" \
       -H "Content-Type: application/json" \
-      -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": [\"${REDIRECT_URI}\"], \"confidential_client\": ${CONFIDENTIAL}}")
+      -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": ${REDIRECT_URIS_JSON}, \"confidential_client\": ${CONFIDENTIAL}}")
 
     CLIENT_IDS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_id')
     CLIENT_SECRETS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_secret')
@@ -84,7 +112,7 @@ if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
   apply_secret oidc -n headlamp \
     --from-literal=OIDC_CLIENT_ID="${CLIENT_IDS[Headlamp]}" \
     --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
-    --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
+    --from-literal=OIDC_ISSUER_URL="${FORGEJO_PUBLIC_URL}" \
     --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
     --from-literal=OIDC_CALLBACK_URL="https://headlamp.dev.test/oidc-callback"
 else
@@ -134,38 +162,42 @@ else
   echo "OAuth2-Proxy credentials already in secret."
 fi
 
-# Social auth secret — includes BETTER_AUTH_SECRET for session encryption
-if [ -n "${CLIENT_SECRETS[Social]}" ]; then
-  echo "Creating Social auth secret..."
-  AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
-  apply_secret social-auth -n op-system-social \
-    --from-literal=client-id="${CLIENT_IDS[Social]}" \
-    --from-literal=client-secret="${CLIENT_SECRETS[Social]}" \
-    --from-literal=secret="${AUTH_SECRET}"
-else
-  if ! kubectl get secret social-auth -n op-system-social -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
-    echo "Warning: Social OAuth2 app exists but 'social-auth' secret is missing."
-    echo "Delete the app in Forgejo and re-run, or create the secret manually."
-    exit 1
-  fi
-  echo "Social auth secret already exists."
-fi
+# ── App auth secrets (Social, Minecraft, Arcade, Events) ─────────────────────
+# These include BETTER_AUTH_SECRET for session encryption.
+# On PATCH (redirect URI update), client_secret changes but we MUST preserve
+# the existing BETTER_AUTH_SECRET to avoid invalidating active sessions.
 
-# Minecraft auth secret — includes BETTER_AUTH_SECRET for session encryption
-if [ -n "${CLIENT_SECRETS[Minecraft]}" ]; then
-  echo "Creating Minecraft auth secret..."
-  AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
-  apply_secret minecraft-auth -n op-system-minecraft \
-    --from-literal=client-id="${CLIENT_IDS[Minecraft]}" \
-    --from-literal=client-secret="${CLIENT_SECRETS[Minecraft]}" \
-    --from-literal=secret="${AUTH_SECRET}"
-else
-  if ! kubectl get secret minecraft-auth -n op-system-minecraft -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
-    echo "Warning: Minecraft OAuth2 app exists but 'minecraft-auth' secret is missing."
-    echo "Delete the app in Forgejo and re-run, or create the secret manually."
-    exit 1
+create_app_auth_secret() {
+  local APP_NAME="$1"
+  local SECRET_NAME="$2"
+  local NAMESPACE="$3"
+
+  if [ -n "${CLIENT_SECRETS[$APP_NAME]}" ]; then
+    # Preserve existing BETTER_AUTH_SECRET if the secret already exists
+    EXISTING_AUTH_SECRET=""
+    if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+      EXISTING_AUTH_SECRET=$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data.secret}' 2>/dev/null | base64 -d || true)
+    fi
+    AUTH_SECRET="${EXISTING_AUTH_SECRET:-$(openssl rand -base64 32 | head -c 32)}"
+
+    echo "Creating ${APP_NAME} auth secret..."
+    apply_secret "${SECRET_NAME}" -n "${NAMESPACE}" \
+      --from-literal=client-id="${CLIENT_IDS[$APP_NAME]}" \
+      --from-literal=client-secret="${CLIENT_SECRETS[$APP_NAME]}" \
+      --from-literal=secret="${AUTH_SECRET}"
+  else
+    if ! kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+      echo "Warning: ${APP_NAME} OAuth2 app exists but '${SECRET_NAME}' secret is missing."
+      echo "Delete the app in Forgejo and re-run, or create the secret manually."
+      exit 1
+    fi
+    echo "${APP_NAME} auth secret already exists."
   fi
-  echo "Minecraft auth secret already exists."
-fi
+}
+
+create_app_auth_secret "Social" "social-auth" "op-system-social"
+create_app_auth_secret "Minecraft" "minecraft-auth" "op-system-minecraft"
+create_app_auth_secret "Arcade" "arcade-auth" "op-system-arcade"
+create_app_auth_secret "Events" "events-auth" "op-system-events"
 
 echo "OAuth2 setup complete."

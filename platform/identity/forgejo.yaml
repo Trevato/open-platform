@@ -36,8 +36,8 @@ spec:
               key: password
       config:
         server:
-          DOMAIN: forgejo.dev.test
-          ROOT_URL: https://forgejo.dev.test
+          DOMAIN: forgejo.product-garden.com
+          ROOT_URL: https://forgejo.product-garden.com
           SSH_DOMAIN: forgejo.dev.test
           SSH_PORT: 22
           SSH_LISTEN_PORT: 2222
@@ -60,7 +60,7 @@ spec:
         openid:
           ENABLE_OPENID_SIGNIN: true
         webhook:
-          ALLOWED_HOST_LIST: "*.dev.test"
+          ALLOWED_HOST_LIST: "*.dev.test,*.product-garden.com"
     ingress:
       enabled: true
       className: traefik
@@ -69,9 +69,16 @@ spec:
           paths:
             - path: /
               pathType: Prefix
+        - host: forgejo.product-garden.com
+          paths:
+            - path: /
+              pathType: Prefix
     persistence:
       enabled: true
       size: 10Gi
+    deployment:
+      nodeSelector:
+        kubernetes.io/hostname: otavert-vxrail
     postgresql:
       enabled: false
     redis-cluster:

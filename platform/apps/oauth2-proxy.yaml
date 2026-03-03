@@ -29,15 +29,15 @@ spec:
       existingSecret: oauth2-proxy-secrets
       configFile: |
         provider = "oidc"
-        oidc_issuer_url = "https://forgejo.dev.test"
+        oidc_issuer_url = "https://forgejo.product-garden.com"
         redirect_url = "https://oauth2.dev.test/oauth2/callback"
         upstreams = ["static://200"]
         email_domains = ["*"]
         skip_provider_button = true
         ssl_insecure_skip_verify = true
         cookie_secure = true
-        cookie_domains = [".dev.test"]
-        whitelist_domains = [".dev.test"]
+        cookie_domains = [".dev.test", ".product-garden.com"]
+        whitelist_domains = [".dev.test", ".product-garden.com"]
     ingress:
       enabled: true
       className: traefik

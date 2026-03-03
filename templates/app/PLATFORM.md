@@ -1,13 +1,11 @@
 # PROJECT_NAME
 
-Built on [Open Platform](https://forgejo.dev.test/system/open-platform).
+Built on [Open Platform](https://forgejo.product-garden.com/system/open-platform).
 
 ## Quick Start
 
 1. Replace all `PROJECT_NAME` placeholders with your app name
-2. Create a Forgejo OAuth2 app (see [Auth](#auth))
-3. Add Woodpecker secrets (see [CI/CD](#cicd))
-4. Push to `main`
+2. Push to `main` — OAuth2 app and secrets are auto-created by the platform
 
 ## Environment Variables
 
@@ -18,11 +16,21 @@ Built on [Open Platform](https://forgejo.dev.test/system/open-platform).
 | `S3_BUCKET` | S3 bucket name | `PROJECT_NAME` |
 | `S3_ACCESS_KEY` | MinIO access key | |
 | `S3_SECRET_KEY` | MinIO secret key | |
-| `BETTER_AUTH_SECRET` | Session encryption key | (generate with `openssl rand -base64 32`) |
-| `BETTER_AUTH_URL` | Public app URL | `https://PROJECT_NAME.dev.test` |
-| `AUTH_FORGEJO_ID` | Forgejo OAuth2 client ID | |
-| `AUTH_FORGEJO_SECRET` | Forgejo OAuth2 client secret | |
+| `BETTER_AUTH_SECRET` | Session encryption key | (auto-generated, stored in K8s secret) |
+| `BETTER_AUTH_URL` | Public app URL (canonical) | `https://PROJECT_NAME.product-garden.com` |
+| `AUTH_FORGEJO_ID` | Forgejo OAuth2 client ID | (auto-generated) |
+| `AUTH_FORGEJO_SECRET` | Forgejo OAuth2 client secret | (auto-generated) |
+| `AUTH_FORGEJO_URL` | Forgejo URL for browser-facing OAuth redirects | `https://forgejo.product-garden.com` |
+| `AUTH_FORGEJO_INTERNAL_URL` | Forgejo URL for server-side token exchange | `https://forgejo.dev.test` |
 | `NODE_EXTRA_CA_CERTS` | Path to platform CA cert (auto-mounted) | `/etc/ssl/custom/ca.crt` |
+
+### Dual-Domain Auth
+
+Apps use a split URL pattern for Forgejo OAuth2:
+- **Browser-facing** (`AUTH_FORGEJO_URL`): `https://forgejo.product-garden.com` — where browsers redirect for login
+- **Server-side** (`AUTH_FORGEJO_INTERNAL_URL`): `https://forgejo.dev.test` — for token exchange and user info (pod-to-pod via CoreDNS, avoids Cloudflare hairpin)
+
+Both are set in `k8s/deployment.yaml` and consumed by `src/auth.ts`.
 
 ## CI/CD
 
@@ -34,6 +42,10 @@ Woodpecker pipelines in `.woodpecker/`:
 | `preview.yml` | Pull request | Build, provision preview DB/bucket, schema, seed, deploy preview, comment URL |
 | `preview-cleanup.yml` | PR closed | Delete preview deployment, DB, bucket |
 | `reset.yml` | Manual | Wipe and re-seed preview data |
+
+### Secrets
+
+Org-level secrets (`registry_username`, `registry_token`) are set automatically at the `system` org level and inherited by all repos. No per-repo secret configuration needed.
 
 ## Database
 
@@ -68,9 +80,9 @@ Forgejo OAuth2 via [better-auth](https://better-auth.com) with the `genericOAuth
 
 Sessions are stored in the database (not JWT). The `user`, `session`, `account`, and `verification` tables in `schema.sql` are managed by better-auth.
 
-1. Go to **Forgejo** > **Site Administration** > **Applications** (or user settings)
-2. Create OAuth2 app with redirect URL: `https://PROJECT_NAME.dev.test/api/auth/oauth2/callback/forgejo`
-3. Set `AUTH_FORGEJO_ID` and `AUTH_FORGEJO_SECRET` in your environment / Woodpecker secrets
+OAuth2 apps are auto-created by the platform during bootstrap (`setup-oauth2.sh`). Redirect URIs cover both domains:
+- `https://PROJECT_NAME.dev.test/api/auth/oauth2/callback/forgejo`
+- `https://PROJECT_NAME.product-garden.com/api/auth/oauth2/callback/forgejo`
 
 ### Session access
 
@@ -93,11 +105,7 @@ const { data: session } = authClient.useSession();
 
 1. **Create from template** -- generate a new repo from `system/template` on Forgejo
 2. **Replace `PROJECT_NAME`** -- in `package.json`, `k8s/`, and this file
-3. **Create OAuth2 app** -- in Forgejo with redirect URL `https://PROJECT_NAME.dev.test/api/auth/oauth2/callback/forgejo`
-4. **Add Woodpecker secrets** -- in repo settings at `ci.dev.test`:
-   - `registry_username` -- your Forgejo username
-   - `registry_token` -- Forgejo personal access token with `write:packages` scope
-5. **Push to `main`** -- triggers the deploy pipeline
+3. **Push to `main`** -- triggers the deploy pipeline. OAuth2 app, secrets, and CI are all automatic.
 
 ## Project Structure
 

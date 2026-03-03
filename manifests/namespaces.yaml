@@ -36,6 +36,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: cloudflare
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: op-system-social
   labels:
     platform.dev.test/managed: "true"
@@ -52,5 +57,27 @@ metadata:
     platform.dev.test/managed: "true"
     platform.dev.test/org: "system"
     platform.dev.test/repo: "minecraft"
+    platform.dev.test/tier: "workload"
+    platform.dev.test/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-system-arcade
+  labels:
+    platform.dev.test/managed: "true"
+    platform.dev.test/org: "system"
+    platform.dev.test/repo: "arcade"
+    platform.dev.test/tier: "workload"
+    platform.dev.test/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-system-events
+  labels:
+    platform.dev.test/managed: "true"
+    platform.dev.test/org: "system"
+    platform.dev.test/repo: "events"
     platform.dev.test/tier: "workload"
     platform.dev.test/environment: "production"
