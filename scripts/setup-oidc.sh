@@ -40,8 +40,4 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-# k3s restart clears the traefik helm release — re-sync it
-echo "Re-syncing Traefik..."
-helmfile sync -l name=traefik >/dev/null 2>&1
-
 echo "Headlamp OIDC configured."

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Automates Woodpecker CI setup: login, repo activation, org secrets.
+# Automates Woodpecker CI setup: login, repo activation, org secrets, pipeline triggers.
 # Uses programmatic OAuth2 flow (Forgejo → Woodpecker) to obtain API credentials.
 # Idempotent — skips resources that already exist.
-# Runs as a woodpecker postsync hook.
+# Runs from deploy.sh after all services are stable.
 
 FORGEJO_URL="https://forgejo.dev.test"
 FORGEJO_API="${FORGEJO_URL}/api/v1"
@@ -36,6 +36,17 @@ for i in $(seq 1 30); do
     break
   fi
   [ "$i" -eq 30 ] && { echo "Warning: Forgejo API not responding — skipping."; exit 0; }
+  sleep 2
+done
+
+# Verify Forgejo can serve git operations (not just API)
+echo "Verifying Forgejo git readiness..."
+for i in $(seq 1 15); do
+  if GIT_SSL_NO_VERIFY=1 git ls-remote "https://${ADMIN_USER}:${ADMIN_PASS}@forgejo.dev.test/system/open-platform.git" HEAD >/dev/null 2>&1; then
+    echo "Forgejo git service is ready."
+    break
+  fi
+  [ "$i" -eq 15 ] && { echo "Warning: Forgejo git not responding — pipelines may fail."; }
   sleep 2
 done
 
@@ -150,7 +161,11 @@ wp_api() {
 
 # ── Phase 2: Repo activation ─────────────────────────────────────────────────
 
-REPOS=("system/social" "system/demo-app")
+# Discover all system org repos (except open-platform and template)
+REPOS=($(forgejo_api "${FORGEJO_API}/orgs/system/repos?limit=50" 2>/dev/null | \
+  jq -r '.[].full_name' 2>/dev/null | \
+  grep -v "^system/open-platform$" | \
+  grep -v "^system/template$"))
 
 for REPO_FULL in "${REPOS[@]}"; do
   # Check if already active
@@ -203,20 +218,81 @@ for SECRET_NAME in registry_username registry_token; do
   echo "Created org secret '${SECRET_NAME}'."
 done
 
-# ── Phase 4: Trigger social PR pipeline ───────────────────────────────────────
-# Close and reopen the PR to fire the webhook now that repos are active.
+# ── Phase 4: Trigger pipelines ────────────────────────────────────────────────
+# Trigger main branch deploys via Woodpecker API (manual event).
+# Trigger social PR preview via webhook (close/reopen).
+# Uses numeric repo IDs with retry for Forgejo readiness.
 
-PR_STATE=$(forgejo_api "${FORGEJO_API}/repos/system/social/pulls?state=open&head=feat/markdown-posts" 2>/dev/null | jq -r '.[0].number // empty')
-if [ -n "$PR_STATE" ]; then
-  echo "Triggering social PR pipeline..."
-  forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_STATE}" \
-    -H "Content-Type: application/json" \
-    -d '{"state":"closed"}' >/dev/null 2>&1
-  sleep 1
-  forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_STATE}" \
-    -H "Content-Type: application/json" \
-    -d '{"state":"open"}' >/dev/null 2>&1
-  echo "Social PR reopened — pipeline should trigger."
+echo ""
+echo "Triggering CI pipelines..."
+
+trigger_main_pipeline() {
+  local REPO_FULL="$1"
+
+  # Get numeric repo ID via lookup
+  local REPO_ID
+  REPO_ID=$(wp_api "${WP_URL}/api/repos/lookup/${REPO_FULL}" 2>/dev/null | jq -r '.id // empty')
+  if [ -z "$REPO_ID" ]; then
+    echo "Warning: Could not find repo ID for '${REPO_FULL}' — skipping."
+    return 1
+  fi
+
+  # Check if a successful deploy pipeline already exists
+  local DEPLOY_OK
+  DEPLOY_OK=$(wp_api "${WP_URL}/api/repos/${REPO_ID}/pipelines" 2>/dev/null | \
+    jq -r '[.[] | select((.event == "push" or .event == "manual") and .status == "success")] | length' 2>/dev/null || echo "0")
+  if [ "$DEPLOY_OK" != "0" ]; then
+    echo "Repo '${REPO_FULL}' already has a successful deploy — skipping."
+    return 0
+  fi
+
+  echo "Triggering main branch pipeline for '${REPO_FULL}'..."
+  local RESULT
+  for attempt in $(seq 1 5); do
+    RESULT=$(wp_api -X POST "${WP_URL}/api/repos/${REPO_ID}/pipelines" \
+      -H "Content-Type: application/json" \
+      -d '{"branch": "main"}' 2>/dev/null || echo "")
+
+    if [ -n "$RESULT" ] && echo "$RESULT" | jq -e '.id' >/dev/null 2>&1; then
+      local PIPELINE_ID
+      PIPELINE_ID=$(echo "$RESULT" | jq -r '.id')
+      echo "Triggered pipeline #${PIPELINE_ID} for '${REPO_FULL}'."
+      return 0
+    fi
+
+    [ "$attempt" -lt 5 ] && { echo "  Retry ${attempt}/5 — waiting for Forgejo..."; sleep 5; }
+  done
+
+  echo "Warning: Failed to trigger pipeline for '${REPO_FULL}' after 5 attempts."
+  return 1
+}
+
+for REPO_FULL in "${REPOS[@]}"; do
+  trigger_main_pipeline "$REPO_FULL" || true
+done
+
+# Trigger social PR preview pipeline (close/reopen to fire webhook)
+PR_NUMBER=$(forgejo_api "${FORGEJO_API}/repos/system/social/pulls?state=open&head=feat/markdown-posts" 2>/dev/null | jq -r '.[0].number // empty')
+if [ -n "$PR_NUMBER" ]; then
+  # Check if a successful PR pipeline already exists
+  SOCIAL_ID=$(wp_api "${WP_URL}/api/repos/lookup/system/social" 2>/dev/null | jq -r '.id // empty')
+  PR_PIPELINE=$(wp_api "${WP_URL}/api/repos/${SOCIAL_ID}/pipelines" 2>/dev/null | \
+    jq -r '[.[] | select(.event == "pull_request" and .status == "success")] | length' 2>/dev/null || echo "0")
+
+  if [ "$PR_PIPELINE" != "0" ]; then
+    echo "Social PR already has a successful preview pipeline — skipping trigger."
+  else
+    echo "Triggering social PR preview pipeline..."
+    forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_NUMBER}" \
+      -H "Content-Type: application/json" \
+      -d '{"state":"closed"}' >/dev/null 2>&1
+    sleep 1
+    forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_NUMBER}" \
+      -H "Content-Type: application/json" \
+      -d '{"state":"open"}' >/dev/null 2>&1
+    echo "Social PR reopened — preview pipeline triggered."
+  fi
 fi
 
-echo "Woodpecker setup complete."
+echo ""
+echo "Woodpecker setup complete. Pipelines running in background."

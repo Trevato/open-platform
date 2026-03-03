@@ -26,12 +26,31 @@ steps:
     backend_options:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
+    environment:
+      REGISTRY_USER:
+        from_secret: registry_username
+      REGISTRY_TOKEN:
+        from_secret: registry_token
     commands:
       - |
         kubectl get configmap platform-ca -n ${CI_REPO_NAME} 2>/dev/null || \
           kubectl get configmap platform-ca -n kube-system -o json | \
-          sed 's/"namespace":"kube-system"/"namespace":"'${CI_REPO_NAME}'"/' | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"kube-system"/"namespace": "'${CI_REPO_NAME}'"/' | \
           kubectl apply -f -
+      - |
+        kubectl get secret minio-credentials -n ${CI_REPO_NAME} 2>/dev/null || \
+          kubectl get secret minio-credentials -n minio -o json | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"minio"/"namespace": "'${CI_REPO_NAME}'"/' | \
+          kubectl apply -f -
+      - |
+        kubectl get secret forgejo-registry -n ${CI_REPO_NAME} 2>/dev/null || \
+          kubectl create secret docker-registry forgejo-registry \
+          --docker-server=forgejo.dev.test \
+          --docker-username=$${REGISTRY_USER} \
+          --docker-password=$${REGISTRY_TOKEN} \
+          -n ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
       - |
         export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
         kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \

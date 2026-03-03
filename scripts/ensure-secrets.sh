@@ -55,10 +55,28 @@ else
     --from-literal=WOODPECKER_AGENT_SECRET="${WOODPECKER_AGENT_SECRET}"
 fi
 
-# Generate a random cookie secret for oauth2-proxy if not set
+# OAuth2-Proxy secret: preserve client creds if they exist from a previous deploy
 OAUTH2_PROXY_COOKIE_SECRET="${OAUTH2_PROXY_COOKIE_SECRET:-$(openssl rand -base64 32 | head -c 32)}"
-apply_secret oauth2-proxy-secrets -n oauth2-proxy \
-  --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
+if kubectl get secret oauth2-proxy-secrets -n oauth2-proxy >/dev/null 2>&1; then
+  EXISTING_CLIENT_ID=$(kubectl get secret oauth2-proxy-secrets -n oauth2-proxy -o jsonpath='{.data.client-id}' 2>/dev/null || true)
+  EXISTING_CLIENT_SECRET=$(kubectl get secret oauth2-proxy-secrets -n oauth2-proxy -o jsonpath='{.data.client-secret}' 2>/dev/null || true)
+  EXISTING_COOKIE=$(kubectl get secret oauth2-proxy-secrets -n oauth2-proxy -o jsonpath='{.data.cookie-secret}' 2>/dev/null || true)
+  if [ -n "$EXISTING_CLIENT_ID" ] && [ -n "$EXISTING_CLIENT_SECRET" ]; then
+    # Preserve existing cookie-secret if available
+    COOKIE_VAL="${EXISTING_COOKIE:+$(echo "$EXISTING_COOKIE" | base64 -d)}"
+    COOKIE_VAL="${COOKIE_VAL:-$OAUTH2_PROXY_COOKIE_SECRET}"
+    apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+      --from-literal=cookie-secret="${COOKIE_VAL}" \
+      --from-literal=client-id="$(echo "$EXISTING_CLIENT_ID" | base64 -d)" \
+      --from-literal=client-secret="$(echo "$EXISTING_CLIENT_SECRET" | base64 -d)"
+  else
+    apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+      --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
+  fi
+else
+  apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+    --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
+fi
 
 # Platform CA configmap — apps mount this for TLS to Forgejo
 CA_CERT="$ROOT_DIR/certs/ca.crt"

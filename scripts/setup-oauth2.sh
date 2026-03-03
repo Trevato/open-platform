@@ -13,6 +13,7 @@ OAUTH2_APPS=(
   "Woodpecker|http://ci.dev.test/authorize|true"
   "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback|true"
   "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo|false"
+  "Minecraft|https://minecraft.dev.test/api/auth/oauth2/callback/forgejo|false"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -148,6 +149,23 @@ else
     exit 1
   fi
   echo "Social auth secret already exists."
+fi
+
+# Minecraft auth secret — includes BETTER_AUTH_SECRET for session encryption
+if [ -n "${CLIENT_SECRETS[Minecraft]}" ]; then
+  echo "Creating Minecraft auth secret..."
+  AUTH_SECRET=$(openssl rand -base64 32 | head -c 32)
+  apply_secret minecraft-auth -n minecraft \
+    --from-literal=client-id="${CLIENT_IDS[Minecraft]}" \
+    --from-literal=client-secret="${CLIENT_SECRETS[Minecraft]}" \
+    --from-literal=secret="${AUTH_SECRET}"
+else
+  if ! kubectl get secret minecraft-auth -n minecraft -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+    echo "Warning: Minecraft OAuth2 app exists but 'minecraft-auth' secret is missing."
+    echo "Delete the app in Forgejo and re-run, or create the secret manually."
+    exit 1
+  fi
+  echo "Minecraft auth secret already exists."
 fi
 
 echo "OAuth2 setup complete."

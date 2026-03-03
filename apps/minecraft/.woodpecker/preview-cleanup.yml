@@ -1,0 +1,49 @@
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      skip_verify: true
+
+when:
+  - event: pull_request_closed
+
+steps:
+  - name: cleanup
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_DB="pr_${CI_COMMIT_PULL_REQUEST}_${CI_REPO_NAME}"
+        echo "Cleaning up preview: $$PREVIEW_NAME"
+
+        kubectl delete deployment $$PREVIEW_NAME -n ${CI_REPO_NAME} --ignore-not-found
+        kubectl delete service $$PREVIEW_NAME -n ${CI_REPO_NAME} --ignore-not-found
+        kubectl delete ingress $$PREVIEW_NAME -n ${CI_REPO_NAME} --ignore-not-found
+        kubectl delete secret $$PREVIEW_NAME-auth -n ${CI_REPO_NAME} --ignore-not-found
+
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -c "DROP DATABASE IF EXISTS $$PREVIEW_DB"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -c "DROP USER IF EXISTS $$PREVIEW_DB"
+
+        kubectl run minio-cleanup-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+          --image=minio/mc:latest -n minio \
+          --overrides='{"spec":{"containers":[{"name":"minio-cleanup-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc rb --force minio/pr-'${CI_COMMIT_PULL_REQUEST}'-'${CI_REPO_NAME}' || true"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+
+        FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
+        FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
+        APP_ID=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
+          "https://forgejo.dev.test/api/v1/user/applications/oauth2" | \
+          grep -o '"id":[0-9]*,"name":"'$$PREVIEW_NAME'"' | grep -o '"id":[0-9]*' | cut -d: -f2)
+        if [ -n "$$APP_ID" ]; then
+          curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
+            -X DELETE "https://forgejo.dev.test/api/v1/user/applications/oauth2/$$APP_ID"
+          echo "Deleted OAuth2 app '$$PREVIEW_NAME' (id: $$APP_ID)"
+        fi
+
+        curl -sk -X POST \
+          -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
+          -H "Content-Type: application/json" \
+          -d "{\"body\": \"Preview environment cleaned up.\"}" \
+          "https://forgejo.dev.test/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"

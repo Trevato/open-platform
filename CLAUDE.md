@@ -12,7 +12,7 @@ Browser ──► Traefik (ingress) ──┬── forgejo.dev.test ──► F
                                 ├── s3.dev.test ──────► MinIO S3 API
                                 ├── oauth2.dev.test ──► OAuth2-Proxy (preview auth)
                                 ├── social.dev.test ──► Social App (posts, images, Forgejo auth)
-                                ├── demo-app.dev.test ► Demo App (from template)
+                                ├── minecraft.dev.test► Minecraft App (server hosting, K8s integration)
                                 └── *.dev.test ───────► Apps (from template)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
@@ -106,8 +106,8 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 |------|---------|
 | `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services. |
 | `system/template` | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
-| `system/demo-app` | Created from template. Deployed at `demo-app.dev.test`. |
 | `system/social` | Social media app — posts feed, image uploads, Forgejo OAuth2 auth. Includes `feat/markdown-posts` PR as a working example of preview environments. Deployed at `social.dev.test`. |
+| `system/minecraft` | Minecraft server hosting — create/start/stop/delete real Minecraft servers via K8s API. Uses `itzg/minecraft-server` pods, NodePort services, namespace-scoped RBAC. Deployed at `minecraft.dev.test`. |
 
 ## Namespace Layout
 
@@ -122,8 +122,8 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `minio` | MinIO |
 | `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
-| `demo-app` | Demo application |
 | `social` | Social media app (posts, images, auth) |
+| `minecraft` | Minecraft server hosting app + managed MC server pods |
 
 ## Deployment
 
@@ -210,10 +210,18 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 ### Social App (`apps/social/`)
 Source for `system/social` repo. Complete app (feat/markdown-posts version). `apps/social-overrides/` contains main-branch variants of `page.tsx` and `package.json` (without markdown rendering). Bootstrap creates main by overlaying overrides, then creates the feature branch with the originals and opens a PR.
 
+### Minecraft App (`apps/minecraft/`)
+Source for `system/minecraft` repo. Minecraft server hosting app — users create/start/stop/delete real Minecraft servers through a dark-themed dashboard. Key additions beyond the standard app template:
+- **`src/lib/k8s.ts`** — K8s client using `@kubernetes/client-node` with `loadFromCluster()`. Creates `itzg/minecraft-server` Deployments + NodePort Services. Status polling checks readyReplicas and CrashLoopBackOff.
+- **`k8s/rbac.yaml`** — Namespace-scoped ServiceAccount (`minecraft-manager`) + Role + RoleBinding granting deployments, services, pods CRUD within the minecraft namespace only.
+- **`next.config.js`** — `serverExternalPackages: ["@kubernetes/client-node"]` to exclude from webpack bundling.
+- **API routes** — `/api/servers` (CRUD), `/api/servers/[id]/start` (create K8s resources), `/api/servers/[id]/stop` (delete K8s resources), `/api/servers/[id]/status` (poll K8s, sync DB).
+- **Server limit**: 5 per user. Resource naming: `mc-{serverId.slice(0,8)}`.
+
 ### Manifests (`manifests/`)
 | File | Purpose |
 |------|---------|
-| `namespaces.yaml` | All user-created namespaces (including demo-app, social) |
+| `namespaces.yaml` | All user-created namespaces (including social, minecraft) |
 | `postgres-cluster.yaml` | CNPG Cluster resource |
 | `woodpecker-rbac.yaml` | Woodpecker agent + pipeline RBAC |
 | `traefik-tls.yaml` | Default TLSStore for wildcard cert |
@@ -237,6 +245,7 @@ Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
 - `woodpecker-secrets` (woodpecker ns) — merges `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET` into existing secret
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — merges `client-id`, `client-secret` into existing cookie-secret
 - `social-auth` (social ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
+- `minecraft-auth` (minecraft ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET for session encryption)
 
 ### Flux Secrets
 Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
@@ -247,8 +256,8 @@ Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
 |--------|---------|---------|
 | `scripts/ensure-secrets.sh` | traefik presync | Creates namespaces + bootstrap K8s secrets from `.env` |
 | `scripts/setup-oauth2.sh` | forgejo postsync | Creates OAuth2 apps via Forgejo API + K8s secrets |
-| `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social app, seeds demo-app, provisions social infra |
-| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Programmatic Woodpecker login, repo activation, org secrets — zero manual steps |
+| `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social + minecraft repos |
+| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Programmatic Woodpecker login, dynamic repo discovery + activation, org secrets — zero manual steps |
 | `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
 | `scripts/setup-oidc.sh` | after helmfile sync | Updates k3s OIDC client ID to match Headlamp, restarts k3s if needed |
 

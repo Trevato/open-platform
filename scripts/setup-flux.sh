@@ -67,13 +67,6 @@ spec:
   wait: true
 EOF
 
-echo "Waiting for Flux to reconcile..."
-
-# Wait for the root Kustomization to become ready
-if kubectl wait kustomization/open-platform -n flux-system --for=condition=Ready --timeout=300s 2>/dev/null; then
-  echo "Flux reconciliation complete — platform is self-managing."
-else
-  echo "Warning: Flux reconciliation still in progress. Check: kubectl get kustomizations -n flux-system"
-fi
-
+echo "Flux bootstrap resources created. Reconciliation will proceed in the background."
+kubectl get kustomization -n flux-system --no-headers 2>/dev/null || true
 echo "Flux bootstrap complete."

@@ -1,0 +1,90 @@
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      skip_verify: true
+
+when:
+  - event: [push, manual]
+    branch: main
+
+steps:
+  - name: build
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      registry: forgejo.dev.test
+      repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
+      tags:
+        - "${CI_COMMIT_SHA:0:8}"
+        - latest
+      skip_tls_verify: true
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_token
+
+  - name: provision
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - kubectl create namespace ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl get secret minio-credentials -n minio -o json | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"minio"/"namespace": "'${CI_REPO_NAME}'"/' | \
+          kubectl apply -f -
+      - |
+        kubectl get configmap platform-ca -n kube-system -o json | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"kube-system"/"namespace": "'${CI_REPO_NAME}'"/' | \
+          kubectl apply -f -
+      - |
+        kubectl create secret docker-registry forgejo-registry \
+          --docker-server=forgejo.dev.test \
+          --docker-username=$${REGISTRY_USER} \
+          --docker-password=$${REGISTRY_TOKEN} \
+          -n ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = '${CI_REPO_NAME}'" | grep -q 1 || {
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE ${CI_REPO_NAME}"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER ${CI_REPO_NAME} WITH PASSWORD '${CI_REPO_NAME}'" || true
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE ${CI_REPO_NAME} TO ${CI_REPO_NAME}"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER DATABASE ${CI_REPO_NAME} OWNER TO ${CI_REPO_NAME}"
+        }
+      - |
+        kubectl run minio-provision-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
+          --image=minio/mc:latest -n minio \
+          --overrides='{"spec":{"containers":[{"name":"minio-provision-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/'${CI_REPO_NAME}' && mc anonymous set download minio/'${CI_REPO_NAME}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+    environment:
+      REGISTRY_USER:
+        from_secret: registry_username
+      REGISTRY_TOKEN:
+        from_secret: registry_token
+
+  - name: schema
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - |
+        if [ -f schema.sql ]; then
+          kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d ${CI_REPO_NAME} < schema.sql
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -d ${CI_REPO_NAME} -c \
+            "GRANT ALL ON ALL TABLES IN SCHEMA public TO ${CI_REPO_NAME}; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO ${CI_REPO_NAME};"
+        fi
+
+  - name: deploy
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - sed -i "s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g" k8s/*.yaml
+      - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
+      - kubectl apply -f k8s/rbac.yaml
+      - kubectl apply -f k8s/
+      - kubectl rollout status deployment/${CI_REPO_NAME} -n ${CI_REPO_NAME} --timeout=120s

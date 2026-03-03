@@ -6,6 +6,8 @@ clone:
 
 when:
   - event: manual
+    branch:
+      exclude: [main]
 
 steps:
   - name: reset

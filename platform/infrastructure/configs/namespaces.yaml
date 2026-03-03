@@ -36,9 +36,9 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: demo-app
+  name: social
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: social
+  name: minecraft

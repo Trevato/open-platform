@@ -5,7 +5,7 @@ clone:
       skip_verify: true
 
 when:
-  - event: push
+  - event: [push, manual]
     branch: main
 
 steps:
@@ -32,11 +32,13 @@ steps:
       - kubectl create namespace ${CI_REPO_NAME} --dry-run=client -o yaml | kubectl apply -f -
       - |
         kubectl get secret minio-credentials -n minio -o json | \
-          sed 's/"namespace":"minio"/"namespace":"'${CI_REPO_NAME}'"/' | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"minio"/"namespace": "'${CI_REPO_NAME}'"/' | \
           kubectl apply -f -
       - |
         kubectl get configmap platform-ca -n kube-system -o json | \
-          sed 's/"namespace":"kube-system"/"namespace":"'${CI_REPO_NAME}'"/' | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"kube-system"/"namespace": "'${CI_REPO_NAME}'"/' | \
           kubectl apply -f -
       - |
         kubectl create secret docker-registry forgejo-registry \
