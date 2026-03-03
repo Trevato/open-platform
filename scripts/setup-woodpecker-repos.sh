@@ -6,9 +6,31 @@ set -euo pipefail
 # Idempotent — skips resources that already exist.
 # Runs from deploy.sh after all services are stable.
 
-FORGEJO_URL="https://forgejo.dev.test"
-FORGEJO_API="${FORGEJO_URL}/api/v1"
-WP_URL="http://ci.dev.test"
+FORGEJO_INTERNAL_URL="https://forgejo.dev.test"
+FORGEJO_API="${FORGEJO_INTERNAL_URL}/api/v1"
+WP_INTERNAL_URL="http://ci.dev.test"
+
+# Woodpecker sets WOODPECKER_HOST and WOODPECKER_FORGEJO_URL for OAuth2 redirects.
+# The OAuth callback lands on WOODPECKER_HOST, so session cookies bind to that domain.
+# We must use the SAME domain for all subsequent session-authenticated requests.
+# Try: statefulset env → pod env exec → fallback to internal.
+WP_HOST=$(kubectl get statefulset woodpecker-server -n woodpecker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="WOODPECKER_HOST")].value}' 2>/dev/null || echo "")
+FORGEJO_OAUTH_URL=$(kubectl get statefulset woodpecker-server -n woodpecker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="WOODPECKER_FORGEJO_URL")].value}' 2>/dev/null || echo "")
+
+if [ -z "$WP_HOST" ]; then
+  WP_HOST=$(kubectl exec statefulset/woodpecker-server -n woodpecker -- printenv WOODPECKER_HOST 2>/dev/null || echo "")
+fi
+if [ -z "$FORGEJO_OAUTH_URL" ]; then
+  FORGEJO_OAUTH_URL=$(kubectl exec statefulset/woodpecker-server -n woodpecker -- printenv WOODPECKER_FORGEJO_URL 2>/dev/null || echo "")
+fi
+
+# Fallback to internal URLs if env vars not found
+WP_HOST="${WP_HOST:-$WP_INTERNAL_URL}"
+FORGEJO_OAUTH_URL="${FORGEJO_OAUTH_URL:-$FORGEJO_INTERNAL_URL}"
+
+# Use WP_HOST for session-authenticated requests (cookies match callback domain)
+# Use WP_INTERNAL_URL for healthchecks and non-session API calls
+WP_URL="$WP_HOST"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
@@ -17,11 +39,15 @@ forgejo_api() {
   curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
 }
 
+forgejo_oauth_api() {
+  curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "${FORGEJO_OAUTH_URL}/api/v1/$1" "${@:2}"
+}
+
 # ── Wait for both APIs ────────────────────────────────────────────────────────
 
 echo "Waiting for Woodpecker API..."
 for i in $(seq 1 30); do
-  if curl -fsSk "${WP_URL}/healthz" >/dev/null 2>&1; then
+  if curl -fsSk "${WP_INTERNAL_URL}/healthz" >/dev/null 2>&1; then
     echo "Woodpecker API is ready."
     break
   fi
@@ -42,7 +68,7 @@ done
 # Verify Forgejo can serve git operations (not just API)
 echo "Verifying Forgejo git readiness..."
 for i in $(seq 1 15); do
-  if GIT_SSL_NO_VERIFY=1 git ls-remote "https://${ADMIN_USER}:${ADMIN_PASS}@forgejo.dev.test/system/open-platform.git" HEAD >/dev/null 2>&1; then
+  if GIT_SSL_NO_VERIFY=1 git ls-remote "https://${ADMIN_USER}:${ADMIN_PASS}@$(echo "$FORGEJO_INTERNAL_URL" | sed 's|https://||')/system/open-platform.git" HEAD >/dev/null 2>&1; then
     echo "Forgejo git service is ready."
     break
   fi
@@ -61,19 +87,25 @@ WP_TOKEN=""
 WP_SESSION=""
 WP_CSRF=""
 
-# Check for existing API token
+# Check for existing API token and validate it
 if kubectl get secret woodpecker-api-token -n woodpecker -o jsonpath='{.data.token}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
-  WP_TOKEN=$(kubectl get secret woodpecker-api-token -n woodpecker -o jsonpath='{.data.token}' | base64 -d)
-  echo "Using existing Woodpecker API token."
+  SAVED_TOKEN=$(kubectl get secret woodpecker-api-token -n woodpecker -o jsonpath='{.data.token}' | base64 -d)
+  if curl -fsSk -H "Authorization: Bearer ${SAVED_TOKEN}" "${WP_INTERNAL_URL}/api/user" >/dev/null 2>&1; then
+    WP_TOKEN="$SAVED_TOKEN"
+    echo "Using existing Woodpecker API token (validated)."
+  else
+    echo "Saved Woodpecker API token is stale — will create a new one."
+  fi
 fi
 
 # Always establish a session (needed for repo activation which requires session+CSRF)
 echo "Logging into Woodpecker via Forgejo OAuth2..."
 
-# Step 1: Login to Forgejo (follow redirect to capture session cookie)
+# Step 1: Login to Forgejo at the OAuth domain (must match where Woodpecker redirects)
+echo "  Forgejo OAuth URL: ${FORGEJO_OAUTH_URL}"
 curl -sSk -c "${FORGEJO_COOKIES}" -L \
   -d "user_name=${ADMIN_USER}&password=${ADMIN_PASS}" \
-  -o /dev/null "${FORGEJO_URL}/user/login"
+  -o /dev/null "${FORGEJO_OAUTH_URL}/user/login"
 
 # Step 2: Start OAuth2 flow — get Forgejo authorize URL from Woodpecker redirect
 AUTHORIZE_URL=$(curl -sSk -b "${FORGEJO_COOKIES}" -o /dev/null -D - "${WP_URL}/authorize" 2>&1 \
@@ -115,7 +147,7 @@ else
     --data-urlencode "nonce=" \
     --data-urlencode "redirect_uri=${GRANT_REDIRECT}" \
     --data-urlencode "granted=true" \
-    -o /dev/null "${FORGEJO_URL}/login/oauth/grant"
+    -o /dev/null "${FORGEJO_OAUTH_URL}/login/oauth/grant"
 fi
 
 # Step 4: Extract session and CSRF
