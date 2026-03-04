@@ -19,10 +19,6 @@ server:
     enabled: true
     ingressClassName: traefik
     hosts:
-      - host: ci.dev.test
-        paths:
-          - path: /
-            pathType: Prefix
       - host: ci.product-garden.com
         paths:
           - path: /

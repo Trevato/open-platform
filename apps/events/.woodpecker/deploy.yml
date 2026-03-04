@@ -9,15 +9,24 @@ when:
     branch: main
 
 steps:
+  - name: typecheck
+    image: node:20-alpine
+    commands:
+      - npm install
+      - npm run typecheck
+
   - name: build
     image: woodpeckerci/plugin-kaniko
     settings:
-      registry: forgejo.dev.test
+      registry:
+        from_secret: registry_host
       repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
       tags:
         - "${CI_COMMIT_SHA:0:8}"
         - latest
       skip_tls_verify: true
+      cache: true
+      cache_repo: ${CI_REPO_OWNER}/cache
       username:
         from_secret: registry_username
       password:
@@ -52,7 +61,7 @@ steps:
           kubectl apply -f -
       - |
         kubectl create secret docker-registry forgejo-registry \
-          --docker-server=forgejo.dev.test \
+          --docker-server=forgejo.$PLATFORM_DOMAIN \
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
           -n $APP_NS --dry-run=client -o yaml | kubectl apply -f -
@@ -73,6 +82,8 @@ steps:
         from_secret: registry_username
       REGISTRY_TOKEN:
         from_secret: registry_token
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain
 
   - name: schema
     image: bitnami/kubectl:latest
@@ -88,6 +99,32 @@ steps:
             "GRANT ALL ON ALL TABLES IN SCHEMA public TO $DB_NAME; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $DB_NAME;"
         fi
 
+  - name: seed
+    image: bitnami/kubectl:latest
+    backend_options:
+      kubernetes:
+        serviceAccountName: woodpecker-pipeline
+    commands:
+      - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
+      - |
+        SEEDED=$(kubectl exec -n postgres postgres-1 -- psql -U postgres -d $DB_NAME -tAc \
+          "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_seed_marker'" 2>/dev/null || echo "0")
+        if [ "$SEEDED" != "1" ]; then
+          SEED_FILES=$(ls seed/sql/*.sql 2>/dev/null | sort)
+          if [ -n "$SEED_FILES" ]; then
+            echo "First deploy — seeding production data..."
+            kubectl exec -n postgres postgres-1 -- psql -U postgres -d $DB_NAME -c \
+              "CREATE TABLE IF NOT EXISTS _seed_marker (seeded_at TIMESTAMPTZ DEFAULT NOW()); INSERT INTO _seed_marker DEFAULT VALUES;"
+            for f in $SEED_FILES; do
+              echo "  Seeding: $f"
+              kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $DB_NAME < "$f"
+            done
+            echo "Seeding complete."
+          fi
+        else
+          echo "Already seeded — skipping."
+        fi
+
   - name: deploy
     image: bitnami/kubectl:latest
     backend_options:
@@ -96,7 +133,10 @@ steps:
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
       - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
-      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g" k8s/*.yaml
+      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - kubectl apply -f k8s/
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
+    environment:
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain

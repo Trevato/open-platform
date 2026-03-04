@@ -6,9 +6,10 @@ set -euo pipefail
 # Idempotent — skips resources that already exist.
 # Runs from deploy.sh after all services are stable.
 
-FORGEJO_INTERNAL_URL="https://forgejo.dev.test"
+DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
+FORGEJO_INTERNAL_URL="https://forgejo.${DOMAIN}"
 FORGEJO_API="${FORGEJO_INTERNAL_URL}/api/v1"
-WP_INTERNAL_URL="http://ci.dev.test"
+WP_INTERNAL_URL="https://ci.${DOMAIN}"
 
 # Woodpecker sets WOODPECKER_HOST and WOODPECKER_FORGEJO_URL for OAuth2 redirects.
 # The OAuth callback lands on WOODPECKER_HOST, so session cookies bind to that domain.
@@ -242,7 +243,7 @@ if [ -z "$ORG_ID" ]; then
   exit 0
 fi
 
-for SECRET_NAME in registry_username registry_token; do
+for SECRET_NAME in registry_username registry_token platform_domain registry_host; do
   EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
   if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
     echo "Org secret '${SECRET_NAME}' already exists."
@@ -252,6 +253,8 @@ for SECRET_NAME in registry_username registry_token; do
   case "$SECRET_NAME" in
     registry_username) VALUE="${ADMIN_USER}" ;;
     registry_token) VALUE="${ADMIN_PASS}" ;;
+    platform_domain) VALUE="${DOMAIN}" ;;
+    registry_host) VALUE="forgejo.${DOMAIN}" ;;
   esac
 
   wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \

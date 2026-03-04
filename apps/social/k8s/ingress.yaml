@@ -6,17 +6,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: PROJECT_NAME.dev.test
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: PROJECT_NAME
-                port:
-                  number: 80
-    - host: PROJECT_NAME.product-garden.com
+    - host: PROJECT_NAME.PLATFORM_DOMAIN
       http:
         paths:
           - path: /

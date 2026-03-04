@@ -27,19 +27,18 @@ mac-stop: ## Drain Mac and stop Colima (workloads move to VxRail)
 	./scripts/colima-stop.sh
 
 urls: ## Print service URLs
-	@echo "Local (*.dev.test):"
-	@echo "  Forgejo:    https://forgejo.dev.test"
-	@echo "  Woodpecker: https://ci.dev.test"
-	@echo "  Headlamp:   https://headlamp.dev.test"
-	@echo "  MinIO:      https://minio.dev.test"
-	@echo "  MinIO S3:   https://s3.dev.test"
-	@echo "  Social:     https://social.dev.test"
-	@echo "  Minecraft:  https://minecraft.dev.test"
-	@echo ""
-	@echo "Public (*.product-garden.com):"
+	@echo "Platform (*.product-garden.com):"
 	@echo "  Forgejo:    https://forgejo.product-garden.com"
 	@echo "  Woodpecker: https://ci.product-garden.com"
+	@echo "  Headlamp:   https://headlamp.product-garden.com"
+	@echo "  MinIO:      https://minio.product-garden.com"
+	@echo "  MinIO S3:   https://s3.product-garden.com"
+	@echo ""
+	@echo "Apps:"
+	@echo "  Hub:        https://hub.product-garden.com"
 	@echo "  Social:     https://social.product-garden.com"
+	@echo "  Arcade:     https://arcade.product-garden.com"
+	@echo "  Events:     https://events.product-garden.com"
 	@echo "  Minecraft:  https://minecraft.product-garden.com"
 
 help: ## Show this help

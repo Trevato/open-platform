@@ -38,7 +38,7 @@ spec:
         server:
           DOMAIN: forgejo.product-garden.com
           ROOT_URL: https://forgejo.product-garden.com
-          SSH_DOMAIN: forgejo.dev.test
+          SSH_DOMAIN: forgejo.product-garden.com
           SSH_PORT: 22
           SSH_LISTEN_PORT: 2222
           LFS_START_SERVER: true
@@ -60,16 +60,12 @@ spec:
         openid:
           ENABLE_OPENID_SIGNIN: true
         webhook:
-          ALLOWED_HOST_LIST: "*.dev.test,*.product-garden.com"
+          ALLOWED_HOST_LIST: "*.product-garden.com"
           SKIP_TLS_VERIFY: true
     ingress:
       enabled: true
       className: traefik
       hosts:
-        - host: forgejo.dev.test
-          paths:
-            - path: /
-              pathType: Prefix
         - host: forgejo.product-garden.com
           paths:
             - path: /

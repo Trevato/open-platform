@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Providers } from "@/app/components/providers";
+import "./globals.css";
 
 export const metadata: Metadata = {
   title: "PROJECT_NAME",

@@ -63,6 +63,17 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: op-system-hub
+  labels:
+    platform.dev.test/managed: "true"
+    platform.dev.test/org: "system"
+    platform.dev.test/repo: "hub"
+    platform.dev.test/tier: "workload"
+    platform.dev.test/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: op-system-arcade
   labels:
     platform.dev.test/managed: "true"
@@ -79,5 +90,27 @@ metadata:
     platform.dev.test/managed: "true"
     platform.dev.test/org: "system"
     platform.dev.test/repo: "events"
+    platform.dev.test/tier: "workload"
+    platform.dev.test/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-foundry-pulse
+  labels:
+    platform.dev.test/managed: "true"
+    platform.dev.test/org: "foundry"
+    platform.dev.test/repo: "pulse"
+    platform.dev.test/tier: "workload"
+    platform.dev.test/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-foundry-craft
+  labels:
+    platform.dev.test/managed: "true"
+    platform.dev.test/org: "foundry"
+    platform.dev.test/repo: "craft"
     platform.dev.test/tier: "workload"
     platform.dev.test/environment: "production"

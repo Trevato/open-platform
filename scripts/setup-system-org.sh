@@ -9,7 +9,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-FORGEJO_URL="https://forgejo.dev.test"
+DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
+FORGEJO_URL="https://forgejo.${DOMAIN}"
 API_URL="${FORGEJO_URL}/api/v1"
 CA_CERT="${ROOT_DIR}/certs/ca.crt"
 
@@ -24,7 +25,7 @@ api() {
 git_push() {
   local REPO_NAME="$1"
   local BRANCH="$2"
-  local REPO_URL="https://forgejo.dev.test/system/${REPO_NAME}.git"
+  local REPO_URL="https://forgejo.${DOMAIN}/system/${REPO_NAME}.git"
 
   GIT_SSL_CAINFO="${CA_CERT}" \
   GIT_ASKPASS="${SCRIPT_DIR}/.git-askpass" \
@@ -88,7 +89,7 @@ push_content() {
   git init -q
   git checkout -b main
   git add .
-  git -c user.name="Open Platform" -c user.email="system@dev.test" commit -q -m "Initial commit"
+  git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" commit -q -m "Initial commit"
   git_push "${REPO_NAME}" main
   cd "${ROOT_DIR}"
 
@@ -171,7 +172,7 @@ push_social() {
   rm -f src/app/components/post-body.tsx
 
   git add .
-  git -c user.name="Open Platform" -c user.email="system@dev.test" \
+  git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" \
     commit -q -m "social media app: posts feed, image uploads, forgejo auth"
   git_push social main
 
@@ -185,7 +186,7 @@ push_social() {
   cp "${SOURCE_DIR}/src/app/components/post-body.tsx" src/app/components/post-body.tsx
 
   git add .
-  git -c user.name="Open Platform" -c user.email="system@dev.test" \
+  git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" \
     commit -q -m "feat: render post bodies as markdown"
   git_push social feat/markdown-posts
 
@@ -231,5 +232,10 @@ push_content "arcade" "${ROOT_DIR}/apps/arcade"
 
 create_repo "events" "Event planning and RSVP platform"
 push_content "events" "${ROOT_DIR}/apps/events"
+
+# ── Create and push hub app ──────────────────────────────────────────────
+
+create_repo "hub" "Platform hub — activity feed, cross-app dashboard, user profiles"
+push_content "hub" "${ROOT_DIR}/apps/hub"
 
 echo "System org setup complete."

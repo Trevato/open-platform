@@ -5,19 +5,15 @@ Self-hosted developer platform running on k3s. VxRail (NixOS) serves as the cont
 ## Architecture
 
 ```
-                    ┌─── Cloudflare Tunnel ───► *.product-garden.com (public)
-                    │
-Browser ──► Traefik (ingress) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
-                    │           ├── ci ─────────► Woodpecker (CI/CD)
-                    │           ├── headlamp ───► Headlamp (K8s dashboard)
-                    │           ├── minio ──────► MinIO Console
-                    │           ├── s3 ─────────► MinIO S3 API
-                    │           ├── oauth2 ─────► OAuth2-Proxy (preview auth)
-                    │           ├── social ─────► Social App
-                    │           ├── minecraft ──► Minecraft App
-                    │           └── *.dev.test ─► Apps (from template)
-                    │
-                    └─── *.dev.test (local, self-signed TLS)
+Browser ──► Cloudflare Tunnel ──► Traefik (ingress) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
+              *.product-garden.com                     ├── ci ─────────► Woodpecker (CI/CD)
+                                                       ├── headlamp ───► Headlamp (K8s dashboard)
+                                                       ├── minio ──────► MinIO Console
+                                                       ├── s3 ─────────► MinIO S3 API
+                                                       ├── oauth2 ─────► OAuth2-Proxy (preview auth)
+                                                       ├── social ─────► Social App
+                                                       ├── minecraft ──► Minecraft App
+                                                       └── <app> ──────► Apps (from template)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -37,12 +33,14 @@ VxRail runs NixOS — k3s config, CA trust, `/etc/hosts`, and firewall rules are
 
 ### Domain Strategy
 
+All services use `*.product-garden.com` with real TLS via Cloudflare. The domain is configurable via the `PLATFORM_DOMAIN` env var (default: `product-garden.com`).
+
 | Domain | Scope | TLS | Routing |
 |--------|-------|-----|---------|
-| `*.product-garden.com` | Public (canonical) | Cloudflare edge TLS | Cloudflare Tunnel → Traefik |
-| `*.dev.test` | Local / in-cluster | Self-signed CA | Direct to Traefik (CoreDNS / /etc/hosts) |
+| `*.product-garden.com` | Production (default) | Cloudflare edge TLS | Cloudflare Tunnel → Traefik |
+| `*.dev.test` | Mac local development | Self-signed CA | Direct to Traefik (Colima) |
 
-Both domains resolve to the same services. `*.product-garden.com` is canonical — Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use it. OAuth flows redirect browsers to `forgejo.product-garden.com`. Server-side token exchange uses `forgejo.dev.test` internally (via CoreDNS) to avoid hairpinning through Cloudflare.
+Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use `https://<service>.product-garden.com`. In-cluster service-to-service communication uses Kubernetes DNS (e.g., `forgejo-http.forgejo.svc.cluster.local`) to avoid hairpinning through Cloudflare.
 
 ### Cloudflare Tunnel
 
@@ -51,6 +49,25 @@ Both domains resolve to the same services. `*.product-garden.com` is canonical �
 - **Routes**: `*.product-garden.com` → `http://traefik.kube-system.svc.cluster.local`
 - **Credentials**: `cloudflared-credentials` secret (created by `ensure-secrets.sh` from `.env`)
 - **Node affinity**: pinned to `otavert-vxrail` via nodeSelector
+
+### Configurable Domain (`PLATFORM_DOMAIN`)
+
+The platform domain is configurable, defaulting to `product-garden.com`:
+- **`.env`**: Set `PLATFORM_DOMAIN=product-garden.com` (or `dev.test` for local Mac development)
+- **Scripts**: Use `DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"` for domain-aware operations
+- **CI pipelines**: Read from Woodpecker org secret `platform_domain` (set by `setup-woodpecker-repos.sh`)
+- **K8s manifests**: Use `PLATFORM_DOMAIN` placeholder in ingress hosts, sed-replaced by deploy steps
+- **Org secrets**: `platform_domain` and `registry_host` propagate domain to all repos in the org
+
+### Preview Environments
+
+PR previews deploy at `pr-N-<app>.product-garden.com`, protected by OAuth2-Proxy (Forgejo login required):
+- **Namespace**: `op-{org}-{repo}-pr-{number}` (e.g., `op-system-social-pr-1`)
+- **Domain**: `pr-{number}-{repo}.product-garden.com` (e.g., `pr-1-social.product-garden.com`)
+- **Auth**: Traefik ForwardAuth middleware → OAuth2-Proxy → Forgejo OIDC
+- **Isolation**: Separate DB, S3 bucket, and namespace per PR
+- **Seed data**: Applied via `_seed_marker` pattern — checks for marker row before seeding to avoid duplicates on re-runs
+- **Cleanup**: `preview-cleanup.yml` deletes namespace (cascades all resources), DB, and bucket on PR close
 
 ### Two Deployment Models
 
@@ -62,43 +79,42 @@ Both domains resolve to the same services. `*.product-garden.com` is canonical �
 ### Forgejo (Git + Identity Provider)
 - **Config**: `platform/identity/forgejo.yaml` (Flux HelmRelease), `forgejo-values.yaml` (helmfile bootstrap)
 - **Namespace**: `forgejo`
-- **Domains**: `forgejo.product-garden.com` (canonical), `forgejo.dev.test` (local)
+- **Domain**: `forgejo.product-garden.com`
 - **Helm chart**: `oci://code.forgejo.org/forgejo-helm/forgejo` (version pinned via OCIRepository semver)
 - **Database**: PostgreSQL at `postgres-rw.postgres.svc.cluster.local:5432`, database `forgejo`
 - **Role**: Central identity provider. All other services authenticate through Forgejo OAuth2 applications.
 - **Canonical URL**: `ROOT_URL: https://forgejo.product-garden.com`. OIDC token `iss` claim uses this URL — all consumers must match.
 - **Secrets**: `forgejo-admin-credentials` (admin user), `forgejo-db-config` (database password) — both referenced as existing K8s secrets
 - **Features enabled**: OAuth2 provider, OpenID signin, package/container registry, LFS, organization creation
-- **Webhook hosts**: `ALLOWED_HOST_LIST: "*.dev.test,*.product-garden.com"`
+- **Webhook hosts**: `ALLOWED_HOST_LIST: "*.product-garden.com"`
 
 ### Headlamp (Kubernetes Dashboard)
 - **Config**: `platform/apps/headlamp.yaml` (Flux HelmRelease), `headlamp-values.yaml` (helmfile bootstrap)
 - **Namespace**: `headlamp`
-- **Domain**: `headlamp.dev.test`
+- **Domain**: `headlamp.product-garden.com`
 - **Helm chart**: `headlamp/headlamp`
 - **Auth**: OIDC via Forgejo using the chart's `externalSecret` pattern (Option 3). The `oidc` secret in the headlamp namespace is created by `scripts/setup-oauth2.sh` with keys: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`.
 - **OIDC issuer**: `https://forgejo.product-garden.com`
-- **Callback URL**: `https://headlamp.dev.test/oidc-callback`
-- **TLS skip**: `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY=true` env var skips TLS verification for the OIDC backchannel (required because of self-signed certs)
+- **Callback URL**: `https://headlamp.product-garden.com/oidc-callback`
 
 ### Woodpecker (CI/CD)
 - **Config**: `platform/apps/woodpecker.yaml` (Flux HelmRelease), `woodpecker-values.yaml` (helmfile bootstrap)
 - **Namespace**: `woodpecker`
-- **Domains**: `ci.product-garden.com` (canonical, `WOODPECKER_HOST`), `ci.dev.test` (local)
+- **Domain**: `ci.product-garden.com` (`WOODPECKER_HOST`)
 - **Helm chart**: `woodpecker/woodpecker`
-- **Auth**: Forgejo OAuth2 integration. Redirect URI: `http://ci.dev.test/authorize`
+- **Auth**: Forgejo OAuth2 integration. Redirect URI: `https://ci.product-garden.com/authorize`
 - **Backend**: Kubernetes-native (pipelines run as pods)
-- **Forgejo URL**: `WOODPECKER_FORGEJO_URL: "https://forgejo.dev.test"` (server-side, stays internal)
+- **Forgejo URL**: `WOODPECKER_FORGEJO_URL: "https://forgejo.product-garden.com"`
 - **Secrets**: `woodpecker-secrets` — contains `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`. Loaded via `extraSecretNamesForEnvFrom`.
 - **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, configmaps, pods, ingresses, jobs, namespaces, and pods/exec. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
-- **Image builds**: Uses Kaniko (woodpeckerci/plugin-kaniko) — works in K8s backend without Docker daemon. `skip_tls_verify: true` for self-signed Forgejo registry.
+- **Image builds**: Uses Kaniko (woodpeckerci/plugin-kaniko) — works in K8s backend without Docker daemon. Kaniko cache enabled for faster rebuilds.
 - **Auto-setup**: `scripts/setup-woodpecker-repos.sh` programmatically logs into Woodpecker via the Forgejo→Woodpecker OAuth2 flow (curl-based), activates repos, and creates org-level secrets. No manual UI steps required.
-- **Org secrets**: `registry_username` and `registry_token` are set at the `system` org level — inherited by all repos in the org automatically. New repos from the template get CI credentials without per-repo setup.
+- **Org secrets**: `registry_username`, `registry_token`, `platform_domain`, and `registry_host` are set at the `system` org level — inherited by all repos in the org automatically. New repos from the template get CI credentials and domain config without per-repo setup.
 
 ### MinIO (Object Storage)
 - **Config**: `platform/infrastructure/configs/minio.yaml` (Flux HelmRelease), `minio-values.yaml` (helmfile bootstrap)
 - **Namespace**: `minio`
-- **Domains**: `minio.dev.test` (console), `s3.dev.test` (S3 API)
+- **Domains**: `minio.product-garden.com` (console), `s3.product-garden.com` (S3 API)
 - **Helm chart**: `minio/minio`
 - **Mode**: standalone, 20Gi storage
 - **Secrets**: `minio-credentials` (rootUser, rootPassword)
@@ -115,24 +131,23 @@ Both domains resolve to the same services. `*.product-garden.com` is canonical �
 ### OAuth2-Proxy (Preview Auth)
 - **Config**: `platform/apps/oauth2-proxy.yaml` (Flux HelmRelease), inline values in `helmfile.yaml` (bootstrap)
 - **Namespace**: `oauth2-proxy`
-- **Domain**: `oauth2.dev.test`
+- **Domain**: `oauth2.product-garden.com`
 - **Helm chart**: `oauth2-proxy/oauth2-proxy`
 - **Provider**: OIDC with Forgejo as issuer (`https://forgejo.product-garden.com`)
 - **Role**: Protects preview environments. Traefik ForwardAuth middleware redirects unauthenticated users to Forgejo login before accessing PR preview deployments.
 - **Upstream**: `static://200` — Traefik handles proxying, oauth2-proxy only validates auth
-- **Cookie domains**: `.dev.test`, `.product-garden.com` — allows SSO across both domains
-- **Whitelist domains**: `.dev.test`, `.product-garden.com`
+- **Cookie domain**: `.product-garden.com`
+- **Whitelist domain**: `.product-garden.com`
 - **Secrets**: `oauth2-proxy-secrets` (oauth2-proxy ns) — `client-id`, `client-secret`, `cookie-secret`. Created by `scripts/setup-oauth2.sh` (OAuth2 creds) and `scripts/ensure-secrets.sh` (cookie secret bootstrap).
 - **Traefik Middleware**: `oauth2-proxy-auth` in oauth2-proxy namespace — ForwardAuth CRD pointing to `http://oauth2-proxy.oauth2-proxy.svc:4180/oauth2/auth`. Preview ingresses reference: `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd`
-- **TLS**: `ssl_insecure_skip_verify = true` for self-signed Forgejo
+- **TLS**: Real TLS via Cloudflare (no skip-verify needed in production)
 
 ### Flux (GitOps)
 - **Config**: `helmfile.yaml` (bootstrap), `scripts/setup-flux.sh` (bootstrap resources)
 - **Namespace**: `flux-system`
 - **Helm chart**: `fluxcd-community/flux2`
 - **Role**: Watches `system/open-platform` on Forgejo, reconciles all platform HelmReleases and manifests
-- **Secrets**: `forgejo-auth` in flux-system — admin credentials + CA cert for Forgejo git access
-- **Self-signed CA**: Referenced via `secretRef` in GitRepository spec
+- **Secrets**: `forgejo-auth` in flux-system — admin credentials for Forgejo git access
 
 ## System Org
 
@@ -235,7 +250,7 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 ### App Template (`templates/app/`)
 | Path | Contents |
 |------|----------|
-| `src/auth.ts` | Forgejo OAuth2 via better-auth + genericOAuth plugin (split URL pattern) |
+| `src/auth.ts` | Forgejo OAuth2 via better-auth + genericOAuth plugin |
 | `src/lib/auth-client.ts` | Client-side auth (createAuthClient + genericOAuthClient) |
 | `src/app/api/auth/[...all]/route.ts` | better-auth route handler via toNextJsHandler |
 | `src/app/components/sign-in-button.tsx` | SignInButton + SignOutButton client components |
@@ -248,17 +263,16 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 | `next.config.js` | `output: "standalone"` |
 | `schema.sql` | Declarative DB schema — better-auth tables (user, session, account, verification) + app tables |
 | `seed/` | SQL seed files + S3 seed data (applied in preview envs) |
-| `k8s/` | Deployment (DB, S3, auth env vars), Service, Ingress (dual-domain) |
-| `.woodpecker/deploy.yml` | Main branch: Kaniko build → provision → schema → deploy |
-| `.woodpecker/preview.yml` | PR: build → provision → schema → seed → deploy preview → PR comment |
+| `k8s/` | Deployment (DB, S3, auth env vars), Service, Ingress (`PLATFORM_DOMAIN` placeholder) |
+| `.woodpecker/deploy.yml` | Main branch: Kaniko build → provision → schema → typecheck → deploy |
+| `.woodpecker/preview.yml` | PR: build → provision → schema → seed (`_seed_marker` pattern) → typecheck → deploy preview → PR comment |
 | `.woodpecker/preview-cleanup.yml` | PR close: delete preview resources, DB, bucket |
 | `.woodpecker/reset.yml` | Manual: wipe and re-seed preview data |
 | `PLATFORM.md` | Platform conventions, env vars, setup guide |
 
 ### Auth URL Pattern (Apps)
-Apps use a split URL pattern for Forgejo OAuth2:
-- `AUTH_FORGEJO_URL` (`https://forgejo.product-garden.com`) — browser-facing. Used for `authorizationUrl` (where the browser redirects to login).
-- `AUTH_FORGEJO_INTERNAL_URL` (`https://forgejo.dev.test`) — server-side. Used for `tokenUrl` and `userInfoUrl` (pod-to-pod via CoreDNS, avoids Cloudflare hairpin).
+Apps use Forgejo OAuth2 via better-auth:
+- `AUTH_FORGEJO_URL` (`https://forgejo.product-garden.com`) — used for both browser-facing `authorizationUrl` and server-side `tokenUrl`/`userInfoUrl`.
 - `BETTER_AUTH_URL` (`https://<app>.product-garden.com`) — canonical app URL for callbacks.
 
 ### Social App (`apps/social/`)
@@ -289,6 +303,7 @@ Generated from the app template. Namespaces and deployment manifests ready. Not 
 ### Environment Variables (`.env`)
 | Variable | Purpose |
 |----------|---------|
+| `PLATFORM_DOMAIN` | Platform domain (default: `product-garden.com`) |
 | `FORGEJO_ADMIN_USER` | Forgejo admin username |
 | `FORGEJO_ADMIN_PASSWORD` | Forgejo admin password |
 | `FORGEJO_DB_PASSWORD` | Forgejo PostgreSQL password |
@@ -312,7 +327,6 @@ Created by `scripts/ensure-secrets.sh` (runs as traefik presync hook):
 - `woodpecker-secrets` (woodpecker ns) — WOODPECKER_AGENT_SECRET (preserves OAuth2 fields if they exist)
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — cookie-secret (auto-generated if not set)
 - `cloudflared-credentials` (cloudflare ns) — tunnel credentials JSON (from CLOUDFLARE_* vars, optional)
-- `platform-ca` configmap (kube-system ns) — CA cert from `certs/ca.crt` for app TLS verification
 
 ### OAuth2 Secrets (auto-generated)
 Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
@@ -324,7 +338,7 @@ Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
 
 ### Flux Secrets
 Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
-- `forgejo-auth` (flux-system ns) — admin username, password, CA cert for git access
+- `forgejo-auth` (flux-system ns) — admin username, password for git access
 
 ### Scripts
 | Script | Trigger | Purpose |
@@ -342,14 +356,10 @@ All scripts are idempotent — safe to run on every `make deploy`.
 
 ## TLS Setup
 
-- Self-signed CA: `certs/ca.crt` (issuer: "OpenPlatform Local CA", valid 10 years)
-- Wildcard cert: `certs/wildcard.crt` for `*.dev.test`, `dev.test`, `*.product-garden.com`, `product-garden.com`
-- Private keys (`certs/*.key`) are gitignored
-- The CA cert must be trusted by k3s on the server node for OIDC token validation
-  - **VxRail**: deployed via NixOS `security.pki.certificateFiles` or manual placement at `/usr/local/share/ca-certificates/openplatform.crt`
-  - **Colima**: `colima-start.sh` copies CA to `/etc/docker/certs.d/forgejo.dev.test/ca.crt`
-- Browsers need the CA trusted to avoid certificate warnings on `*.dev.test`
-- Flux source-controller uses the CA cert from `forgejo-auth` secret to access Forgejo over HTTPS
+Production uses real TLS via Cloudflare edge certificates. No self-signed CA or skip-verify flags needed.
+
+- **Production** (`*.product-garden.com`): Cloudflare handles TLS termination at the edge. Traefik receives plain HTTP from the Cloudflare Tunnel.
+- **Local Mac development** (`*.dev.test`): Self-signed CA at `certs/ca.crt` (issuer: "OpenPlatform Local CA", valid 10 years). Wildcard cert at `certs/wildcard.crt`. Private keys (`certs/*.key`) are gitignored. Browsers and Colima need the CA trusted. `colima-start.sh` copies CA to `/etc/docker/certs.d/forgejo.dev.test/ca.crt`.
 
 ## k3s API Server OIDC Configuration
 
@@ -381,28 +391,23 @@ Located inside the Colima VM at `/etc/rancher/k3s/config.yaml`. Updated by `scri
 
 - **Headlamp chart OIDC secret** — uses the `externalSecret` pattern (Option 3 in the chart). All OIDC values come from the K8s secret via `envFrom`. Keys must be uppercase with underscores (`OIDC_CLIENT_ID`, not `clientID`). The chart's Option 1 (`secret.create: false` with `secret.name`) does NOT inject client credentials.
 - **Headlamp callback path** — `/oidc-callback` (not `/oidc/callback`). The redirect URI in the Forgejo OAuth2 app must match exactly.
-- **Headlamp "failed to append ca cert to pool" log** — cosmetic bug. Fires when no `--oidc-ca-file` is set. The TLS skip transport handles it. Harmless.
 - **Headlamp OIDC scopes** — must be comma-separated (`"openid,profile,email,groups"`), not space-separated.
-- **Woodpecker redirect URI** — `http://ci.dev.test/authorize` (HTTP, not HTTPS).
-- **Woodpecker image builds** — must use Kaniko (not docker-buildx) with the K8s backend. `skip_tls_verify: true` for self-signed Forgejo container registry.
+- **Woodpecker redirect URI** — `https://ci.product-garden.com/authorize`.
+- **Woodpecker image builds** — must use Kaniko (not docker-buildx) with the K8s backend. Kaniko cache enabled for faster rebuilds.
 - **Forgejo SSH** — listens on port 2222 internally, exposed on port 22 via ingress/service.
-- **Forgejo container registry** — images at `forgejo.dev.test/<owner>/<image>:<tag>`. Admin password works for registry auth; PATs may fail on the v2 token endpoint.
-- **Forgejo webhook `ALLOWED_HOST_LIST`** — default blocks outgoing webhooks to external IPs. Set to `"*.dev.test,*.product-garden.com"`.
+- **Forgejo container registry** — images at `forgejo.product-garden.com/<owner>/<image>:<tag>`. Admin password works for registry auth; PATs may fail on the v2 token endpoint.
+- **Forgejo webhook `ALLOWED_HOST_LIST`** — default blocks outgoing webhooks to external IPs. Set to `"*.product-garden.com"`.
 - **Forgejo PATCH regenerates client_secret** — updating OAuth2 app redirect URIs regenerates the secret. `setup-oauth2.sh` handles this by updating K8s secrets while preserving `BETTER_AUTH_SECRET`.
 - **Kaniko `repo` value** — must NOT include the registry hostname (it's prepended from `registry` setting). Use `repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}`.
-- **Custom clone step** — default Woodpecker clone fails with self-signed certs. All workflows use `clone: [{name: clone, image: woodpeckerci/plugin-git, settings: {skip_verify: true}}]`.
-- **Woodpecker TLS** — `WOODPECKER_FORGEJO_SKIP_VERIFY: "true"` required for server→Forgejo API communication with self-signed certs.
 - **CNPG peer auth** — only `postgres` user can use local socket auth. Schema runs as postgres superuser, then GRANT ALL ON ALL TABLES/SEQUENCES to the app user.
 - **CREATE DATABASE requires separate psql -c calls** — semicolons in a single `-c` run in a transaction block, but CREATE DATABASE can't run in a transaction. Split into separate kubectl exec calls.
 - **kubectl run with --overrides** — don't combine `-- sh -c "..."` args with `--overrides` JSON that specifies `command/args`. Use overrides-only for minio/mc pods.
 - **better-auth sign-in is POST** — `/api/auth/sign-in/oauth2` returns `{"url":"...","redirect":true}` JSON. Must use client-side `authClient.signIn.oauth2()`, not `<a href>` links.
 - **better-auth callback URL** — `/api/auth/oauth2/callback/{providerId}` (e.g., `/api/auth/oauth2/callback/forgejo`).
-- **better-auth env vars** — `BETTER_AUTH_SECRET` (session encryption), `BETTER_AUTH_URL` (public app URL), `AUTH_FORGEJO_URL` (browser-facing Forgejo), `AUTH_FORGEJO_INTERNAL_URL` (server-side Forgejo).
+- **better-auth env vars** — `BETTER_AUTH_SECRET` (session encryption), `BETTER_AUTH_URL` (public app URL), `AUTH_FORGEJO_URL` (Forgejo URL for OAuth2).
 - **better-auth DB tables** — `user`, `session`, `account`, `verification` with camelCase quoted column names. Must exist before app starts (created via schema.sql in CI).
-- **platform-ca configmap** — Created in `kube-system` during bootstrap from `certs/ca.crt`. CI provisioning copies it to app namespaces. Mounted at `/etc/ssl/custom/ca.crt`, referenced by `NODE_EXTRA_CA_CERTS`. Required for Node.js to verify Forgejo's self-signed TLS during OAuth flows.
-- **Docker registry in k3s (Colima)** — Colima uses Docker runtime. Add CA cert to `/etc/docker/certs.d/forgejo.dev.test/ca.crt` inside VM. Also create `/etc/rancher/k3s/registries.yaml` with `insecure_skip_verify: true`. Restart both docker and k3s.
 - **Helmfile global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
-- **OAuth2-Proxy redirect** — callback at `https://oauth2.dev.test/oauth2/callback`. Cookie domain covers both `.dev.test` and `.product-garden.com`.
+- **OAuth2-Proxy redirect** — callback at `https://oauth2.product-garden.com/oauth2/callback`. Cookie domain: `.product-garden.com`.
 - **Preview auth annotation** — preview ingresses use `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd` to trigger ForwardAuth.
 - **Flux + helmfile coexistence** — helmfile bootstraps releases, Flux adopts them via matching HelmReleases. Flux's helm-controller runs `helm upgrade --install` — if values match, it's a no-op. After bootstrap, Flux owns the releases. Bootstrap ↔ Flux values MUST stay in sync or Flux thrashes config on every reconciliation.
 - **Git credential security** — `setup-system-org.sh` uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
@@ -416,6 +421,78 @@ Located inside the Colima VM at `/etc/rancher/k3s/config.yaml`. Updated by `scri
 - **App templates**: in `templates/` directory, pushed to `system/template` on Forgejo
 - **K8s manifests**: in `manifests/` directory (bootstrap), duplicated in `platform/` (Flux)
 - **Automation scripts**: in `scripts/` directory
-- **Domain convention**: `<service>.product-garden.com` (canonical), `<service>.dev.test` (local)
+- **Domain convention**: `<service>.product-garden.com` (configurable via `PLATFORM_DOMAIN` env var)
 - **Deployment**: helmfile bootstraps, Flux manages ongoing; Makefile provides workflow targets
 - **CI/CD**: Woodpecker with `.woodpecker/` directory (deploy.yml for main, preview.yml for PRs, preview-cleanup.yml for PR close, reset.yml for manual data reset). Template changes must be synced to all apps.
+
+## Multi-Agent Development Workflow
+
+Documented from the Foundry experiment: 6 agents (nova, orbit, nebula, atlas, prism, forge) across 2 teams building 2 apps in parallel using real Forgejo workflows.
+
+### Organization Pattern
+- **Org**: `foundry` with a `developers` team (write access, `includes_all_repositories: true`)
+- **Repos**: `foundry/pulse` (discussion platform), `foundry/craft` (code snippet sharing)
+- **Users**: One Forgejo account per agent (e.g., `nova` / `novaPass1234`). Avoids `!` in passwords (JSON escape issues).
+- **Project board**: "Foundry v1" — Forgejo projects are web UI only (no API), created via Playwright
+- **Labels**: `feature`, `bug`, `foundation`, `ui`, `integration`, `priority:high`, `priority:medium`
+- **Milestones**: `v1.0 — Foundation`, `v1.1 — Features`, `v2.0 — Integration`
+
+### Team Structure
+Each app has 3 agents with distinct roles:
+1. **Foundation agent** (nova/atlas): Schema + API routes. Works first, others depend on output.
+2. **Pages agent** (orbit/prism): Server components, layouts, core UI pages.
+3. **Interactions agent** (nebula/forge): Client components, forms, supplementary endpoints.
+
+### Development Phases
+- **Phase 1**: Foundation agents build API routes (2 agents in parallel, one per app)
+- **Phase 2**: Feature agents build UI (4 agents in parallel, 2 per app)
+- **Phase 3**: Polish + cross-app features (6 agents in parallel, one issue each)
+- **Phase 4+**: Integration, new features, perpetual iteration
+
+### Agent Workflow (per agent)
+1. Clone repo from Forgejo (admin credentials via `GIT_ASKPASS`, `GIT_SSL_NO_VERIFY=1`)
+2. Create feature branch from main
+3. Read existing code to understand patterns
+4. Implement changes (only NEW files where possible to avoid merge conflicts)
+5. Commit with agent identity (`git -c user.name="nova" -c user.email="nova@foundry.dev"`)
+6. Push branch, create PR via Forgejo API (using agent's own credentials)
+7. Comment on assigned issues with PR reference
+
+### Manager Responsibilities
+- Create issues with detailed specs and clear file boundaries
+- Review PRs (approve via API)
+- Merge PRs in correct dependency order (foundation → pages → interactions)
+- Monitor Woodpecker pipelines between phases
+- Move project board items
+- Create new issues/milestones as work completes
+
+### Conflict Avoidance Strategy
+Each agent works on **non-overlapping files**. Within the same phase:
+- Foundation agent: `src/app/api/**` (API routes only)
+- Pages agent: `src/app/page.tsx`, `src/app/*/page.tsx`, `src/app/components/{page-components}.tsx`, `src/app/layout.tsx`
+- Interactions agent: `src/app/{feature}/page.tsx` (NEW pages only), `src/app/api/{supplementary}/route.ts`, `src/app/components/{form-components}.tsx`
+
+### Key Learnings
+- **File isolation is critical**: Agents working on different files = clean merges. Same file = merge conflicts.
+- **Foundation-first ordering**: API routes must merge before UI agents start, so pages can call real endpoints.
+- **Wait for pipelines**: Always verify deploy pipeline succeeds before launching dependent agents.
+- **Sculptor agents work well**: Each agent cloned, read existing code, implemented, and pushed autonomously.
+- **PR merge ordering matters**: Within a phase, merge the "broader" PR first (pages before interactions) to minimize conflicts.
+- **Forgejo team creation needs `units`**: `POST /api/v1/orgs/{org}/teams` requires `"units": ["repo.code", "repo.issues", "repo.pulls", ...]` — omitting it returns "units permission should not be empty".
+- **Woodpecker pipeline trigger uses numeric repo ID**: `POST /api/repos/{id}/pipelines` (not `owner/repo` path). Bearer token returns HTML for name-based paths.
+- **Woodpecker API token scope**: GET requests work with Bearer token on any URL. POST requires the public domain (WOODPECKER_HOST) or numeric repo ID on internal URL.
+- **6 agents × 3 phases = 14 PRs merged**: Each PR took ~2-5 minutes of agent work plus ~4 minutes of CI pipeline time.
+- **Total pipeline count**: ~20 pipelines per repo across the experiment (push events, PR events, manual triggers).
+
+### Forgejo Org Setup Checklist
+1. Create user accounts (one per agent)
+2. Create org
+3. Create team with `units` + `includes_all_repositories: true`
+4. Add all agents to team
+5. Create repos, push scaffolds with app-specific schemas
+6. Create OAuth2 apps + K8s auth secrets per app
+7. Copy minio-credentials, forgejo-registry to app namespaces
+8. Activate repos in Woodpecker, create org CI secrets
+9. Trigger initial deploy pipelines
+10. Create labels, milestones, issues
+11. Create project board via Playwright

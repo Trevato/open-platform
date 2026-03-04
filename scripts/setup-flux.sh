@@ -9,6 +9,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CA_CERT="${ROOT_DIR}/certs/ca.crt"
+DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
@@ -32,7 +33,7 @@ EOF
 
 echo "Creating Flux GitRepository for system/open-platform..."
 
-kubectl apply -f - <<'EOF'
+kubectl apply -f - <<EOF
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
 metadata:
@@ -40,7 +41,7 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1m
-  url: https://forgejo.dev.test/system/open-platform.git
+  url: https://forgejo.${DOMAIN}/system/open-platform.git
   ref:
     branch: main
   secretRef:

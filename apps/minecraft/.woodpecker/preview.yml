@@ -8,14 +8,23 @@ when:
   - event: pull_request
 
 steps:
+  - name: typecheck
+    image: node:20-alpine
+    commands:
+      - npm install
+      - npm run typecheck
+
   - name: build
     image: woodpeckerci/plugin-kaniko
     settings:
-      registry: forgejo.dev.test
+      registry:
+        from_secret: registry_host
       repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
       tags:
         - "pr-${CI_COMMIT_PULL_REQUEST}"
       skip_tls_verify: true
+      cache: true
+      cache_repo: ${CI_REPO_OWNER}/cache
       username:
         from_secret: registry_username
       password:
@@ -31,6 +40,8 @@ steps:
         from_secret: registry_username
       REGISTRY_TOKEN:
         from_secret: registry_token
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain
     commands:
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
@@ -62,7 +73,7 @@ steps:
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         kubectl get secret forgejo-registry -n $$PREVIEW_NS 2>/dev/null || \
           kubectl create secret docker-registry forgejo-registry \
-          --docker-server=forgejo.dev.test \
+          --docker-server=forgejo.$PLATFORM_DOMAIN \
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
           -n $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
@@ -92,9 +103,9 @@ steps:
         else
           FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
           FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
-          REDIRECT_URI="https://$$PREVIEW_NAME.dev.test/api/auth/oauth2/callback/forgejo"
+          REDIRECT_URI="https://$$PREVIEW_NAME.$PLATFORM_DOMAIN/api/auth/oauth2/callback/forgejo"
           RESPONSE=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
-            -X POST "https://forgejo.dev.test/api/v1/user/applications/oauth2" \
+            -X POST "https://forgejo.$PLATFORM_DOMAIN/api/v1/user/applications/oauth2" \
             -H "Content-Type: application/json" \
             -d "{\"name\": \"$$PREVIEW_NAME\", \"redirect_uris\": [\"$$REDIRECT_URI\"], \"confidential_client\": false}")
           CLIENT_ID=$(echo "$$RESPONSE" | grep -o '"client_id":"[^"]*"' | head -1 | cut -d'"' -f4)
@@ -156,6 +167,9 @@ steps:
     backend_options:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
+    environment:
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain
     commands:
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
@@ -185,7 +199,7 @@ steps:
                 - name: forgejo-registry
               containers:
                 - name: app
-                  image: forgejo.dev.test/${CI_REPO_OWNER}/${CI_REPO_NAME}:pr-${CI_COMMIT_PULL_REQUEST}
+                  image: forgejo.$PLATFORM_DOMAIN/${CI_REPO_OWNER}/${CI_REPO_NAME}:pr-${CI_COMMIT_PULL_REQUEST}
                   ports:
                     - containerPort: 3000
                   env:
@@ -194,7 +208,7 @@ steps:
                     - name: S3_ENDPOINT
                       value: "http://minio.minio.svc:9000"
                     - name: S3_PUBLIC_URL
-                      value: "https://s3.dev.test"
+                      value: "https://s3.$PLATFORM_DOMAIN"
                     - name: S3_BUCKET
                       value: "$$PREVIEW_BUCKET"
                     - name: S3_ACCESS_KEY
@@ -226,7 +240,13 @@ steps:
                           key: client-secret
                           optional: true
                     - name: BETTER_AUTH_URL
-                      value: "https://$$PREVIEW_NAME.dev.test"
+                      value: "https://$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+                    - name: BETTER_AUTH_TRUSTED_ORIGINS
+                      value: "https://$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+                    - name: AUTH_FORGEJO_URL
+                      value: "https://forgejo.$PLATFORM_DOMAIN"
+                    - name: AUTH_FORGEJO_INTERNAL_URL
+                      value: "https://forgejo.$PLATFORM_DOMAIN"
                     - name: NODE_EXTRA_CA_CERTS
                       value: "/etc/ssl/custom/ca.crt"
                     - name: MINECRAFT_NAMESPACE
@@ -269,7 +289,7 @@ steps:
         spec:
           ingressClassName: traefik
           rules:
-            - host: $$PREVIEW_NAME.dev.test
+            - host: $$PREVIEW_NAME.$PLATFORM_DOMAIN
               http:
                 paths:
                   - path: /
@@ -290,6 +310,9 @@ steps:
     backend_options:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
+    environment:
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain
     commands:
       - |
         export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
@@ -298,5 +321,5 @@ steps:
         curl -sk -X POST \
           -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
           -H "Content-Type: application/json" \
-          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_NAME.dev.test\"}" \
-          "https://forgejo.dev.test/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"
+          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_NAME.$PLATFORM_DOMAIN\"}" \
+          "https://forgejo.$PLATFORM_DOMAIN/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"

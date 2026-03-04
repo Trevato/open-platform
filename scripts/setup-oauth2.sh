@@ -5,18 +5,19 @@ set -euo pipefail
 # Idempotent — skips apps that already exist, uses kubectl apply for secrets.
 # Runs as a forgejo postsync hook after the pod is ready.
 
-FORGEJO_URL="https://forgejo.dev.test"
-FORGEJO_PUBLIC_URL="https://forgejo.product-garden.com"
+DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
+FORGEJO_URL="https://forgejo.${DOMAIN}"
 API_URL="${FORGEJO_URL}/api/v1"
 
 OAUTH2_APPS=(
-  "Headlamp|https://headlamp.dev.test/oidc-callback|true"
-  "Woodpecker|http://ci.dev.test/authorize,https://ci.product-garden.com/authorize|true"
-  "OAuth2-Proxy|https://oauth2.dev.test/oauth2/callback|true"
-  "Social|https://social.dev.test/api/auth/oauth2/callback/forgejo,https://social.product-garden.com/api/auth/oauth2/callback/forgejo|false"
-  "Minecraft|https://minecraft.dev.test/api/auth/oauth2/callback/forgejo,https://minecraft.product-garden.com/api/auth/oauth2/callback/forgejo|false"
-  "Arcade|https://arcade.dev.test/api/auth/oauth2/callback/forgejo,https://arcade.product-garden.com/api/auth/oauth2/callback/forgejo|false"
-  "Events|https://events.dev.test/api/auth/oauth2/callback/forgejo,https://events.product-garden.com/api/auth/oauth2/callback/forgejo|false"
+  "Headlamp|https://headlamp.${DOMAIN}/oidc-callback|true"
+  "Woodpecker|https://ci.${DOMAIN}/authorize|true"
+  "OAuth2-Proxy|https://oauth2.${DOMAIN}/oauth2/callback|true"
+  "Social|https://social.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Minecraft|https://minecraft.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Arcade|https://arcade.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Events|https://events.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Hub|https://hub.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -112,9 +113,9 @@ if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
   apply_secret oidc -n headlamp \
     --from-literal=OIDC_CLIENT_ID="${CLIENT_IDS[Headlamp]}" \
     --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
-    --from-literal=OIDC_ISSUER_URL="${FORGEJO_PUBLIC_URL}" \
+    --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
     --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
-    --from-literal=OIDC_CALLBACK_URL="https://headlamp.dev.test/oidc-callback"
+    --from-literal=OIDC_CALLBACK_URL="https://headlamp.${DOMAIN}/oidc-callback"
 else
   # Verify the secret exists (from a previous run)
   if ! kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
@@ -199,5 +200,6 @@ create_app_auth_secret "Social" "social-auth" "op-system-social"
 create_app_auth_secret "Minecraft" "minecraft-auth" "op-system-minecraft"
 create_app_auth_secret "Arcade" "arcade-auth" "op-system-arcade"
 create_app_auth_secret "Events" "events-auth" "op-system-events"
+create_app_auth_secret "Hub" "hub-auth" "op-system-hub"
 
 echo "OAuth2 setup complete."

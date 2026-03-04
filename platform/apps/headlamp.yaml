@@ -38,7 +38,7 @@ spec:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - host: headlamp.dev.test
+        - host: headlamp.product-garden.com
           paths:
             - path: /
               type: ImplementationSpecific
