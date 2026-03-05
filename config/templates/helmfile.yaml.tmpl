@@ -1,0 +1,192 @@
+repositories:
+  - name: traefik
+    url: https://traefik.github.io/charts
+  - name: cnpg
+    url: https://cloudnative-pg.github.io/charts
+  - name: minio
+    url: https://charts.min.io/
+  - name: headlamp
+    url: https://kubernetes-sigs.github.io/headlamp/
+  - name: woodpecker
+    url: https://woodpecker-ci.org/
+  - name: oauth2-proxy
+    url: https://oauth2-proxy.github.io/manifests
+  - name: jetstack
+    url: https://charts.jetstack.io
+  - name: fluxcd-community
+    url: https://fluxcd-community.github.io/helm-charts
+
+helmDefaults:
+  wait: true
+  timeout: 300
+  createNamespace: true
+
+releases:
+  # ─── Layer 0: Infrastructure ───────────────────────────────────────────
+
+  - name: traefik
+    namespace: kube-system
+    chart: traefik/traefik
+    values:
+      - traefik-values.yaml
+    labels:
+      tier: infra
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            kubectl apply -f manifests/namespaces.yaml
+            ./scripts/ensure-secrets.sh
+            if [ -f certs/wildcard.crt ] && [ -f certs/wildcard.key ]; then
+              kubectl create secret tls wildcard-tls \
+                --cert=certs/wildcard.crt \
+                --key=certs/wildcard.key \
+                -n kube-system \
+                --dry-run=client -o yaml | kubectl apply -f -
+            fi
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            if [ -f certs/wildcard.crt ]; then
+              kubectl apply -f manifests/traefik-tls.yaml
+            fi
+            # CoreDNS custom zone: resolve *.DOMAIN to Traefik inside the cluster
+            ./scripts/setup-coredns.sh
+
+  - name: cnpg
+    namespace: cnpg-system
+    chart: cnpg/cloudnative-pg
+    labels:
+      tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            echo "Waiting for CNPG operator to be ready..."
+            kubectl wait --for=condition=available deployment/cnpg-cloudnative-pg \
+              -n cnpg-system --timeout=120s
+            kubectl apply -f manifests/postgres-cluster.yaml
+
+  # BEGIN cert-manager
+  - name: cert-manager
+    namespace: cert-manager
+    chart: jetstack/cert-manager
+    labels:
+      tier: infra
+    values:
+      - crds:
+          enabled: true
+  # END cert-manager
+
+  # ─── Layer 1: Storage ──────────────────────────────────────────────────
+
+  - name: minio
+    namespace: minio
+    chart: minio/minio
+    values:
+      - minio-values.yaml
+    needs:
+      - kube-system/traefik
+    labels:
+      tier: infra
+
+  # ─── Layer 2: Identity ─────────────────────────────────────────────────
+
+  - name: forgejo
+    namespace: forgejo
+    chart: oci://code.forgejo.org/forgejo-helm/forgejo
+    version: 16.2.0
+    values:
+      - forgejo-values.yaml
+    needs:
+      - cnpg-system/cnpg
+    labels:
+      tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - "kubectl apply -f manifests/oidc-rbac.yaml && ./scripts/setup-oauth2.sh && ./scripts/setup-system-org.sh"
+
+  # ─── Layer 3: Consumers ────────────────────────────────────────────────
+
+  - name: headlamp
+    namespace: headlamp
+    chart: headlamp/headlamp
+    values:
+      - headlamp-values.yaml
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+
+  - name: woodpecker
+    namespace: woodpecker
+    chart: woodpecker/woodpecker
+    values:
+      - woodpecker-values.yaml
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "manifests/woodpecker-rbac.yaml"]
+
+  - name: oauth2-proxy
+    namespace: oauth2-proxy
+    chart: oauth2-proxy/oauth2-proxy
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+    values:
+      - config:
+          existingSecret: oauth2-proxy-secrets
+          configFile: |
+            provider = "oidc"
+            oidc_issuer_url = "https://forgejo.${DOMAIN}"
+            redirect_url = "https://oauth2.${DOMAIN}/oauth2/callback"
+            upstreams = ["static://200"]
+            email_domains = ["*"]
+            skip_provider_button = true
+            ssl_insecure_skip_verify = ${TLS_SKIP_VERIFY}
+            cookie_secure = true
+            cookie_domains = [".${DOMAIN}"]
+            whitelist_domains = [".${DOMAIN}"]
+        ingress:
+          enabled: true
+          className: traefik
+          hosts:
+            - oauth2.${DOMAIN}
+          pathType: Prefix
+        service:
+          type: ClusterIP
+          portNumber: 4180
+
+  # ─── Layer 4: GitOps ───────────────────────────────────────────────
+
+  - name: flux
+    namespace: flux-system
+    chart: fluxcd-community/flux2
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: platform
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "./scripts/setup-flux.sh"

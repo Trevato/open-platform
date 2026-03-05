@@ -1,0 +1,34 @@
+server:
+  enabled: true
+  env:
+    WOODPECKER_FORGEJO: "true"
+    WOODPECKER_FORGEJO_URL: "https://forgejo.${DOMAIN}"
+    WOODPECKER_FORGEJO_SKIP_VERIFY: "${TLS_SKIP_VERIFY}"
+    WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: "${TLS_SKIP_VERIFY}"
+    WOODPECKER_HOST: "https://ci.${DOMAIN}"
+    WOODPECKER_ADMIN: "${ADMIN_USER}"
+    WOODPECKER_OPEN: "false"
+  extraSecretNamesForEnvFrom:
+    - woodpecker-secrets
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - host: ci.${DOMAIN}
+        paths:
+          - path: /
+            pathType: Prefix
+
+agent:
+  enabled: true
+  replicaCount: 1
+  env:
+    WOODPECKER_BACKEND: kubernetes
+    WOODPECKER_BACKEND_K8S_NAMESPACE: woodpecker
+    WOODPECKER_BACKEND_K8S_VOLUME_SIZE: "5G"
+    WOODPECKER_MAX_WORKFLOWS: "4"
+  extraSecretNamesForEnvFrom:
+    - woodpecker-secrets

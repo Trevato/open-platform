@@ -43,11 +43,11 @@ steps:
       - kubectl create namespace $APP_NS --dry-run=client -o yaml | kubectl apply -f -
       - |
         kubectl label namespace $APP_NS \
-          platform.dev.test/managed=true \
-          platform.dev.test/org=${CI_REPO_OWNER} \
-          platform.dev.test/repo=${CI_REPO_NAME} \
-          platform.dev.test/tier=workload \
-          platform.dev.test/environment=production \
+          open-platform.sh/managed=true \
+          open-platform.sh/org=${CI_REPO_OWNER} \
+          open-platform.sh/repo=${CI_REPO_NAME} \
+          open-platform.sh/tier=workload \
+          open-platform.sh/environment=production \
           --overwrite
       - |
         kubectl get secret minio-credentials -n minio -o json | \

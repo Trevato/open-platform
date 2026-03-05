@@ -3,7 +3,7 @@ import { genericOAuth } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import pool from "@/lib/db";
 
-const forgejoUrl = process.env.AUTH_FORGEJO_URL || "https://forgejo.product-garden.com";
+const forgejoUrl = process.env.AUTH_FORGEJO_URL!;
 const forgejoInternalUrl = process.env.AUTH_FORGEJO_INTERNAL_URL || forgejoUrl;
 
 export const auth = betterAuth({

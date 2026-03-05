@@ -36,6 +36,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: cloudflare
 ---
 apiVersion: v1
@@ -43,74 +48,74 @@ kind: Namespace
 metadata:
   name: op-system-social
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "system"
-    platform.dev.test/repo: "social"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "social"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-system-minecraft
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "system"
-    platform.dev.test/repo: "minecraft"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "minecraft"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-system-hub
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "system"
-    platform.dev.test/repo: "hub"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "hub"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-system-arcade
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "system"
-    platform.dev.test/repo: "arcade"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "arcade"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-system-events
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "system"
-    platform.dev.test/repo: "events"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "events"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-foundry-pulse
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "foundry"
-    platform.dev.test/repo: "pulse"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "foundry"
+    open-platform.sh/repo: "pulse"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: op-foundry-craft
   labels:
-    platform.dev.test/managed: "true"
-    platform.dev.test/org: "foundry"
-    platform.dev.test/repo: "craft"
-    platform.dev.test/tier: "workload"
-    platform.dev.test/environment: "production"
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "foundry"
+    open-platform.sh/repo: "craft"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"

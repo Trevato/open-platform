@@ -29,12 +29,12 @@ spec:
       enabled: true
       env:
         WOODPECKER_FORGEJO: "true"
-        WOODPECKER_FORGEJO_URL: "https://forgejo.product-garden.com"
+        WOODPECKER_FORGEJO_URL: "https://forgejo.dev.test"
         WOODPECKER_FORGEJO_SKIP_VERIFY: "true"
         WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: "true"
-        WOODPECKER_HOST: "https://ci.product-garden.com"
+        WOODPECKER_HOST: "https://ci.dev.test"
         WOODPECKER_ADMIN: "trevato"
-        WOODPECKER_OPEN: "true"
+        WOODPECKER_OPEN: "false"
       extraSecretNamesForEnvFrom:
         - woodpecker-secrets
       persistentVolume:
@@ -44,7 +44,7 @@ spec:
         enabled: true
         ingressClassName: traefik
         hosts:
-          - host: ci.product-garden.com
+          - host: ci.dev.test
             paths:
               - path: /
                 pathType: Prefix

@@ -11,6 +11,8 @@ repositories:
     url: https://woodpecker-ci.org/
   - name: oauth2-proxy
     url: https://oauth2-proxy.github.io/manifests
+  - name: jetstack
+    url: https://charts.jetstack.io
   - name: fluxcd-community
     url: https://fluxcd-community.github.io/helm-charts
 
@@ -38,15 +40,24 @@ releases:
           - |
             kubectl apply -f manifests/namespaces.yaml
             ./scripts/ensure-secrets.sh
-            kubectl create secret tls wildcard-tls \
-              --cert=certs/wildcard.crt \
-              --key=certs/wildcard.key \
-              -n kube-system \
-              --dry-run=client -o yaml | kubectl apply -f -
+            if [ -f certs/wildcard.crt ] && [ -f certs/wildcard.key ]; then
+              kubectl create secret tls wildcard-tls \
+                --cert=certs/wildcard.crt \
+                --key=certs/wildcard.key \
+                -n kube-system \
+                --dry-run=client -o yaml | kubectl apply -f -
+            fi
       - events: ["postsync"]
         showlogs: true
-        command: "kubectl"
-        args: ["apply", "-f", "manifests/traefik-tls.yaml"]
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            if [ -f certs/wildcard.crt ]; then
+              kubectl apply -f manifests/traefik-tls.yaml
+            fi
+            # CoreDNS custom zone: resolve *.DOMAIN to Traefik inside the cluster
+            ./scripts/setup-coredns.sh
 
   - name: cnpg
     namespace: cnpg-system
@@ -64,6 +75,7 @@ releases:
             kubectl wait --for=condition=available deployment/cnpg-cloudnative-pg \
               -n cnpg-system --timeout=120s
             kubectl apply -f manifests/postgres-cluster.yaml
+
 
   # ─── Layer 1: Storage ──────────────────────────────────────────────────
 
@@ -136,20 +148,20 @@ releases:
           existingSecret: oauth2-proxy-secrets
           configFile: |
             provider = "oidc"
-            oidc_issuer_url = "https://forgejo.product-garden.com"
-            redirect_url = "https://oauth2.product-garden.com/oauth2/callback"
+            oidc_issuer_url = "https://forgejo.dev.test"
+            redirect_url = "https://oauth2.dev.test/oauth2/callback"
             upstreams = ["static://200"]
             email_domains = ["*"]
             skip_provider_button = true
             ssl_insecure_skip_verify = true
             cookie_secure = true
-            cookie_domains = [".product-garden.com"]
-            whitelist_domains = [".product-garden.com"]
+            cookie_domains = [".dev.test"]
+            whitelist_domains = [".dev.test"]
         ingress:
           enabled: true
           className: traefik
           hosts:
-            - oauth2.product-garden.com
+            - oauth2.dev.test
           pathType: Prefix
         service:
           type: ClusterIP

@@ -24,11 +24,11 @@ data:
       <meta charset="utf-8">
       <title>Redirecting...</title>
       <script>
-        window.location.href = 'https://oauth2.product-garden.com/oauth2/start?rd=' + encodeURIComponent(window.location.href);
+        window.location.href = 'https://oauth2.dev.test/oauth2/start?rd=' + encodeURIComponent(window.location.href);
       </script>
     </head>
     <body>
-      <p>Redirecting to sign in... <a href="https://oauth2.product-garden.com/oauth2/start">Click here</a> if not redirected.</p>
+      <p>Redirecting to sign in... <a href="https://oauth2.dev.test/oauth2/start">Click here</a> if not redirected.</p>
     </body>
     </html>
 ---

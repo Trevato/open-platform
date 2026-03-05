@@ -5,9 +5,8 @@ set -euo pipefail
 # Idempotent — skips apps that already exist, uses kubectl apply for secrets.
 # Runs as a forgejo postsync hook after the pod is ready.
 
-DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
+DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
 FORGEJO_URL="https://forgejo.${DOMAIN}"
-API_URL="${FORGEJO_URL}/api/v1"
 
 OAUTH2_APPS=(
   "Headlamp|https://headlamp.${DOMAIN}/oidc-callback|true"
@@ -25,10 +24,18 @@ OAUTH2_APPS=(
 echo "Waiting for Forgejo pod..."
 kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=forgejo -n forgejo --timeout=180s
 
-echo "Waiting for Forgejo API..."
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
 
+# Use port-forward for Forgejo API access (works without DNS/ingress)
+FORGEJO_LOCAL_PORT=3333
+kubectl port-forward -n forgejo svc/forgejo-http ${FORGEJO_LOCAL_PORT}:3000 &
+PF_PID=$!
+trap "kill $PF_PID 2>/dev/null || true" EXIT
+
+API_URL="http://localhost:${FORGEJO_LOCAL_PORT}/api/v1"
+
+echo "Waiting for Forgejo API (via port-forward)..."
 for i in $(seq 1 30); do
   if curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "${API_URL}/user" >/dev/null 2>&1; then
     echo "Forgejo API is ready."

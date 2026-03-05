@@ -29,20 +29,20 @@ spec:
       existingSecret: oauth2-proxy-secrets
       configFile: |
         provider = "oidc"
-        oidc_issuer_url = "https://forgejo.product-garden.com"
-        redirect_url = "https://oauth2.product-garden.com/oauth2/callback"
+        oidc_issuer_url = "https://forgejo.dev.test"
+        redirect_url = "https://oauth2.dev.test/oauth2/callback"
         upstreams = ["static://200"]
         email_domains = ["*"]
         skip_provider_button = true
         ssl_insecure_skip_verify = true
         cookie_secure = true
-        cookie_domains = [".product-garden.com"]
-        whitelist_domains = [".product-garden.com"]
+        cookie_domains = [".dev.test"]
+        whitelist_domains = [".dev.test"]
     ingress:
       enabled: true
       className: traefik
       hosts:
-        - oauth2.product-garden.com
+        - oauth2.dev.test
       pathType: Prefix
     service:
       type: ClusterIP

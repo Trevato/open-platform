@@ -9,13 +9,20 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
-FORGEJO_URL="https://forgejo.${DOMAIN}"
-API_URL="${FORGEJO_URL}/api/v1"
-CA_CERT="${ROOT_DIR}/certs/ca.crt"
+DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
+
+# Use port-forward for Forgejo access (works without DNS/ingress)
+FORGEJO_LOCAL_PORT=3334
+kubectl port-forward -n forgejo svc/forgejo-http ${FORGEJO_LOCAL_PORT}:3000 &
+PF_PID=$!
+# Clean up port-forward and askpass helper on exit
+trap "kill $PF_PID 2>/dev/null || true; rm -f ${SCRIPT_DIR}/.git-askpass" EXIT
+sleep 2  # wait for port-forward to establish
+
+API_URL="http://localhost:${FORGEJO_LOCAL_PORT}/api/v1"
 
 api() {
   curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
@@ -25,9 +32,8 @@ api() {
 git_push() {
   local REPO_NAME="$1"
   local BRANCH="$2"
-  local REPO_URL="https://forgejo.${DOMAIN}/system/${REPO_NAME}.git"
+  local REPO_URL="http://localhost:${FORGEJO_LOCAL_PORT}/system/${REPO_NAME}.git"
 
-  GIT_SSL_CAINFO="${CA_CERT}" \
   GIT_ASKPASS="${SCRIPT_DIR}/.git-askpass" \
   GIT_USERNAME="${ADMIN_USER}" \
   GIT_PASSWORD="${ADMIN_PASS}" \
@@ -43,7 +49,6 @@ case "$1" in
 esac
 ASKPASS
 chmod +x "${SCRIPT_DIR}/.git-askpass"
-trap "rm -f ${SCRIPT_DIR}/.git-askpass" EXIT
 
 # ── Create system org ────────────────────────────────────────────────────────
 
@@ -53,7 +58,7 @@ else
   echo "Creating 'system' organization..."
   api -X POST "${API_URL}/orgs" \
     -H "Content-Type: application/json" \
-    -d '{"username": "system", "visibility": "public", "description": "Platform system repositories"}'
+    -d '{"username": "system", "visibility": "private", "description": "Platform system repositories"}'
   echo "Created 'system' organization."
 fi
 
@@ -110,7 +115,7 @@ create_repo() {
   echo "Creating repo 'system/${REPO_NAME}'..."
   api -X POST "${API_URL}/orgs/system/repos" \
     -H "Content-Type: application/json" \
-    -d "{\"name\": \"${REPO_NAME}\", \"description\": \"${DESCRIPTION}\", \"auto_init\": false, \"private\": false}"
+    -d "{\"name\": \"${REPO_NAME}\", \"description\": \"${DESCRIPTION}\", \"auto_init\": false, \"private\": true}"
   echo "Created repo 'system/${REPO_NAME}'."
 }
 

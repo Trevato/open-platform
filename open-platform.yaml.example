@@ -1,0 +1,21 @@
+# Open Platform Configuration
+# Copy to open-platform.yaml and customize before deploying.
+
+domain: myplatform.example.com
+
+admin:
+  username: opadmin    # "admin" is a reserved name in Forgejo
+  email: admin@example.com
+
+tls:
+  # letsencrypt: Real certs via cert-manager (recommended for public deployments)
+  # selfsigned:  Self-signed CA (for air-gapped or local development)
+  # cloudflare:  Cloudflare tunnel handles TLS at edge (self-signed in-cluster)
+  mode: letsencrypt
+  email: admin@example.com
+
+# Optional: Cloudflare tunnel (only used when tls.mode == cloudflare)
+# cloudflare:
+#   account_tag: ""
+#   tunnel_id: ""
+#   tunnel_secret: ""

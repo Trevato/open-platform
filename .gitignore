@@ -13,3 +13,11 @@ bun.lock
 
 # Tool-generated
 .playwright-mcp/
+
+# Validation artifacts
+*.png
+auth-validation-screenshots/
+
+# Generated config (user-specific)
+open-platform.yaml
+open-platform.state.yaml

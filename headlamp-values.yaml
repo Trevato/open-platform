@@ -5,14 +5,14 @@ config:
     externalSecret:
       enabled: true
       name: "oidc"
-    issuerURL: https://forgejo.product-garden.com
+    issuerURL: https://forgejo.dev.test
     scopes: "openid,profile,email,groups"
 
 ingress:
   enabled: true
   ingressClassName: traefik
   hosts:
-    - host: headlamp.product-garden.com
+    - host: headlamp.dev.test
       paths:
         - path: /
           type: ImplementationSpecific

@@ -2,17 +2,38 @@
 set -euo pipefail
 
 # Orchestrates the full Open Platform deploy:
+#   0. Generate config from open-platform.yaml (if present)
 #   1. helmfile sync (bootstrap everything)
-#   2. OIDC config (may restart k3s)
-#   3. Recovery helmfile sync (only if k3s restarted)
-#   4. Woodpecker setup + pipeline triggers (after everything is stable)
+#   2. k3s OIDC + container registry setup
+#   3. Woodpecker setup + pipeline triggers
 #
 # Idempotent — safe to run repeatedly.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 START=$(date +%s)
 
-echo "=== Open Platform Deploy ==="
+# ── Phase 0: Generate config ──────────────────────────────────────────────────
+
+if [ -f "$ROOT_DIR/open-platform.yaml" ]; then
+  echo "Phase 0: Generating config from open-platform.yaml..."
+  "${SCRIPT_DIR}/generate-config.sh"
+  echo ""
+elif [ ! -f "$ROOT_DIR/.env" ]; then
+  echo "Error: No open-platform.yaml or .env found."
+  echo ""
+  echo "Quick start:  cp open-platform.yaml.example open-platform.yaml"
+  exit 1
+fi
+
+# Load config
+set -a
+# shellcheck source=/dev/null
+source "$ROOT_DIR/.env"
+set +a
+DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set}"
+
+echo "=== Open Platform Deploy (${DOMAIN}) ==="
 echo ""
 
 # ── Phase 1: Bootstrap everything ────────────────────────────────────────────
@@ -20,50 +41,19 @@ echo ""
 echo "Phase 1: helmfile sync..."
 helmfile sync
 
-# ── Phase 2: OIDC configuration ─────────────────────────────────────────────
+# ── Phase 2: k3s OIDC + container registry setup ────────────────────────────
+# Configures k3s API server for Headlamp OIDC token validation.
+# Also installs CA cert and containerd registry config for image pulls.
 
 echo ""
-echo "Phase 2: OIDC configuration..."
-OIDC_OUTPUT=$("${SCRIPT_DIR}/setup-oidc.sh" 2>&1) || true
-echo "$OIDC_OUTPUT"
+echo "Phase 2: k3s OIDC setup..."
+"${SCRIPT_DIR}/setup-oidc.sh"
 
-# ── Phase 3: Recovery (only if k3s restarted) ───────────────────────────────
-
-if echo "$OIDC_OUTPUT" | grep -q "Restarting k3s"; then
-  echo ""
-  echo "Phase 3: Recovering helm state after k3s restart..."
-  if helmfile sync; then
-    echo "Recovery sync complete."
-  else
-    echo "Recovery sync had non-critical errors (hooks may re-run on next deploy)."
-  fi
-
-  # Restart Woodpecker to clear stale queue/gRPC state from the k3s restart cycle
-  echo "Restarting Woodpecker for clean pipeline state..."
-  kubectl rollout restart statefulset/woodpecker-server -n woodpecker 2>/dev/null || true
-  kubectl rollout restart statefulset/woodpecker-agent -n woodpecker 2>/dev/null || true
-  kubectl rollout status statefulset/woodpecker-server -n woodpecker --timeout=120s 2>/dev/null || true
-  kubectl rollout status statefulset/woodpecker-agent -n woodpecker --timeout=120s 2>/dev/null || true
-fi
-
-# ── Phase 4: Woodpecker setup + pipeline triggers ───────────────────────────
-# Runs AFTER recovery so Forgejo and Woodpecker are fully stable.
-# Requires Cloudflare tunnel — the Woodpecker OAuth flow uses the public domain.
+# ── Phase 3: Woodpecker setup + pipeline triggers ───────────────────────────
+# Runs AFTER helmfile so Forgejo and Woodpecker are fully stable.
 
 echo ""
-echo "Phase 4: Woodpecker repo setup + pipeline triggers..."
-
-# Wait for Cloudflare tunnel to establish (Woodpecker OAuth uses public URLs)
-echo "Waiting for Cloudflare tunnel..."
-for i in $(seq 1 30); do
-  if curl -sSk -o /dev/null -w "%{http_code}" "https://forgejo.product-garden.com/api/v1/settings/api" 2>/dev/null | grep -q "200"; then
-    echo "Cloudflare tunnel ready."
-    break
-  fi
-  [ "$i" -eq 30 ] && echo "Warning: Cloudflare tunnel not responding — proceeding anyway."
-  sleep 5
-done
-
+echo "Phase 3: Woodpecker repo setup + pipeline triggers..."
 "${SCRIPT_DIR}/setup-woodpecker-repos.sh"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
@@ -71,3 +61,12 @@ done
 END=$(date +%s)
 echo ""
 echo "=== Deploy complete in $((END - START))s ==="
+echo ""
+echo "Services:"
+echo "  Forgejo:    https://forgejo.${DOMAIN}"
+echo "  Woodpecker: https://ci.${DOMAIN}"
+echo "  Headlamp:   https://headlamp.${DOMAIN}"
+echo "  MinIO:      https://minio.${DOMAIN}"
+echo ""
+echo "Admin: ${FORGEJO_ADMIN_USER}"
+echo "Password: see open-platform.state.yaml"

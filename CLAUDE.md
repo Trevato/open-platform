@@ -1,19 +1,19 @@
 # Open Platform — Agent Reference
 
-Self-hosted developer platform running on k3s. VxRail (NixOS) serves as the control plane; Mac joins optionally as an agent via Colima. All services authenticate through Forgejo as the OIDC/OAuth2 identity provider. The platform is self-seeding and self-managing via Flux GitOps.
+Self-hosted developer platform running on k3s. All services authenticate through Forgejo as the OIDC/OAuth2 identity provider. The platform is self-seeding and self-managing via Flux GitOps. Domain, TLS mode, and optional Cloudflare Tunnel are configurable via `open-platform.yaml`.
 
 ## Architecture
 
 ```
-Browser ──► Cloudflare Tunnel ──► Traefik (ingress) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
-              *.product-garden.com                     ├── ci ─────────► Woodpecker (CI/CD)
-                                                       ├── headlamp ───► Headlamp (K8s dashboard)
-                                                       ├── minio ──────► MinIO Console
-                                                       ├── s3 ─────────► MinIO S3 API
-                                                       ├── oauth2 ─────► OAuth2-Proxy (preview auth)
-                                                       ├── social ─────► Social App
-                                                       ├── minecraft ──► Minecraft App
-                                                       └── <app> ──────► Apps (from template)
+                    ┌─── Cloudflare Tunnel (optional) ───► *.product-garden.com
+                    │
+Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
+              *.{PLATFORM_DOMAIN}             ├── ci ─────────► Woodpecker (CI/CD)
+                                              ├── headlamp ───► Headlamp (K8s dashboard)
+                                              ├── minio ──────► MinIO Console
+                                              ├── s3 ─────────► MinIO S3 API
+                                              ├── oauth2 ─────► OAuth2-Proxy (preview auth)
+                                              └── <app> ──────► Apps (from template)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -22,42 +22,30 @@ Headlamp ──► Forgejo (OIDC) ──► K8s API Server (OIDC token validatio
 Flux (flux-system) ──► system/open-platform on Forgejo ──► reconciles all platform services
 ```
 
-### Multi-Node Topology
+### Configuration System
 
-| Node | Role | Runs |
-|------|------|------|
-| `otavert-vxrail` | k3s server (control plane) | All platform services, cloudflared, workloads |
-| `colima` (Mac) | k3s agent (optional) | Additional compute capacity, pipeline pods |
+Single source of truth: `open-platform.yaml` → `scripts/generate-config.sh` → all generated configs.
 
-VxRail runs NixOS — k3s config, CA trust, `/etc/hosts`, and firewall rules are managed declaratively via `~/nix-darwin-config/modules/nixos.nix`. Mac agent joins via `make mac-start` (Colima VM + k3s agent).
+- **`open-platform.yaml`** — User config (domain, admin, TLS mode, Cloudflare). See `open-platform.yaml.example`.
+- **`scripts/generate-config.sh`** — Pure `sed` template engine. Templates in `config/templates/`.
+- **`open-platform.state.yaml`** — Persists generated secrets across runs (gitignored).
+- **Generated outputs**: `*-values.yaml`, `helmfile.yaml`, `platform/` Flux resources, `manifests/oidc-rbac.yaml`, `.env`
+- **TLS modes**: `selfsigned` (auto-generated CA), `letsencrypt` (cert-manager + HTTP-01), `cloudflare` (tunnel at edge)
+- **Deploy flow**: `open-platform.yaml` → `generate-config.sh` (Phase 0 in deploy.sh) → `helmfile sync`
 
 ### Domain Strategy
 
-All services use `*.product-garden.com` with real TLS via Cloudflare. The domain is configurable via the `PLATFORM_DOMAIN` env var (default: `product-garden.com`).
+The domain is set in `open-platform.yaml` (e.g., `domain: dev.test` or `domain: product-garden.com`). All services use `*.{PLATFORM_DOMAIN}`.
 
-| Domain | Scope | TLS | Routing |
-|--------|-------|-----|---------|
-| `*.product-garden.com` | Production (default) | Cloudflare edge TLS | Cloudflare Tunnel → Traefik |
-| `*.dev.test` | Mac local development | Self-signed CA | Direct to Traefik (Colima) |
+Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use `https://<service>.{PLATFORM_DOMAIN}`. In-cluster service-to-service communication uses Kubernetes DNS (e.g., `forgejo-http.forgejo.svc.cluster.local`).
 
-Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use `https://<service>.product-garden.com`. In-cluster service-to-service communication uses Kubernetes DNS (e.g., `forgejo-http.forgejo.svc.cluster.local`) to avoid hairpinning through Cloudflare.
+### Cloudflare Tunnel (optional)
 
-### Cloudflare Tunnel
+Enabled when `cloudflare` section is present in `open-platform.yaml`. Config generated by `generate-config.sh`.
 
-- **Config**: `platform/infrastructure/configs/cloudflared.yaml` (ConfigMap + Deployment)
 - **Namespace**: `cloudflare`
-- **Routes**: `*.product-garden.com` → `http://traefik.kube-system.svc.cluster.local`
+- **Routes**: `*.{PLATFORM_DOMAIN}` → `http://traefik.kube-system.svc.cluster.local`
 - **Credentials**: `cloudflared-credentials` secret (created by `ensure-secrets.sh` from `.env`)
-- **Node affinity**: pinned to `otavert-vxrail` via nodeSelector
-
-### Configurable Domain (`PLATFORM_DOMAIN`)
-
-The platform domain is configurable, defaulting to `product-garden.com`:
-- **`.env`**: Set `PLATFORM_DOMAIN=product-garden.com` (or `dev.test` for local Mac development)
-- **Scripts**: Use `DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"` for domain-aware operations
-- **CI pipelines**: Read from Woodpecker org secret `platform_domain` (set by `setup-woodpecker-repos.sh`)
-- **K8s manifests**: Use `PLATFORM_DOMAIN` placeholder in ingress hosts, sed-replaced by deploy steps
-- **Org secrets**: `platform_domain` and `registry_host` propagate domain to all repos in the org
 
 ### Preview Environments
 
@@ -140,7 +128,7 @@ PR previews deploy at `pr-N-<app>.product-garden.com`, protected by OAuth2-Proxy
 - **Whitelist domain**: `.product-garden.com`
 - **Secrets**: `oauth2-proxy-secrets` (oauth2-proxy ns) — `client-id`, `client-secret`, `cookie-secret`. Created by `scripts/setup-oauth2.sh` (OAuth2 creds) and `scripts/ensure-secrets.sh` (cookie secret bootstrap).
 - **Traefik Middleware**: `oauth2-proxy-auth` in oauth2-proxy namespace — ForwardAuth CRD pointing to `http://oauth2-proxy.oauth2-proxy.svc:4180/oauth2/auth`. Preview ingresses reference: `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd`
-- **TLS**: Real TLS via Cloudflare (no skip-verify needed in production)
+- **TLS**: Depends on TLS mode — self-signed uses `ssl_insecure_skip_verify = true`, Cloudflare uses real TLS
 
 ### Flux (GitOps)
 - **Config**: `helmfile.yaml` (bootstrap), `scripts/setup-flux.sh` (bootstrap resources)
@@ -175,7 +163,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `minio` | MinIO |
 | `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
-| `cloudflare` | cloudflared tunnel pod |
+| `cloudflare` | cloudflared tunnel pod (optional, when Cloudflare configured) |
 | `op-system-social` | Social media app (posts, images, auth) |
 | `op-system-minecraft` | Minecraft server hosting app + managed MC server pods |
 | `op-system-arcade` | Arcade app |
@@ -185,14 +173,8 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 
 ### Bootstrap (first deploy)
 ```bash
-cp .env.example .env        # fill in passwords + Cloudflare/k3s tokens
-make deploy                 # helmfile bootstraps everything, Flux takes over
-```
-
-### Mac agent (optional)
-```bash
-make mac-start              # start Colima, join VxRail cluster as k3s agent
-make mac-stop               # drain and stop the Mac agent
+cp open-platform.yaml.example open-platform.yaml  # set domain, admin, TLS mode
+make deploy                                        # generates config, helmfile sync, Flux takes over
 ```
 
 ### Steady state (after bootstrap)
@@ -232,7 +214,7 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 
 ### Hook Execution Order (Bootstrap)
 1. **traefik presync**: apply `manifests/namespaces.yaml`, run `scripts/ensure-secrets.sh`, create wildcard TLS secret
-2. **traefik postsync**: apply `manifests/traefik-tls.yaml` (TLSStore)
+2. **traefik postsync**: apply `manifests/traefik-tls.yaml` (TLSStore), run `scripts/setup-coredns.sh` (CoreDNS custom zone)
 3. **cnpg postsync**: wait for operator readiness, apply `manifests/postgres-cluster.yaml`
 4. **forgejo postsync**: apply `manifests/oidc-rbac.yaml`, run `scripts/setup-oauth2.sh`, run `scripts/setup-system-org.sh`
 5. **woodpecker postsync**: apply `manifests/woodpecker-rbac.yaml`, run `scripts/setup-woodpecker-repos.sh`
@@ -243,7 +225,7 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 |------|----------|
 | `platform/cluster/` | Flux Kustomization resources defining layer ordering |
 | `platform/infrastructure/controllers/` | HelmReleases for traefik, cnpg |
-| `platform/infrastructure/configs/` | Namespaces, TLSStore, minio HelmRelease, postgres cluster, cloudflared, oauth2-proxy ForwardAuth middleware |
+| `platform/infrastructure/configs/` | Namespaces, TLSStore, minio HelmRelease, postgres cluster, oauth2-proxy ForwardAuth middleware |
 | `platform/identity/` | Forgejo HelmRelease (OCIRepository), OIDC RBAC |
 | `platform/apps/` | Headlamp + Woodpecker HelmReleases, RBAC |
 
@@ -303,20 +285,18 @@ Generated from the app template. Namespaces and deployment manifests ready. Not 
 ### Environment Variables (`.env`)
 | Variable | Purpose |
 |----------|---------|
-| `PLATFORM_DOMAIN` | Platform domain (default: `product-garden.com`) |
+| `PLATFORM_DOMAIN` | Platform domain (from `open-platform.yaml`) |
 | `FORGEJO_ADMIN_USER` | Forgejo admin username |
-| `FORGEJO_ADMIN_PASSWORD` | Forgejo admin password |
-| `FORGEJO_DB_PASSWORD` | Forgejo PostgreSQL password |
+| `FORGEJO_ADMIN_PASSWORD` | Forgejo admin password (auto-generated) |
+| `FORGEJO_DB_PASSWORD` | Forgejo PostgreSQL password (auto-generated) |
 | `MINIO_ROOT_USER` | MinIO admin username |
-| `MINIO_ROOT_PASSWORD` | MinIO admin password |
-| `WOODPECKER_AGENT_SECRET` | Woodpecker agent↔server shared secret |
-| `OAUTH2_PROXY_COOKIE_SECRET` | OAuth2-Proxy cookie encryption (auto-generated if empty) |
-| `CLOUDFLARE_ACCOUNT_TAG` | Cloudflare account ID |
-| `CLOUDFLARE_TUNNEL_ID` | Cloudflare tunnel UUID |
-| `CLOUDFLARE_TUNNEL_SECRET` | Cloudflare tunnel credential secret |
-| `K3S_SERVER` | k3s server URL for Mac agent join (e.g., `https://10.0.0.44:6443`) |
-| `K3S_TOKEN` | k3s join token |
-| `NODE_EXTERNAL_IP` | Mac agent external IP (Tailscale) |
+| `MINIO_ROOT_PASSWORD` | MinIO admin password (auto-generated) |
+| `WOODPECKER_AGENT_SECRET` | Woodpecker agent↔server shared secret (auto-generated) |
+| `OAUTH2_PROXY_COOKIE_SECRET` | OAuth2-Proxy cookie encryption (auto-generated) |
+| `BETTER_AUTH_SECRET` | App session encryption key (auto-generated) |
+| `CLOUDFLARE_ACCOUNT_TAG` | Cloudflare account ID (optional) |
+| `CLOUDFLARE_TUNNEL_ID` | Cloudflare tunnel UUID (optional) |
+| `CLOUDFLARE_TUNNEL_SECRET` | Cloudflare tunnel credential secret (optional) |
 
 ### Bootstrap Secrets (from `.env`)
 Created by `scripts/ensure-secrets.sh` (runs as traefik presync hook):
@@ -343,23 +323,24 @@ Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
 ### Scripts
 | Script | Trigger | Purpose |
 |--------|---------|---------|
+| `scripts/generate-config.sh` | `make generate` / Phase 0 | Generates all config files from `open-platform.yaml` + `config/templates/` |
 | `scripts/ensure-secrets.sh` | traefik presync | Creates namespaces + bootstrap K8s secrets from `.env` (validates required vars) |
+| `scripts/setup-coredns.sh` | traefik postsync | CoreDNS custom zone: `*.{DOMAIN}` → Traefik IP. Detects `hostNetwork` and uses node IP. |
 | `scripts/setup-oauth2.sh` | forgejo postsync | Creates OAuth2 apps via Forgejo API + K8s secrets (preserves BETTER_AUTH_SECRET) |
 | `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social + minecraft repos (uses GIT_ASKPASS for credentials) |
 | `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Programmatic Woodpecker login, dynamic repo discovery + activation, org secrets — zero manual steps |
 | `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
 | `scripts/setup-oidc.sh` | after helmfile sync | Updates k3s OIDC client ID — prints NixOS instructions for VxRail, auto-updates Colima |
-| `scripts/colima-start.sh` | `make mac-start` | Starts Colima, joins Mac as k3s agent to VxRail (reads K3S_SERVER/K3S_TOKEN from .env) |
-| `scripts/colima-stop.sh` | `make mac-stop` | Drains and stops the Mac agent |
 
 All scripts are idempotent — safe to run on every `make deploy`.
 
 ## TLS Setup
 
-Production uses real TLS via Cloudflare edge certificates. No self-signed CA or skip-verify flags needed.
+Configured via `tls_mode` in `open-platform.yaml`:
 
-- **Production** (`*.product-garden.com`): Cloudflare handles TLS termination at the edge. Traefik receives plain HTTP from the Cloudflare Tunnel.
-- **Local Mac development** (`*.dev.test`): Self-signed CA at `certs/ca.crt` (issuer: "OpenPlatform Local CA", valid 10 years). Wildcard cert at `certs/wildcard.crt`. Private keys (`certs/*.key`) are gitignored. Browsers and Colima need the CA trusted. `colima-start.sh` copies CA to `/etc/docker/certs.d/forgejo.dev.test/ca.crt`.
+- **`selfsigned`**: Auto-generates CA + wildcard cert at `certs/`. Private keys (`certs/*.key`) are gitignored. Server node and browsers need CA trusted.
+- **`letsencrypt`**: cert-manager + HTTP-01 challenge. Requires public DNS.
+- **`cloudflare`**: TLS at Cloudflare edge. Traefik receives plain HTTP from tunnel.
 
 ## k3s API Server OIDC Configuration
 

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open Platform — Your own development platform</title>
+  <meta name="description" content="Deploy your own developer platform with one command. Git hosting, CI/CD, object storage, database, and Kubernetes dashboard — all self-hosted.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="/" class="logo">Open Platform</a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#quickstart">Quick Start</a>
+        <a href="#requirements">Requirements</a>
+        <a href="https://github.com/trevato/open-platform" target="_blank">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>Your own development platform.<br>One command.</h1>
+      <p class="subtitle">Git hosting, CI/CD, object storage, database, and Kubernetes dashboard. Self-hosted. Open source. Yours.</p>
+      <div class="install-box">
+        <code>curl -fsSL https://open-platform.sh/install | bash</code>
+        <button onclick="navigator.clipboard.writeText('curl -fsSL https://open-platform.sh/install | bash')" title="Copy">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4 4V1.5C4 1.22 4.22 1 4.5 1H13.5C13.78 1 14 1.22 14 1.5V10.5C14 10.78 13.78 11 13.5 11H11" stroke="currentColor" stroke-width="1.5"/><rect x="1.5" y="4.5" width="9" height="10" rx="0.5" stroke="currentColor" stroke-width="1.5"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <section id="features" class="features">
+      <h2>What you get</h2>
+      <div class="grid">
+        <div class="card">
+          <h3>Forgejo</h3>
+          <p>Git hosting + identity provider. Repos, issues, pull requests, packages, and OAuth2/OIDC for all services.</p>
+        </div>
+        <div class="card">
+          <h3>Woodpecker CI</h3>
+          <p>Continuous integration and deployment. Push to deploy. Preview environments for every PR.</p>
+        </div>
+        <div class="card">
+          <h3>PostgreSQL</h3>
+          <p>Managed database via CloudNativePG. Automatic provisioning per app. Schemas applied in CI.</p>
+        </div>
+        <div class="card">
+          <h3>MinIO</h3>
+          <p>S3-compatible object storage. File uploads, assets, backups. One bucket per app, auto-provisioned.</p>
+        </div>
+        <div class="card">
+          <h3>Kubernetes</h3>
+          <p>k3s under the hood. Lightweight, production-grade. Headlamp dashboard for visibility.</p>
+        </div>
+        <div class="card">
+          <h3>Flux GitOps</h3>
+          <p>Platform manages itself. Push config changes to Git, Flux reconciles automatically.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart" class="quickstart">
+      <h2>Quick Start</h2>
+      <div class="steps">
+        <div class="step">
+          <span class="step-number">1</span>
+          <div>
+            <h3>Install</h3>
+            <code>curl -fsSL https://open-platform.sh/install | bash</code>
+            <p>Installs k3s, Helm, and deploys the full platform. Takes about 5 minutes.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">2</span>
+          <div>
+            <h3>Set DNS</h3>
+            <p>Point <code>*.your-domain.com</code> to your server's IP address. A wildcard DNS record covers all services.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="step-number">3</span>
+          <div>
+            <h3>Sign in</h3>
+            <p>Visit <code>forgejo.your-domain.com</code> and sign in with your admin credentials. Create repos, push code, deploy apps.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="architecture">
+      <h2>How it works</h2>
+      <pre class="diagram">
+Browser --> Traefik (ingress)
+              |-- forgejo.* --> Forgejo (git, identity)
+              |-- ci.*      --> Woodpecker (CI/CD)
+              |-- headlamp.* -> Headlamp (dashboard)
+              |-- minio.*   --> MinIO (S3 storage)
+              |-- your-app.* -> Your Apps
+
+Forgejo --> PostgreSQL (managed by CNPG)
+Woodpecker --> Forgejo (OAuth2 + webhooks)
+Flux --> Forgejo (GitOps reconciliation)
+      </pre>
+    </section>
+
+    <section id="requirements" class="requirements">
+      <h2>Requirements</h2>
+      <ul>
+        <li>Linux server (Ubuntu, Debian, RHEL, NixOS, etc.)</li>
+        <li>2+ CPU cores</li>
+        <li>4+ GB RAM</li>
+        <li>20+ GB disk</li>
+        <li>Domain with wildcard DNS (<code>*.your-domain.com</code>)</li>
+        <li>Ports 80 and 443 accessible (for Let's Encrypt and HTTPS)</li>
+      </ul>
+    </section>
+
+    <section class="faq">
+      <h2>FAQ</h2>
+      <details>
+        <summary>How do I update?</summary>
+        <p><code>cd /opt/open-platform && git pull && make deploy</code></p>
+      </details>
+      <details>
+        <summary>How do I back up my data?</summary>
+        <p>Forgejo data, PostgreSQL, and MinIO all use persistent volumes. Back up the k3s data directory at <code>/var/lib/rancher/k3s</code> or use your preferred volume snapshot tool.</p>
+      </details>
+      <details>
+        <summary>Can I add more nodes?</summary>
+        <p>Yes. k3s supports multi-node clusters. Join additional nodes with <code>k3s agent</code>. Multi-node documentation coming soon.</p>
+      </details>
+      <details>
+        <summary>What about air-gapped environments?</summary>
+        <p>Set <code>tls.mode: selfsigned</code> in <code>open-platform.yaml</code>. The installer generates a self-signed CA and wildcard certificate automatically.</p>
+      </details>
+      <details>
+        <summary>Is it production-ready?</summary>
+        <p>It runs real workloads on k3s, the same distribution used by thousands of production clusters. Single-node mode is great for small teams. HA mode is on the roadmap.</p>
+      </details>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      <a href="https://github.com/trevato/open-platform">GitHub</a>
+      &middot; MIT License
+      &middot; Made by <a href="https://trevato.dev">trevato</a>
+    </p>
+  </footer>
+</body>
+</html>

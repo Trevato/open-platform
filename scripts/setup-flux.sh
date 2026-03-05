@@ -9,15 +9,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 CA_CERT="${ROOT_DIR}/certs/ca.crt"
-DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
+DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
-CA_CERT_DATA=$(base64 < "${CA_CERT}")
 
 echo "Creating Flux git credentials..."
 
-kubectl apply -f - <<EOF
+if [ -f "${CA_CERT}" ]; then
+  CA_CERT_DATA=$(base64 < "${CA_CERT}")
+  kubectl apply -f - <<EOF
 apiVersion: v1
 kind: Secret
 metadata:
@@ -30,6 +31,19 @@ stringData:
 data:
   ca.crt: "${CA_CERT_DATA}"
 EOF
+else
+  kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: forgejo-auth
+  namespace: flux-system
+type: Opaque
+stringData:
+  username: "${ADMIN_USER}"
+  password: "${ADMIN_PASS}"
+EOF
+fi
 
 echo "Creating Flux GitRepository for system/open-platform..."
 

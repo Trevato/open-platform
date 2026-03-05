@@ -91,7 +91,7 @@ else
     --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
 fi
 
-# Cloudflare tunnel credentials (for *.product-garden.com public access)
+# Cloudflare tunnel credentials (optional, for public access via Cloudflare)
 if [ -n "${CLOUDFLARE_TUNNEL_SECRET:-}" ] && [ -n "${CLOUDFLARE_TUNNEL_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_TAG:-}" ]; then
   kubectl create secret generic cloudflared-credentials -n cloudflare \
     --from-literal=credentials.json="{\"AccountTag\":\"${CLOUDFLARE_ACCOUNT_TAG}\",\"TunnelID\":\"${CLOUDFLARE_TUNNEL_ID}\",\"TunnelSecret\":\"${CLOUDFLARE_TUNNEL_SECRET}\"}" \

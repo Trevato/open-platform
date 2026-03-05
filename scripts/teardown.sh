@@ -30,7 +30,7 @@ done
 
 echo "Phase 2: Removing workload namespaces..."
 # Delete all op-* workload namespaces (label-based cleanup catches everything)
-kubectl delete ns -l platform.dev.test/tier=workload --timeout=30s 2>/dev/null || true
+kubectl delete ns -l open-platform.sh/tier=workload --timeout=30s 2>/dev/null || true
 # Delete Woodpecker PVCs to prevent stale DB state on next deploy
 kubectl delete pvc --all -n woodpecker --timeout=15s 2>/dev/null || true
 
@@ -94,7 +94,7 @@ for ns in $PLATFORM_NAMESPACES; do
 done
 
 # Force-finalize any stuck workload namespaces (op-*)
-for ns in $(kubectl get ns -l platform.dev.test/tier=workload -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+for ns in $(kubectl get ns -l open-platform.sh/tier=workload -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
   if kubectl get ns "$ns" -o jsonpath='{.status.phase}' 2>/dev/null | grep -q Terminating; then
     echo "  Force-finalizing $ns..."
     kubectl get ns "$ns" -o json | jq '.spec.finalizers = []' | \
@@ -123,7 +123,7 @@ END=$(date +%s)
 echo ""
 
 # Final check
-REMAINING=$(kubectl get ns --no-headers 2>/dev/null | grep -v -E "^(default|kube-)" | wc -l | tr -d ' ')
+REMAINING=$(kubectl get ns --no-headers 2>/dev/null | grep -v -E "^(default|kube-)" | wc -l | tr -d ' ' || true)
 if [ "$REMAINING" = "0" ]; then
   echo "=== Teardown complete in $((END - START))s — clean slate ==="
 else

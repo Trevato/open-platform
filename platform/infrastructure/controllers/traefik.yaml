@@ -38,17 +38,18 @@ spec:
       rollingUpdate:
         maxUnavailable: 1
         maxSurge: 0
+    hostNetwork: true
     ports:
       web:
-        exposedPort: 80
-        hostPort: 80
+        port: 80
       websecure:
-        exposedPort: 443
-        hostPort: 443
+        port: 443
     providers:
       kubernetesCRD:
         allowExternalNameServices: true
+        allowEmptyServices: true
       kubernetesIngress:
         allowExternalNameServices: true
+        allowEmptyServices: true
     service:
       type: ClusterIP

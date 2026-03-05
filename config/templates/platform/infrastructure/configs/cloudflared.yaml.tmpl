@@ -5,11 +5,11 @@ metadata:
   namespace: cloudflare
 data:
   config.yaml: |
-    tunnel: 165a5f0f-1c27-40b5-87e6-7d3c71928368
+    tunnel: ${CLOUDFLARE_TUNNEL_ID}
     credentials-file: /etc/cloudflared/credentials.json
     no-autoupdate: true
     ingress:
-      - hostname: "*.product-garden.com"
+      - hostname: "*.${DOMAIN}"
         service: http://traefik.kube-system.svc.cluster.local
       - service: http_status:404
 ---
@@ -30,8 +30,6 @@ spec:
       labels:
         app: cloudflared
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: otavert-vxrail
       containers:
         - name: cloudflared
           image: cloudflare/cloudflared:latest

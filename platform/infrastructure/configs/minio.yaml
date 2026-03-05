@@ -34,15 +34,13 @@ spec:
     resources:
       requests:
         memory: 256Mi
-    nodeSelector:
-      kubernetes.io/hostname: otavert-vxrail
     ingress:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - s3.product-garden.com
+        - s3.dev.test
     consoleIngress:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - minio.product-garden.com
+        - minio.dev.test

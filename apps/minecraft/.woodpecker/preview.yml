@@ -48,12 +48,12 @@ steps:
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         kubectl create namespace $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
         kubectl label namespace $$PREVIEW_NS \
-          platform.dev.test/managed=true \
-          platform.dev.test/org=${CI_REPO_OWNER} \
-          platform.dev.test/repo=${CI_REPO_NAME} \
-          platform.dev.test/tier=workload \
-          platform.dev.test/environment=preview \
-          platform.dev.test/pr=${CI_COMMIT_PULL_REQUEST} \
+          open-platform.sh/managed=true \
+          open-platform.sh/org=${CI_REPO_OWNER} \
+          open-platform.sh/repo=${CI_REPO_NAME} \
+          open-platform.sh/tier=workload \
+          open-platform.sh/environment=preview \
+          open-platform.sh/pr=${CI_COMMIT_PULL_REQUEST} \
           --overwrite
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"

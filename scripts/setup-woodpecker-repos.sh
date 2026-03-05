@@ -6,35 +6,54 @@ set -euo pipefail
 # Idempotent — skips resources that already exist.
 # Runs from deploy.sh after all services are stable.
 
-DOMAIN="${PLATFORM_DOMAIN:-product-garden.com}"
-FORGEJO_INTERNAL_URL="https://forgejo.${DOMAIN}"
-FORGEJO_API="${FORGEJO_INTERNAL_URL}/api/v1"
-WP_INTERNAL_URL="https://ci.${DOMAIN}"
-
-# Woodpecker sets WOODPECKER_HOST and WOODPECKER_FORGEJO_URL for OAuth2 redirects.
-# The OAuth callback lands on WOODPECKER_HOST, so session cookies bind to that domain.
-# We must use the SAME domain for all subsequent session-authenticated requests.
-# Try: statefulset env → pod env exec → fallback to internal.
-WP_HOST=$(kubectl get statefulset woodpecker-server -n woodpecker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="WOODPECKER_HOST")].value}' 2>/dev/null || echo "")
-FORGEJO_OAUTH_URL=$(kubectl get statefulset woodpecker-server -n woodpecker -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="WOODPECKER_FORGEJO_URL")].value}' 2>/dev/null || echo "")
-
-if [ -z "$WP_HOST" ]; then
-  WP_HOST=$(kubectl exec statefulset/woodpecker-server -n woodpecker -- printenv WOODPECKER_HOST 2>/dev/null || echo "")
-fi
-if [ -z "$FORGEJO_OAUTH_URL" ]; then
-  FORGEJO_OAUTH_URL=$(kubectl exec statefulset/woodpecker-server -n woodpecker -- printenv WOODPECKER_FORGEJO_URL 2>/dev/null || echo "")
-fi
-
-# Fallback to internal URLs if env vars not found
-WP_HOST="${WP_HOST:-$WP_INTERNAL_URL}"
-FORGEJO_OAUTH_URL="${FORGEJO_OAUTH_URL:-$FORGEJO_INTERNAL_URL}"
-
-# Use WP_HOST for session-authenticated requests (cookies match callback domain)
-# Use WP_INTERNAL_URL for healthchecks and non-session API calls
-WP_URL="$WP_HOST"
+DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
+
+# Use port-forward for both Forgejo and Woodpecker API access (works without DNS)
+FORGEJO_LOCAL_PORT=3335
+WP_LOCAL_PORT=8001
+
+COOKIE_DIR=$(mktemp -d)
+PF_FORGEJO_PID=""
+PF_WP_PID=""
+trap 'kill $PF_FORGEJO_PID 2>/dev/null || true; kill $PF_WP_PID 2>/dev/null || true; rm -rf ${COOKIE_DIR}' EXIT
+
+# Start port-forwards with retry (critical after k3s restart — kubelet may need time)
+start_port_forwards() {
+  kill $PF_FORGEJO_PID 2>/dev/null || true
+  kill $PF_WP_PID 2>/dev/null || true
+  kubectl port-forward -n forgejo svc/forgejo-http ${FORGEJO_LOCAL_PORT}:3000 &>/dev/null &
+  PF_FORGEJO_PID=$!
+  kubectl port-forward -n woodpecker svc/woodpecker-server ${WP_LOCAL_PORT}:80 &>/dev/null &
+  PF_WP_PID=$!
+  sleep 3
+}
+
+echo "Establishing port-forwards..."
+for attempt in $(seq 1 10); do
+  start_port_forwards
+  # Verify both port-forwards are alive and responsive
+  if kill -0 $PF_FORGEJO_PID 2>/dev/null && kill -0 $PF_WP_PID 2>/dev/null; then
+    if curl -fsSk "http://localhost:${FORGEJO_LOCAL_PORT}/api/v1/settings/api" >/dev/null 2>&1; then
+      break
+    fi
+  fi
+  [ "$attempt" -eq 10 ] && { echo "Warning: Port-forwards not working after 10 attempts — skipping."; exit 0; }
+  echo "  Port-forward attempt $attempt failed, retrying..."
+  sleep 5
+done
+
+FORGEJO_INTERNAL_URL="http://localhost:${FORGEJO_LOCAL_PORT}"
+FORGEJO_API="${FORGEJO_INTERNAL_URL}/api/v1"
+WP_INTERNAL_URL="http://localhost:${WP_LOCAL_PORT}"
+
+# Woodpecker's WOODPECKER_HOST and WOODPECKER_FORGEJO_URL are for browser redirects.
+# For API-only access via port-forward, we use localhost URLs directly.
+FORGEJO_OAUTH_URL="${FORGEJO_INTERNAL_URL}"
+WP_HOST="${WP_INTERNAL_URL}"
+WP_URL="${WP_HOST}"
 
 forgejo_api() {
   curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
@@ -69,7 +88,7 @@ done
 # Verify Forgejo can serve git operations (not just API)
 echo "Verifying Forgejo git readiness..."
 for i in $(seq 1 15); do
-  if GIT_SSL_NO_VERIFY=1 git ls-remote "https://${ADMIN_USER}:${ADMIN_PASS}@$(echo "$FORGEJO_INTERNAL_URL" | sed 's|https://||')/system/open-platform.git" HEAD >/dev/null 2>&1; then
+  if git ls-remote "http://${ADMIN_USER}:${ADMIN_PASS}@localhost:${FORGEJO_LOCAL_PORT}/system/open-platform.git" HEAD >/dev/null 2>&1; then
     echo "Forgejo git service is ready."
     break
   fi
@@ -79,8 +98,6 @@ done
 
 # ── Phase 1: Woodpecker login via programmatic OAuth2 flow ────────────────────
 
-COOKIE_DIR=$(mktemp -d)
-trap "rm -rf ${COOKIE_DIR}" EXIT
 FORGEJO_COOKIES="${COOKIE_DIR}/forgejo"
 WP_COOKIES="${COOKIE_DIR}/woodpecker"
 
@@ -117,15 +134,27 @@ if [ -z "$AUTHORIZE_URL" ]; then
   exit 0
 fi
 
+# Rewrite Forgejo URL to use port-forward (Woodpecker may return internal or external URL)
+AUTHORIZE_URL=$(echo "$AUTHORIZE_URL" | sed \
+  "s|https://forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
+   s|http://forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
+   s|http://forgejo-http\.forgejo\.svc\.cluster\.local:3000|http://localhost:${FORGEJO_LOCAL_PORT}|")
+
 # Step 3: Fetch Forgejo authorize — may show grant page (first time) or auto-redirect (already authorized)
 AUTHORIZE_HEADERS=$(curl -sSk -b "${FORGEJO_COOKIES}" -c "${FORGEJO_COOKIES}" \
   -o "${COOKIE_DIR}/grant_body" -D - "${AUTHORIZE_URL}" 2>&1)
 
 AUTHORIZE_STATUS=$(echo "$AUTHORIZE_HEADERS" | grep -E '^HTTP' | tail -1 | awk '{print $2}')
 
+rewrite_callback() {
+  # Rewrite external callback URL to use port-forward (avoids cookie domain mismatch)
+  echo "$1" | sed "s|https://ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|;s|http://ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|"
+}
+
 if [ "$AUTHORIZE_STATUS" = "303" ] || [ "$AUTHORIZE_STATUS" = "302" ]; then
   # Already authorized — Forgejo redirected with auth code. Follow the callback.
   CALLBACK_URL=$(echo "$AUTHORIZE_HEADERS" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+  CALLBACK_URL=$(rewrite_callback "$CALLBACK_URL")
   curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
     -o /dev/null "${CALLBACK_URL}"
 else
@@ -140,20 +169,25 @@ else
     exit 0
   fi
 
-  # Submit grant form — Forgejo redirects to Woodpecker callback with auth code
-  curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+  # Submit grant form — capture redirect, don't follow automatically
+  GRANT_RESPONSE=$(curl -sSk -b "${FORGEJO_COOKIES}" -c "${FORGEJO_COOKIES}" \
     --data-urlencode "client_id=${GRANT_CLIENT}" \
     --data-urlencode "state=${GRANT_STATE}" \
     --data-urlencode "scope=" \
     --data-urlencode "nonce=" \
     --data-urlencode "redirect_uri=${GRANT_REDIRECT}" \
     --data-urlencode "granted=true" \
-    -o /dev/null "${FORGEJO_OAUTH_URL}/login/oauth/grant"
+    -o /dev/null -D - "${FORGEJO_OAUTH_URL}/login/oauth/grant")
+
+  GRANT_CALLBACK=$(echo "$GRANT_RESPONSE" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+  GRANT_CALLBACK=$(rewrite_callback "$GRANT_CALLBACK")
+  curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+    -o /dev/null "${GRANT_CALLBACK}"
 fi
 
 # Step 4: Extract session and CSRF
 WP_SESSION=$(grep user_sess "${WP_COOKIES}" 2>/dev/null | awk '{print $NF}' || echo "")
-WP_CSRF=$(curl -sSk -b "${WP_COOKIES}" "${WP_URL}/web-config.js" 2>/dev/null \
+WP_CSRF=$(curl -sSk -b "user_sess=${WP_SESSION}" "http://localhost:${WP_LOCAL_PORT}/web-config.js" 2>/dev/null \
   | grep WOODPECKER_CSRF | sed 's/.*= "//;s/".*//' || echo "")
 
 if [ -z "$WP_SESSION" ] || [ -z "$WP_CSRF" ]; then

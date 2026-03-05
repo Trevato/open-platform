@@ -1,7 +1,7 @@
 gitea:
   admin:
     existingSecret: forgejo-admin-credentials
-    email: "trevato@trevato.dev"
+    email: "me@trevato.dev"
   additionalConfigFromEnvs:
     - name: FORGEJO__database__PASSWD
       valueFrom:
@@ -10,9 +10,9 @@ gitea:
           key: password
   config:
     server:
-      DOMAIN: forgejo.product-garden.com
-      ROOT_URL: https://forgejo.product-garden.com
-      SSH_DOMAIN: forgejo.product-garden.com
+      DOMAIN: forgejo.dev.test
+      ROOT_URL: https://forgejo.dev.test
+      SSH_DOMAIN: forgejo.dev.test
       SSH_PORT: 22
       SSH_LISTEN_PORT: 2222
       LFS_START_SERVER: true
@@ -25,23 +25,23 @@ gitea:
     packages:
       ENABLED: true
     service:
-      DISABLE_REGISTRATION: false
-      DEFAULT_ALLOW_CREATE_ORGANIZATION: true
+      DISABLE_REGISTRATION: true
+      DEFAULT_ALLOW_CREATE_ORGANIZATION: false
     repository:
       DEFAULT_PRIVATE: true
     oauth2:
-      ENABLE: true
+      ENABLED: true
     openid:
       ENABLE_OPENID_SIGNIN: true
     webhook:
-      ALLOWED_HOST_LIST: "*.product-garden.com"
+      ALLOWED_HOST_LIST: "*.dev.test"
       SKIP_TLS_VERIFY: true
 
 ingress:
   enabled: true
   className: traefik
   hosts:
-    - host: forgejo.product-garden.com
+    - host: forgejo.dev.test
       paths:
         - path: /
           pathType: Prefix
@@ -49,10 +49,6 @@ ingress:
 persistence:
   enabled: true
   size: 10Gi
-
-deployment:
-  nodeSelector:
-    kubernetes.io/hostname: otavert-vxrail
 
 postgresql:
   enabled: false
