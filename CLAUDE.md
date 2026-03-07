@@ -32,12 +32,16 @@ Single source of truth: `open-platform.yaml` → `scripts/generate-config.sh` �
 - **Generated outputs**: `*-values.yaml`, `helmfile.yaml`, `platform/` Flux resources, `manifests/oidc-rbac.yaml`, `.env`
 - **TLS modes**: `selfsigned` (auto-generated CA), `letsencrypt` (cert-manager + HTTP-01), `cloudflare` (tunnel at edge)
 - **Deploy flow**: `open-platform.yaml` → `generate-config.sh` (Phase 0 in deploy.sh) → `helmfile sync`
+- **`service_prefix`** — Optional prefix prepended to all service subdomains (e.g., `myteam-` → `myteam-forgejo.open-platform.sh`). Empty by default. Used for multi-tenant deployments where each customer instance gets a unique prefix.
+- **Template placeholders**: `SERVICE_PREFIX` (domain prefix) and `REGISTRY_HOST` (Forgejo hostname, e.g., `myteam-forgejo.open-platform.sh`). Used in app CI pipelines and k8s manifests. Both are Woodpecker org secrets: `service_prefix`, `registry_host`.
 
 ### Domain Strategy
 
 The domain is set in `open-platform.yaml` (e.g., `domain: dev.test` or `domain: product-garden.com`). All services use `*.{PLATFORM_DOMAIN}`.
 
 Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use `https://<service>.{PLATFORM_DOMAIN}`. In-cluster service-to-service communication uses Kubernetes DNS (e.g., `forgejo-http.forgejo.svc.cluster.local`).
+
+In multi-tenant mode (`service_prefix` set), all service URLs become `{prefix}{service}.{PLATFORM_DOMAIN}`. The prefix is substituted at config generation time and propagated to Woodpecker org secrets for CI pipelines.
 
 ### Cloudflare Tunnel (optional)
 
@@ -61,6 +65,27 @@ PR previews deploy at `pr-N-<app>.product-garden.com`, protected by OAuth2-Proxy
 
 - **Flux** manages the platform. `platform/` directory contains HelmReleases + manifests, pushed to `system/open-platform` on Forgejo. Changes auto-apply via Flux reconciliation.
 - **Woodpecker CI** deploys apps. App template includes 4 workflows: deploy (main branch), preview (PR — isolated DB/bucket per PR), preview-cleanup (PR close), and reset (manual data wipe).
+
+### Multi-Tenant Hosting (vCluster)
+
+For hosting multiple customers on a single k3s cluster, each customer gets an isolated vCluster instance:
+
+```
+Host k3s (VxRail)
+├── provisioner ns     ─── CronJob polls console DB, runs provision/teardown
+├── op-system-console  ─── Management console (create instances, view credentials)
+├── cloudflare ns      ─── Cloudflared tunnel (*.open-platform.sh)
+├── vc-{slug} ns       ─── Customer vCluster (full open-platform inside)
+│   ├── forgejo, woodpecker, headlamp, minio, postgres, flux
+│   ├── op-system-{app} namespaces (apps deployed by Woodpecker)
+│   └── Ingresses synced to host → host Traefik routes via {slug}-{service}.{domain}
+└── vc-{slug2} ns      ─── Another customer...
+```
+
+- **Provisioning flow**: Console creates DB record (status: pending) → Reconciler CronJob picks up → `provision-instance.sh` creates vCluster + bootstraps open-platform → status: ready
+- **Teardown flow**: Console sets status: terminating → Reconciler runs `teardown-instance.sh` → deletes vCluster namespace (cascades everything)
+- **Resource tiers**: free (500m/2Gi/10Gi), pro (1000m/4Gi/50Gi), team (2000m/8Gi/100Gi)
+- **Domain isolation**: `service_prefix: "{slug}-"` ensures unique subdomains per customer
 
 ## Services
 
@@ -137,6 +162,23 @@ PR previews deploy at `pr-N-<app>.product-garden.com`, protected by OAuth2-Proxy
 - **Role**: Watches `system/open-platform` on Forgejo, reconciles all platform HelmReleases and manifests
 - **Secrets**: `forgejo-auth` in flux-system — admin credentials for Forgejo git access
 
+### Console (Management Dashboard)
+- **Source**: `apps/console/`
+- **Namespace**: `op-system-console` (host cluster)
+- **Domain**: `console.open-platform.sh`
+- **Database**: `platform_ledger` on host PostgreSQL
+- **Auth**: Forgejo OAuth2 via better-auth
+- **Role**: Customer-facing dashboard for creating, monitoring, and managing vCluster instances. Tracks instance status, credentials, and provision events.
+- **Schema**: `customers` (user mapping), `instances` (slug, tier, status, credentials), `tiers` (resource limits), `provision_events` (audit log)
+
+### Provisioner (Instance Lifecycle)
+- **Config**: `host/provisioner/cronjob.yaml` (CronJob + RBAC)
+- **Namespace**: `provisioner` (host cluster)
+- **Role**: Automated instance lifecycle management. Polls console DB every minute for pending/terminating instances.
+- **Scripts**: `provision-instance.sh` (8-phase create), `teardown-instance.sh` (cleanup)
+- **Health**: `health-check.sh` monitors all ready instances every 5 minutes via HTTPS probe
+- **Deploy**: `host/deploy-provisioner.sh` installs CronJob and supporting resources
+
 ## System Org
 
 Created by `scripts/setup-system-org.sh` during first deploy. Contains:
@@ -149,6 +191,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `system/minecraft` | Minecraft server hosting — create/start/stop/delete real Minecraft servers via K8s API. Uses `itzg/minecraft-server` pods, NodePort services, namespace-scoped RBAC. Deployed at `minecraft.product-garden.com`. |
 | `system/arcade` | Arcade app — generated from template. Deployed at `arcade.product-garden.com`. (Namespaced, not yet in setup-system-org.sh) |
 | `system/events` | Events app — generated from template. Deployed at `events.product-garden.com`. (Namespaced, not yet in setup-system-org.sh) |
+| `system/hub` | Hub app — generated from template. Deployed at `hub.product-garden.com`. |
 
 ## Namespace Layout
 
@@ -164,6 +207,9 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
 | `flux-system` | Flux controllers (source, kustomize, helm, notification) |
 | `cloudflare` | cloudflared tunnel pod (optional, when Cloudflare configured) |
+| `provisioner` | Provisioner CronJob (host cluster only) |
+| `op-system-console` | Console management app (host cluster only) |
+| `vc-{slug}` | Customer vCluster instance (one per customer) |
 | `op-system-social` | Social media app (posts, images, auth) |
 | `op-system-minecraft` | Minecraft server hosting app + managed MC server pods |
 | `op-system-arcade` | Arcade app |
@@ -331,6 +377,11 @@ Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
 | `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Programmatic Woodpecker login, dynamic repo discovery + activation, org secrets — zero manual steps |
 | `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
 | `scripts/setup-oidc.sh` | after helmfile sync | Updates k3s OIDC client ID — prints NixOS instructions for VxRail, auto-updates Colima |
+| `scripts/provision-instance.sh` | Reconciler CronJob | 8-phase vCluster instance provisioning (create vCluster, helmfile bootstrap, OAuth2, Woodpecker, OIDC, metadata) |
+| `scripts/teardown-instance.sh` | Reconciler CronJob | vCluster teardown — deletes namespace, cleans up stale resources |
+| `host/deploy-provisioner.sh` | Manual | Deploys provisioner CronJob + RBAC to host cluster |
+| `host/provisioner/reconciler.sh` | CronJob (1min) | Polls console DB for pending/terminating instances, runs provision/teardown |
+| `host/provisioner/health-check.sh` | CronJob (5min) | Monitors instance health via HTTPS probe to Forgejo endpoint |
 
 All scripts are idempotent — safe to run on every `make deploy`.
 
@@ -392,6 +443,12 @@ Located inside the Colima VM at `/etc/rancher/k3s/config.yaml`. Updated by `scri
 - **Preview auth annotation** — preview ingresses use `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd` to trigger ForwardAuth.
 - **Flux + helmfile coexistence** — helmfile bootstraps releases, Flux adopts them via matching HelmReleases. Flux's helm-controller runs `helm upgrade --install` — if values match, it's a no-op. After bootstrap, Flux owns the releases. Bootstrap ↔ Flux values MUST stay in sync or Flux thrashes config on every reconciliation.
 - **Git credential security** — `setup-system-org.sh` uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
+- **vCluster CoreDNS port** — custom server zones must use `:1053` inside vCluster (not `:53`). vCluster's kube-dns maps 53→1053.
+- **vCluster Traefik mode** — must be `Deployment` inside vCluster, not DaemonSet. `hostNetwork: true` is incompatible — synced pods would steal host ports.
+- **vCluster Headlamp OIDC** — needs Traefik Middleware (`X-Forwarded-Proto: https`) on host cluster because host Traefik terminates TLS. Also needs API server `--oidc-*` flags via helm upgrade (Phase 7c in provision-instance.sh).
+- **vCluster StatefulSet immutability** — `helm upgrade` fails if StatefulSet spec fields change (e.g., adding OIDC args). Delete StatefulSet with `--cascade=orphan` first, then upgrade.
+- **vCluster ingress sync** — ingresses sync to host namespace `vc-{slug}` with mangled names (e.g., `headlamp-x-headlamp-x-tester`). Host Traefik picks them up automatically.
+- **Headlamp OIDC skip TLS** — use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY=true` env var (NOT a CLI flag). Works correctly despite "failed to append ca cert to pool" log (non-fatal).
 
 ## Development Conventions
 
