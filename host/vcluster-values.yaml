@@ -1,0 +1,36 @@
+# vCluster OSS values for running full open-platform instances.
+# Uses k8s distro (k3s deprecated in vCluster v0.25+).
+
+controlPlane:
+  distro:
+    k8s:
+      enabled: true
+      apiServer:
+        extraArgs:
+          - --service-cluster-ip-range=10.43.0.0/16
+  statefulSet:
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        memory: 4Gi
+    persistence:
+      volumeClaim:
+        enabled: true
+        size: 5Gi
+        retentionPolicy: Delete
+
+sync:
+  toHost:
+    ingresses:
+      enabled: true
+    persistentVolumeClaims:
+      enabled: true
+  fromHost:
+    ingressClasses:
+      enabled: true
+    storageClasses:
+      enabled: true
+    nodes:
+      enabled: true
