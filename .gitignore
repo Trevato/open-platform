@@ -18,6 +18,12 @@ bun.lock
 *.png
 auth-validation-screenshots/
 
+# Credentials and tokens
+cf-token
+gh-env
+
 # Generated config (user-specific)
 open-platform.yaml
 open-platform.state.yaml
+open-platform.yaml.*
+!open-platform.yaml.example
