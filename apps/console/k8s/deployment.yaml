@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: PROJECT_NAME
+  namespace: APP_NAMESPACE
+  labels:
+    app: PROJECT_NAME
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: PROJECT_NAME
+  template:
+    metadata:
+      labels:
+        app: PROJECT_NAME
+    spec:
+      imagePullSecrets:
+        - name: forgejo-registry
+      containers:
+        - name: app
+          image: forgejo.PLATFORM_DOMAIN/ORG_NAME/PROJECT_NAME:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DATABASE_URL
+              value: "postgresql://DB_NAME:DB_NAME@postgres-rw.postgres.svc.cluster.local:5432/DB_NAME"
+            - name: BETTER_AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: PROJECT_NAME-auth
+                  key: secret
+                  optional: true
+            - name: AUTH_GITHUB_ID
+              valueFrom:
+                secretKeyRef:
+                  name: PROJECT_NAME-auth
+                  key: client-id
+                  optional: true
+            - name: AUTH_GITHUB_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: PROJECT_NAME-auth
+                  key: client-secret
+                  optional: true
+            - name: BETTER_AUTH_URL
+              value: "https://console.PLATFORM_DOMAIN"
+            - name: BETTER_AUTH_TRUSTED_ORIGINS
+              value: "https://console.PLATFORM_DOMAIN"
+            - name: MANAGED_DOMAIN
+              value: "PLATFORM_DOMAIN"
+            - name: NEXT_PUBLIC_MANAGED_DOMAIN
+              value: "PLATFORM_DOMAIN"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/etc/ssl/custom/ca.crt"
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
+          volumeMounts:
+            - name: platform-ca
+              mountPath: /etc/ssl/custom
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: platform-ca
+          configMap:
+            name: platform-ca
