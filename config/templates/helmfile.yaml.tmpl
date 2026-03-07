@@ -158,8 +158,8 @@ releases:
           existingSecret: oauth2-proxy-secrets
           configFile: |
             provider = "oidc"
-            oidc_issuer_url = "https://forgejo.${DOMAIN}"
-            redirect_url = "https://oauth2.${DOMAIN}/oauth2/callback"
+            oidc_issuer_url = "https://${SERVICE_PREFIX}forgejo.${DOMAIN}"
+            redirect_url = "https://${SERVICE_PREFIX}oauth2.${DOMAIN}/oauth2/callback"
             upstreams = ["static://200"]
             email_domains = ["*"]
             skip_provider_button = true
@@ -171,7 +171,7 @@ releases:
           enabled: true
           className: traefik
           hosts:
-            - oauth2.${DOMAIN}
+            - ${SERVICE_PREFIX}oauth2.${DOMAIN}
           pathType: Prefix
         service:
           type: ClusterIP

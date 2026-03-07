@@ -7,6 +7,7 @@ set -euo pipefail
 # Runs from deploy.sh after all services are stable.
 
 DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
+PREFIX="${SERVICE_PREFIX:-}"
 
 ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
 ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
@@ -136,8 +137,8 @@ fi
 
 # Rewrite Forgejo URL to use port-forward (Woodpecker may return internal or external URL)
 AUTHORIZE_URL=$(echo "$AUTHORIZE_URL" | sed \
-  "s|https://forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
-   s|http://forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
+  "s|https://${PREFIX}forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
+   s|http://${PREFIX}forgejo\.${DOMAIN}|http://localhost:${FORGEJO_LOCAL_PORT}|;\
    s|http://forgejo-http\.forgejo\.svc\.cluster\.local:3000|http://localhost:${FORGEJO_LOCAL_PORT}|")
 
 # Step 3: Fetch Forgejo authorize — may show grant page (first time) or auto-redirect (already authorized)
@@ -148,7 +149,7 @@ AUTHORIZE_STATUS=$(echo "$AUTHORIZE_HEADERS" | grep -E '^HTTP' | tail -1 | awk '
 
 rewrite_callback() {
   # Rewrite external callback URL to use port-forward (avoids cookie domain mismatch)
-  echo "$1" | sed "s|https://ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|;s|http://ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|"
+  echo "$1" | sed "s|https://${PREFIX}ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|;s|http://${PREFIX}ci\.${DOMAIN}|http://localhost:${WP_LOCAL_PORT}|"
 }
 
 if [ "$AUTHORIZE_STATUS" = "303" ] || [ "$AUTHORIZE_STATUS" = "302" ]; then
@@ -277,7 +278,7 @@ if [ -z "$ORG_ID" ]; then
   exit 0
 fi
 
-for SECRET_NAME in registry_username registry_token platform_domain registry_host; do
+for SECRET_NAME in registry_username registry_token platform_domain registry_host service_prefix; do
   EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
   if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
     echo "Org secret '${SECRET_NAME}' already exists."
@@ -288,7 +289,8 @@ for SECRET_NAME in registry_username registry_token platform_domain registry_hos
     registry_username) VALUE="${ADMIN_USER}" ;;
     registry_token) VALUE="${ADMIN_PASS}" ;;
     platform_domain) VALUE="${DOMAIN}" ;;
-    registry_host) VALUE="forgejo.${DOMAIN}" ;;
+    registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
+    service_prefix) VALUE="${PREFIX}" ;;
   esac
 
   wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \

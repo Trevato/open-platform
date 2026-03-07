@@ -5,14 +5,13 @@ config:
     externalSecret:
       enabled: true
       name: "oidc"
-    issuerURL: https://forgejo.${DOMAIN}
+    issuerURL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
     scopes: "openid,profile,email,groups"
-
 ingress:
   enabled: true
   ingressClassName: traefik
   hosts:
-    - host: headlamp.${DOMAIN}
+    - host: ${SERVICE_PREFIX}headlamp.${DOMAIN}
       paths:
         - path: /
           type: ImplementationSpecific

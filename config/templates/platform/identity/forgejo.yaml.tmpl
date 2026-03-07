@@ -36,9 +36,9 @@ spec:
               key: password
       config:
         server:
-          DOMAIN: forgejo.${DOMAIN}
-          ROOT_URL: https://forgejo.${DOMAIN}
-          SSH_DOMAIN: forgejo.${DOMAIN}
+          DOMAIN: ${SERVICE_PREFIX}forgejo.${DOMAIN}
+          ROOT_URL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
+          SSH_DOMAIN: ${SERVICE_PREFIX}forgejo.${DOMAIN}
           SSH_PORT: 22
           SSH_LISTEN_PORT: 2222
           LFS_START_SERVER: true
@@ -66,7 +66,7 @@ spec:
       enabled: true
       className: traefik
       hosts:
-        - host: forgejo.${DOMAIN}
+        - host: ${SERVICE_PREFIX}forgejo.${DOMAIN}
           paths:
             - path: /
               pathType: Prefix

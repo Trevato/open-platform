@@ -114,6 +114,7 @@ for reserved in $RESERVED_NAMES; do
 done
 TLS_MODE=$(yaml_get "$CONFIG_FILE" "tls.mode" 2>/dev/null) || TLS_MODE="letsencrypt"
 TLS_EMAIL=$(yaml_get "$CONFIG_FILE" "tls.email" 2>/dev/null) || TLS_EMAIL="$ADMIN_EMAIL"
+SERVICE_PREFIX=$(yaml_get "$CONFIG_FILE" "service_prefix" 2>/dev/null) || SERVICE_PREFIX=""
 
 # Cloudflare settings (optional)
 CF_ACCOUNT_TAG=$(yaml_get "$CONFIG_FILE" "cloudflare.account_tag" 2>/dev/null) || CF_ACCOUNT_TAG=""
@@ -123,6 +124,9 @@ CF_TUNNEL_SECRET=$(yaml_get "$CONFIG_FILE" "cloudflare.tunnel_secret" 2>/dev/nul
 echo "Generating config for: ${DOMAIN}"
 echo "  Admin: ${ADMIN_USER} <${ADMIN_EMAIL}>"
 echo "  TLS:   ${TLS_MODE}"
+if [ -n "$SERVICE_PREFIX" ]; then
+  echo "  Prefix: ${SERVICE_PREFIX}"
+fi
 
 # ── Generate / Load Secrets ─────────────────────────────────────────────────
 
@@ -184,6 +188,7 @@ template_file() {
   local src="$1" dest="$2"
   sed \
     -e "s|\${DOMAIN}|${DOMAIN}|g" \
+    -e "s|\${SERVICE_PREFIX}|${SERVICE_PREFIX}|g" \
     -e "s|\${ADMIN_USER}|${ADMIN_USER}|g" \
     -e "s|\${ADMIN_EMAIL}|${ADMIN_EMAIL}|g" \
     -e "s|\${TLS_MODE}|${TLS_MODE}|g" \
@@ -326,6 +331,7 @@ cat > "$ROOT_DIR/.env" <<EOF
 # Edit open-platform.yaml instead, then re-run: ./scripts/generate-config.sh
 
 PLATFORM_DOMAIN=${DOMAIN}
+SERVICE_PREFIX=${SERVICE_PREFIX}
 FORGEJO_ADMIN_USER=${ADMIN_USER}
 FORGEJO_ADMIN_PASSWORD=${FORGEJO_ADMIN_PASSWORD}
 FORGEJO_DB_PASSWORD=${FORGEJO_DB_PASSWORD}
@@ -412,11 +418,11 @@ echo ""
 echo "Config generated for ${DOMAIN}"
 echo ""
 echo "Services:"
-echo "  Forgejo:    https://forgejo.${DOMAIN}"
-echo "  Woodpecker: https://ci.${DOMAIN}"
-echo "  Headlamp:   https://headlamp.${DOMAIN}"
-echo "  MinIO:      https://minio.${DOMAIN}"
-echo "  S3 API:     https://s3.${DOMAIN}"
-echo "  OAuth2:     https://oauth2.${DOMAIN}"
+echo "  Forgejo:    https://${SERVICE_PREFIX}forgejo.${DOMAIN}"
+echo "  Woodpecker: https://${SERVICE_PREFIX}ci.${DOMAIN}"
+echo "  Headlamp:   https://${SERVICE_PREFIX}headlamp.${DOMAIN}"
+echo "  MinIO:      https://${SERVICE_PREFIX}minio.${DOMAIN}"
+echo "  S3 API:     https://${SERVICE_PREFIX}s3.${DOMAIN}"
+echo "  OAuth2:     https://${SERVICE_PREFIX}oauth2.${DOMAIN}"
 echo ""
 echo "Next: make deploy"

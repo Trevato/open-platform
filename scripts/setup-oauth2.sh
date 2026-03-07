@@ -6,17 +6,18 @@ set -euo pipefail
 # Runs as a forgejo postsync hook after the pod is ready.
 
 DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set — run generate-config.sh first}"
-FORGEJO_URL="https://forgejo.${DOMAIN}"
+PREFIX="${SERVICE_PREFIX:-}"
+FORGEJO_URL="https://${PREFIX}forgejo.${DOMAIN}"
 
 OAUTH2_APPS=(
-  "Headlamp|https://headlamp.${DOMAIN}/oidc-callback|true"
-  "Woodpecker|https://ci.${DOMAIN}/authorize|true"
-  "OAuth2-Proxy|https://oauth2.${DOMAIN}/oauth2/callback|true"
-  "Social|https://social.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
-  "Minecraft|https://minecraft.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
-  "Arcade|https://arcade.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
-  "Events|https://events.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
-  "Hub|https://hub.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Headlamp|https://${PREFIX}headlamp.${DOMAIN}/oidc-callback|true"
+  "Woodpecker|https://${PREFIX}ci.${DOMAIN}/authorize|true"
+  "OAuth2-Proxy|https://${PREFIX}oauth2.${DOMAIN}/oauth2/callback|true"
+  "Social|https://${PREFIX}social.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Minecraft|https://${PREFIX}minecraft.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Arcade|https://${PREFIX}arcade.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Events|https://${PREFIX}events.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Hub|https://${PREFIX}hub.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -122,7 +123,7 @@ if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
     --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
     --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
     --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
-    --from-literal=OIDC_CALLBACK_URL="https://headlamp.${DOMAIN}/oidc-callback"
+    --from-literal=OIDC_CALLBACK_URL="https://${PREFIX}headlamp.${DOMAIN}/oidc-callback"
 else
   # Verify the secret exists (from a previous run)
   if ! kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' 2>/dev/null | base64 -d >/dev/null 2>&1; then

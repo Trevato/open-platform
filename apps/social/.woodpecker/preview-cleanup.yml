@@ -14,6 +14,8 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     environment:
+      REGISTRY_HOST:
+        from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
@@ -39,11 +41,11 @@ steps:
         FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
         FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
         APP_ID=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
-          "https://forgejo.$PLATFORM_DOMAIN/api/v1/user/applications/oauth2" | \
+          "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" | \
           grep -o '"id":[0-9]*,"name":"'$$PREVIEW_NAME'"' | grep -o '"id":[0-9]*' | cut -d: -f2)
         if [ -n "$$APP_ID" ]; then
           curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
-            -X DELETE "https://forgejo.$PLATFORM_DOMAIN/api/v1/user/applications/oauth2/$$APP_ID"
+            -X DELETE "https://$REGISTRY_HOST/api/v1/user/applications/oauth2/$$APP_ID"
           echo "Deleted OAuth2 app '$$PREVIEW_NAME' (id: $$APP_ID)"
         fi
 
@@ -51,4 +53,4 @@ steps:
           -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
           -H "Content-Type: application/json" \
           -d "{\"body\": \"Preview environment cleaned up.\"}" \
-          "https://forgejo.$PLATFORM_DOMAIN/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"
+          "https://$REGISTRY_HOST/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"

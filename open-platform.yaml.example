@@ -3,6 +3,11 @@
 
 domain: myplatform.example.com
 
+# Optional: prefix for service subdomains (for multi-tenant hosting)
+# When set, services become {prefix}forgejo.{domain}, {prefix}ci.{domain}, etc.
+# Leave unset or empty for standard behavior (forgejo.{domain}, ci.{domain}).
+# service_prefix: myteam-
+
 admin:
   username: opadmin    # "admin" is a reserved name in Forgejo
   email: admin@example.com

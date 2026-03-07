@@ -38,9 +38,9 @@ spec:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - s3.dev.test
+        - s3.product-garden.com
     consoleIngress:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - minio.dev.test
+        - minio.product-garden.com

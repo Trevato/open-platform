@@ -61,7 +61,7 @@ steps:
           kubectl apply -f -
       - |
         kubectl create secret docker-registry forgejo-registry \
-          --docker-server=forgejo.$PLATFORM_DOMAIN \
+          --docker-server=$REGISTRY_HOST \
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
           -n $APP_NS --dry-run=client -o yaml | kubectl apply -f -
@@ -82,6 +82,8 @@ steps:
         from_secret: registry_username
       REGISTRY_TOKEN:
         from_secret: registry_token
+      REGISTRY_HOST:
+        from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
 
@@ -133,11 +135,15 @@ steps:
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
       - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
-      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g" k8s/*.yaml
+      - sed -i "s/SERVICE_PREFIX/$SERVICE_PREFIX/g; s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/REGISTRY_HOST/$REGISTRY_HOST/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - kubectl apply -f k8s/rbac.yaml
       - kubectl apply -f k8s/
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
     environment:
+      SERVICE_PREFIX:
+        from_secret: service_prefix
+      REGISTRY_HOST:
+        from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain

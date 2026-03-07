@@ -38,9 +38,9 @@ spec:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - s3.${DOMAIN}
+        - ${SERVICE_PREFIX}s3.${DOMAIN}
     consoleIngress:
       enabled: true
       ingressClassName: traefik
       hosts:
-        - minio.${DOMAIN}
+        - ${SERVICE_PREFIX}minio.${DOMAIN}

@@ -29,10 +29,10 @@ spec:
       enabled: true
       env:
         WOODPECKER_FORGEJO: "true"
-        WOODPECKER_FORGEJO_URL: "https://forgejo.${DOMAIN}"
+        WOODPECKER_FORGEJO_URL: "https://${SERVICE_PREFIX}forgejo.${DOMAIN}"
         WOODPECKER_FORGEJO_SKIP_VERIFY: "${TLS_SKIP_VERIFY}"
         WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: "${TLS_SKIP_VERIFY}"
-        WOODPECKER_HOST: "https://ci.${DOMAIN}"
+        WOODPECKER_HOST: "https://${SERVICE_PREFIX}ci.${DOMAIN}"
         WOODPECKER_ADMIN: "${ADMIN_USER}"
         WOODPECKER_OPEN: "false"
       extraSecretNamesForEnvFrom:
@@ -44,7 +44,7 @@ spec:
         enabled: true
         ingressClassName: traefik
         hosts:
-          - host: ci.${DOMAIN}
+          - host: ${SERVICE_PREFIX}ci.${DOMAIN}
             paths:
               - path: /
                 pathType: Prefix
