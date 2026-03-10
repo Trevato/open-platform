@@ -21,7 +21,7 @@ steps:
     commands:
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         echo "Cleaning up preview: $$PREVIEW_NAME (namespace: $$PREVIEW_NS)"
 

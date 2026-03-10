@@ -4,6 +4,8 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import pool from "@/lib/db";
 import { StatusBadge } from "@/app/components/status-badge";
+import { ProvisionTerminal } from "./components/provision-terminal";
+import { GettingStarted } from "./components/getting-started";
 
 interface ProvisionEvent {
   phase: string;
@@ -168,21 +170,6 @@ function EventsTimeline({ events }: { events: ProvisionEvent[] }) {
   );
 }
 
-function ProvisioningState({ events }: { events: ProvisionEvent[] }) {
-  const latestMessage =
-    events.length > 0 ? events[0].message : "Waiting to start...";
-
-  return (
-    <div className="card" style={{ marginBottom: 32 }}>
-      <div className="provision-progress">
-        <div className="provision-spinner" />
-        <h3>Provisioning your platform</h3>
-        <p>{latestMessage}</p>
-      </div>
-    </div>
-  );
-}
-
 export default async function InstanceDetailPage({
   params,
 }: {
@@ -290,7 +277,13 @@ export default async function InstanceDetailPage({
         </Link>
       </div>
 
-      {isProvisioning && <ProvisioningState events={events} />}
+      {isProvisioning && (
+        <ProvisionTerminal
+          slug={slug}
+          initialEvents={events}
+          instanceStatus={instance.status}
+        />
+      )}
 
       {isReady && (
         <div className="section">
@@ -298,6 +291,8 @@ export default async function InstanceDetailPage({
           <ServiceCards slug={slug} domain={domain} />
         </div>
       )}
+
+      {isReady && <GettingStarted slug={slug} domain={domain} />}
 
       <div className="section" style={{ marginTop: isReady ? 16 : 0 }}>
         <div className="section-header">Events</div>

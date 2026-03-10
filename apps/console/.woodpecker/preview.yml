@@ -42,8 +42,6 @@ steps:
         from_secret: registry_token
       REGISTRY_HOST:
         from_secret: registry_host
-      SERVICE_PREFIX:
-        from_secret: service_prefix
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
@@ -68,52 +66,20 @@ steps:
           kubectl apply -f -
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        kubectl get secret minio-credentials -n $$PREVIEW_NS 2>/dev/null || \
-          kubectl get secret minio-credentials -n minio -o json | \
-          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
-          sed 's/"namespace": *"minio"/"namespace": "'$$PREVIEW_NS'"/' | \
-          kubectl apply -f -
-      - |
-        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         kubectl create secret docker-registry forgejo-registry \
           --docker-server=$REGISTRY_HOST \
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
           -n $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
       - |
-        PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        sed "s/APP_NAMESPACE/$$PREVIEW_NS/g" k8s/rbac.yaml | kubectl apply -f -
-      - |
-        export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
-          "SELECT 1 FROM pg_database WHERE datname = '$$PREVIEW_DB'" | grep -q 1 || {
-          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $$PREVIEW_DB"
-          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER $$PREVIEW_DB WITH PASSWORD '$$PREVIEW_DB'" || true
-          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE $$PREVIEW_DB TO $$PREVIEW_DB"
-          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER DATABASE $$PREVIEW_DB OWNER TO $$PREVIEW_DB"
-          touch .db-created
-        }
-      - |
-        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        kubectl run minio-preview-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
-          --image=minio/mc:latest -n minio \
-          --overrides='{"spec":{"containers":[{"name":"minio-preview-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}' && mc anonymous set download minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
-      - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
-          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
-        else
-          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
-        fi
-        if kubectl get secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS 2>/dev/null; then
-          echo "Preview auth secret exists, skipping OAuth2 app creation"
+        if kubectl get secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d 2>/dev/null | grep -q .; then
+          echo "Preview auth secret exists with OAuth2 credentials, skipping"
         else
           FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
           FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
-          REDIRECT_URI="https://$$PREVIEW_URL_HOST/api/auth/oauth2/callback/forgejo"
+          REDIRECT_URI="https://$$PREVIEW_NAME.$PLATFORM_DOMAIN/api/auth/oauth2/callback/forgejo"
           RESPONSE=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
             -X POST "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" \
             -H "Content-Type: application/json" \
@@ -129,6 +95,15 @@ steps:
             --dry-run=client -o yaml | kubectl apply -f -
           echo "Created OAuth2 app '$$PREVIEW_NAME' with redirect to $$REDIRECT_URI"
         fi
+      - |
+        export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = '$$PREVIEW_DB'" | grep -q 1 || {
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $$PREVIEW_DB"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER $$PREVIEW_DB WITH PASSWORD '$$PREVIEW_DB'" || true
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE $$PREVIEW_DB TO $$PREVIEW_DB"
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER DATABASE $$PREVIEW_DB OWNER TO $$PREVIEW_DB"
+        }
 
   - name: schema
     image: bitnami/kubectl:latest
@@ -143,34 +118,14 @@ steps:
           kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c \
             "GRANT ALL ON ALL TABLES IN SCHEMA public TO $$PREVIEW_DB; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $$PREVIEW_DB;"
         fi
-
-  - name: seed-sql
-    image: bitnami/kubectl:latest
-    backend_options:
-      kubernetes:
-        serviceAccountName: woodpecker-pipeline
-    commands:
       - |
-        if [ ! -f .db-created ]; then echo "DB already existed, skipping seed"; exit 0; fi
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
-        for f in $$(ls seed/sql/*.sql 2>/dev/null | sort); do
-          kubectl exec -i -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB < "$$f"
-        done
-
-  - name: seed-data
-    image: bitnami/kubectl:latest
-    backend_options:
-      kubernetes:
-        serviceAccountName: woodpecker-pipeline
-    commands:
-      - |
-        if [ ! -f .db-created ]; then echo "DB already existed, skipping seed"; exit 0; fi
-        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        if [ -d seed/data ] && [ "$$(ls seed/data/*.* 2>/dev/null)" ]; then
-          kubectl run minio-seed-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
-            --image=minio/mc:latest -n minio \
-            --overrides='{"spec":{"containers":[{"name":"minio-seed-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc cp --recursive /data/ minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}'/"],"volumeMounts":[{"name":"creds","mountPath":"/minio"},{"name":"data","mountPath":"/data"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}},{"name":"data","configMap":{"name":"seed-data"}}]}}'
-        fi
+        echo "Granting provisioner access to preview database $$PREVIEW_DB..."
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT CONNECT ON DATABASE $$PREVIEW_DB TO op_system_console"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO op_system_console"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO op_system_console"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO op_system_console"
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO op_system_console"
 
   - name: deploy-preview
     image: bitnami/kubectl:latest
@@ -178,8 +133,6 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
       REGISTRY_HOST:
         from_secret: registry_host
       PLATFORM_DOMAIN:
@@ -189,14 +142,6 @@ steps:
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
-        export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
-          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
-        else
-          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
-        fi
         kubectl apply -f - <<EOPREVIEW
         apiVersion: apps/v1
         kind: Deployment
@@ -215,33 +160,17 @@ steps:
               labels:
                 app: $$PREVIEW_NAME
             spec:
-              serviceAccountName: minecraft-manager
               imagePullSecrets:
                 - name: forgejo-registry
               containers:
                 - name: app
                   image: $REGISTRY_HOST/${CI_REPO_OWNER}/${CI_REPO_NAME}:pr-${CI_COMMIT_PULL_REQUEST}
+                  imagePullPolicy: Always
                   ports:
                     - containerPort: 3000
                   env:
                     - name: DATABASE_URL
                       value: "postgresql://$$PREVIEW_DB:$$PREVIEW_DB@postgres-rw.postgres.svc.cluster.local:5432/$$PREVIEW_DB"
-                    - name: S3_ENDPOINT
-                      value: "http://minio.minio.svc:9000"
-                    - name: S3_PUBLIC_URL
-                      value: "https://${SERVICE_PREFIX}s3.$PLATFORM_DOMAIN"
-                    - name: S3_BUCKET
-                      value: "$$PREVIEW_BUCKET"
-                    - name: S3_ACCESS_KEY
-                      valueFrom:
-                        secretKeyRef:
-                          name: minio-credentials
-                          key: rootUser
-                    - name: S3_SECRET_KEY
-                      valueFrom:
-                        secretKeyRef:
-                          name: minio-credentials
-                          key: rootPassword
                     - name: BETTER_AUTH_SECRET
                       valueFrom:
                         secretKeyRef:
@@ -261,17 +190,21 @@ steps:
                           key: client-secret
                           optional: true
                     - name: BETTER_AUTH_URL
-                      value: "https://$$PREVIEW_URL_HOST"
+                      value: "https://$$PREVIEW_NAME.$PLATFORM_DOMAIN"
                     - name: BETTER_AUTH_TRUSTED_ORIGINS
-                      value: "https://$$PREVIEW_URL_HOST"
+                      value: "https://$$PREVIEW_NAME.$PLATFORM_DOMAIN"
                     - name: AUTH_FORGEJO_URL
                       value: "https://$REGISTRY_HOST"
                     - name: AUTH_FORGEJO_INTERNAL_URL
                       value: "https://$REGISTRY_HOST"
+                    - name: MANAGED_DOMAIN
+                      value: "$PLATFORM_DOMAIN"
+                    - name: NEXT_PUBLIC_MANAGED_DOMAIN
+                      value: "$PLATFORM_DOMAIN"
                     - name: NODE_EXTRA_CA_CERTS
                       value: "/etc/ssl/custom/ca.crt"
-                    - name: MINECRAFT_NAMESPACE
-                      value: "$$PREVIEW_NS"
+                    - name: NODE_TLS_REJECT_UNAUTHORIZED
+                      value: "0"
                   volumeMounts:
                     - name: platform-ca
                       mountPath: /etc/ssl/custom
@@ -305,12 +238,10 @@ steps:
         metadata:
           name: $$PREVIEW_NAME
           namespace: $$PREVIEW_NS
-          annotations:
-            traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-redirect@kubernetescrd,oauth2-proxy-oauth2-proxy-auth@kubernetescrd
         spec:
           ingressClassName: traefik
           rules:
-            - host: $$PREVIEW_URL_HOST
+            - host: $$PREVIEW_NAME.$PLATFORM_DOMAIN
               http:
                 paths:
                   - path: /
@@ -324,6 +255,7 @@ steps:
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        kubectl rollout restart deployment/$$PREVIEW_NAME -n $$PREVIEW_NS
         kubectl rollout status deployment/$$PREVIEW_NAME -n $$PREVIEW_NS --timeout=120s
 
   - name: comment-url
@@ -332,8 +264,6 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
       REGISTRY_HOST:
         from_secret: registry_host
       PLATFORM_DOMAIN:
@@ -341,17 +271,10 @@ steps:
     commands:
       - |
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
-          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
-        else
-          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
-        fi
         FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
         FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
         curl -sk -X POST \
           -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
           -H "Content-Type: application/json" \
-          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_URL_HOST\"}" \
+          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_NAME.$PLATFORM_DOMAIN\"}" \
           "https://$REGISTRY_HOST/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"

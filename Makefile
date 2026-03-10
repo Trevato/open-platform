@@ -1,4 +1,4 @@
-.PHONY: deploy generate deploy-infra diff status lint teardown urls help
+.PHONY: deploy generate deploy-infra diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth
 
 deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
 	./scripts/deploy.sh
@@ -36,6 +36,21 @@ urls: ## Print service URLs
 	@kubectl get ns -l open-platform.sh/tier=workload -o jsonpath='{range .items[*]}{.metadata.labels.open-platform\.sh/repo}{"\n"}{end}' 2>/dev/null | sort | while read -r app; do \
 		[ -n "$$app" ] && echo "  $${app}: https://$${app}.$(DOMAIN)"; \
 	done || echo "  (no apps deployed yet)"
+
+test-smoke: ## Run smoke tests (curl-based, fast)
+	./tests/smoke.sh
+
+test-k8s: ## Run k8s health checks (kubectl-based)
+	./tests/k8s-health.sh
+
+test-e2e: ## Run all Playwright E2E tests
+	cd tests/e2e && bun x playwright test
+
+test-e2e-platform: ## Run platform E2E tests only
+	cd tests/e2e && bun x playwright test platform/
+
+test-e2e-auth: ## Run auth flow E2E tests only
+	cd tests/e2e && bun x playwright test platform/*-auth*
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'

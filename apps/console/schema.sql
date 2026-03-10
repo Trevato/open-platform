@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS instances (
   last_healthy_at TIMESTAMPTZ
 );
 
+-- Ensure columns added after initial schema are present
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS admin_password TEXT;
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS password_reset_at TIMESTAMPTZ;
+ALTER TABLE instances ADD COLUMN IF NOT EXISTS kubeconfig TEXT;
+
 CREATE TABLE IF NOT EXISTS provision_events (
   id SERIAL PRIMARY KEY,
   instance_id TEXT NOT NULL REFERENCES instances(id) ON DELETE CASCADE,

@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { headers } from "next/headers";
 import Link from "next/link";
 import pool from "@/lib/db";
-import { InstanceCard } from "@/app/components/instance-card";
+import { InstanceList } from "@/app/components/instance-list";
 
 function PlusIcon() {
   return (
@@ -103,11 +103,7 @@ export default async function DashboardPage() {
           New Instance
         </Link>
       </div>
-      <div className="grid-2">
-        {instances.map((instance) => (
-          <InstanceCard key={instance.id} instance={instance} />
-        ))}
-      </div>
+      <InstanceList initialInstances={instances} />
     </div>
   );
 }

@@ -97,13 +97,20 @@ steps:
           --overrides='{"spec":{"containers":[{"name":"minio-preview-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}' && mc anonymous set download minio/op-'${CI_REPO_OWNER}'-'${CI_REPO_NAME}'-pr-'${CI_COMMIT_PULL_REQUEST}'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        # Compute preview URL host (platform slug appended for multi-tenant)
+        if [ -n "$SERVICE_PREFIX" ]; then
+          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
+        else
+          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+        fi
         if kubectl get secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS 2>/dev/null; then
           echo "Preview auth secret exists, skipping OAuth2 app creation"
         else
           FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
           FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
-          REDIRECT_URI="https://$SERVICE_PREFIX$$PREVIEW_NAME.$PLATFORM_DOMAIN/api/auth/oauth2/callback/forgejo"
+          REDIRECT_URI="https://$$PREVIEW_URL_HOST/api/auth/oauth2/callback/forgejo"
           RESPONSE=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
             -X POST "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" \
             -H "Content-Type: application/json" \
@@ -177,9 +184,16 @@ steps:
     commands:
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        # Compute preview URL host (platform slug appended for multi-tenant)
+        if [ -n "$SERVICE_PREFIX" ]; then
+          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
+        else
+          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+        fi
         kubectl apply -f - <<EOPREVIEW
         apiVersion: apps/v1
         kind: Deployment
@@ -243,9 +257,9 @@ steps:
                           key: client-secret
                           optional: true
                     - name: BETTER_AUTH_URL
-                      value: "https://$SERVICE_PREFIX$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+                      value: "https://$$PREVIEW_URL_HOST"
                     - name: BETTER_AUTH_TRUSTED_ORIGINS
-                      value: "https://$SERVICE_PREFIX$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+                      value: "https://$$PREVIEW_URL_HOST"
                     - name: AUTH_FORGEJO_URL
                       value: "https://$REGISTRY_HOST"
                     - name: AUTH_FORGEJO_INTERNAL_URL
@@ -290,7 +304,7 @@ steps:
         spec:
           ingressClassName: traefik
           rules:
-            - host: $SERVICE_PREFIX$$PREVIEW_NAME.$PLATFORM_DOMAIN
+            - host: $$PREVIEW_URL_HOST
               http:
                 paths:
                   - path: /
@@ -303,7 +317,7 @@ steps:
         EOPREVIEW
       - |
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
-        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         kubectl rollout status deployment/$$PREVIEW_NAME -n $$PREVIEW_NS --timeout=120s
 
   - name: comment-url
@@ -320,11 +334,18 @@ steps:
         from_secret: platform_domain
     commands:
       - |
-        export PREVIEW_NAME="pr-${CI_COMMIT_PULL_REQUEST}-${CI_REPO_NAME}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        # Compute preview URL host (platform slug appended for multi-tenant)
+        if [ -n "$SERVICE_PREFIX" ]; then
+          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+          PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
+        else
+          PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
+        fi
         FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
         FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
         curl -sk -X POST \
           -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
           -H "Content-Type: application/json" \
-          -d "{\"body\": \"Preview deployed: https://$SERVICE_PREFIX$$PREVIEW_NAME.$PLATFORM_DOMAIN\"}" \
+          -d "{\"body\": \"Preview deployed: https://$$PREVIEW_URL_HOST\"}" \
           "https://$REGISTRY_HOST/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}/issues/${CI_COMMIT_PULL_REQUEST}/comments"

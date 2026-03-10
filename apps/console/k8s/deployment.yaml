@@ -32,13 +32,13 @@ spec:
                   name: PROJECT_NAME-auth
                   key: secret
                   optional: true
-            - name: AUTH_GITHUB_ID
+            - name: AUTH_FORGEJO_ID
               valueFrom:
                 secretKeyRef:
                   name: PROJECT_NAME-auth
                   key: client-id
                   optional: true
-            - name: AUTH_GITHUB_SECRET
+            - name: AUTH_FORGEJO_SECRET
               valueFrom:
                 secretKeyRef:
                   name: PROJECT_NAME-auth
@@ -48,6 +48,10 @@ spec:
               value: "https://console.PLATFORM_DOMAIN"
             - name: BETTER_AUTH_TRUSTED_ORIGINS
               value: "https://console.PLATFORM_DOMAIN"
+            - name: AUTH_FORGEJO_URL
+              value: "https://forgejo.PLATFORM_DOMAIN"
+            - name: AUTH_FORGEJO_INTERNAL_URL
+              value: "https://forgejo.PLATFORM_DOMAIN"
             - name: MANAGED_DOMAIN
               value: "PLATFORM_DOMAIN"
             - name: NEXT_PUBLIC_MANAGED_DOMAIN

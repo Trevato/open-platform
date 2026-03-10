@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import { randomBytes } from "crypto";
 import pool from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }

@@ -3,6 +3,8 @@ import { auth } from "@/auth";
 import { headers } from "next/headers";
 import pool from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const TIER_LIMITS: Record<string, number> = {
   free: 1,
   pro: 3,

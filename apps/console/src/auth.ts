@@ -3,6 +3,9 @@ import { genericOAuth } from "better-auth/plugins";
 import { nextCookies } from "better-auth/next-js";
 import pool from "@/lib/db";
 
+const forgejoUrl = process.env.AUTH_FORGEJO_URL!;
+const forgejoInternalUrl = process.env.AUTH_FORGEJO_INTERNAL_URL || forgejoUrl;
+
 export const auth = betterAuth({
   database: pool,
   baseURL: process.env.BETTER_AUTH_URL,
@@ -10,19 +13,23 @@ export const auth = betterAuth({
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
     ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
     : [],
+  accountLinking: {
+    enabled: true,
+    trustedProviders: ["forgejo"],
+  },
   plugins: [
     nextCookies(),
     genericOAuth({
       config: [
         {
-          providerId: "github",
-          clientId: process.env.AUTH_GITHUB_ID!,
-          clientSecret: process.env.AUTH_GITHUB_SECRET!,
-          authorizationUrl: "https://github.com/login/oauth/authorize",
-          tokenUrl: "https://github.com/login/oauth/access_token",
-          userInfoUrl: "https://api.github.com/user",
+          providerId: "forgejo",
+          clientId: process.env.AUTH_FORGEJO_ID!,
+          clientSecret: process.env.AUTH_FORGEJO_SECRET!,
+          authorizationUrl: `${forgejoUrl}/login/oauth/authorize`,
+          tokenUrl: `${forgejoInternalUrl}/login/oauth/access_token`,
+          userInfoUrl: `${forgejoInternalUrl}/api/v1/user`,
           pkce: true,
-          scopes: ["read:user", "user:email"],
+          scopes: [],
           mapProfileToUser: (profile) => ({
             name: profile.login,
             email: profile.email,

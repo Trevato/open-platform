@@ -45,15 +45,32 @@ if ! db_query "SELECT 1" >/dev/null 2>&1; then
   exit 1
 fi
 
+# ── Discover Console Databases ───────────────────────────────────────────────
+# pg_database is a shared catalog — any user can read it.
+# Discover all console databases (prod + preview) and reconcile each.
+
+CONSOLE_DATABASES=$(psql -tAc "SELECT datname FROM pg_database WHERE datname LIKE 'op_system_console%' ORDER BY datname" 2>/dev/null || echo "$PGDATABASE")
+
+if [ -z "$CONSOLE_DATABASES" ]; then
+  CONSOLE_DATABASES="$PGDATABASE"
+fi
+
+FOUND_WORK=false
+
+for CURRENT_DB in $CONSOLE_DATABASES; do
+  export PGDATABASE="$CURRENT_DB"
+  echo "[$(timestamp)] Checking database: $CURRENT_DB"
+
 # ── Process Pending Instances ────────────────────────────────────────────────
 
 PENDING_ROW=$(db_query "SELECT id, slug, tier, admin_username, admin_email FROM instances WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1" || echo "")
 
 if [ -n "$PENDING_ROW" ]; then
+  FOUND_WORK=true
   # Parse pipe-delimited row: id|slug|tier|admin_username|admin_email
   IFS='|' read -r INSTANCE_ID SLUG TIER ADMIN_USER ADMIN_EMAIL <<< "$PENDING_ROW"
 
-  echo "[$(timestamp)] Found pending instance: ${SLUG} (id=${INSTANCE_ID}, tier=${TIER})"
+  echo "[$(timestamp)] Found pending instance: ${SLUG} (id=${INSTANCE_ID}, tier=${TIER}) in ${CURRENT_DB}"
 
   # Update status to provisioning
   db_exec "UPDATE instances SET status = 'provisioning', updated_at = '$(timestamp)' WHERE id = '${INSTANCE_ID}'"
@@ -61,7 +78,7 @@ if [ -n "$PENDING_ROW" ]; then
 
   # Run provisioner
   PROVISION_EXIT=0
-  if "$PROVISION_SCRIPT" "$SLUG" "$TIER" "$ADMIN_USER" "$ADMIN_EMAIL"; then
+  if "$PROVISION_SCRIPT" "$SLUG" "$TIER" "$ADMIN_USER" "$ADMIN_EMAIL" "$INSTANCE_ID"; then
     PROVISION_EXIT=0
   else
     PROVISION_EXIT=$?
@@ -82,6 +99,15 @@ if [ -n "$PENDING_ROW" ]; then
       ADMIN_PASS_ESC="${ADMIN_PASS//\'/\'\'}"
       db_exec "UPDATE instances SET admin_password = '${ADMIN_PASS_ESC}' WHERE id = '${INSTANCE_ID}'"
       rm -f "$PASSWORD_FILE"
+    fi
+
+    # Store kubeconfig from provision script
+    KUBECONFIG_FILE="/tmp/provision-${SLUG}.kubeconfig"
+    if [ -f "$KUBECONFIG_FILE" ]; then
+      KUBECONFIG_DATA=$(cat "$KUBECONFIG_FILE")
+      KUBECONFIG_ESC="${KUBECONFIG_DATA//\'/\'\'}"
+      db_exec "UPDATE instances SET kubeconfig = '${KUBECONFIG_ESC}' WHERE id = '${INSTANCE_ID}'"
+      rm -f "$KUBECONFIG_FILE"
     fi
 
     db_exec "UPDATE instances SET status = 'ready', provisioned_at = '$(timestamp)', updated_at = '$(timestamp)' WHERE id = '${INSTANCE_ID}'"
@@ -112,9 +138,10 @@ fi
 TERMINATING_ROW=$(db_query "SELECT id, slug FROM instances WHERE status = 'terminating' ORDER BY created_at ASC LIMIT 1" || echo "")
 
 if [ -n "$TERMINATING_ROW" ]; then
+  FOUND_WORK=true
   IFS='|' read -r INSTANCE_ID SLUG <<< "$TERMINATING_ROW"
 
-  echo "[$(timestamp)] Found terminating instance: ${SLUG} (id=${INSTANCE_ID})"
+  echo "[$(timestamp)] Found terminating instance: ${SLUG} (id=${INSTANCE_ID}) in ${CURRENT_DB}"
 
   insert_event "$INSTANCE_ID" "teardown_started" "Tearing down instance ${SLUG}"
 
@@ -141,6 +168,7 @@ fi
 RESET_ROWS=$(db_query "SELECT id, slug, admin_username, admin_password FROM instances WHERE password_reset_at IS NOT NULL AND status = 'ready'" || echo "")
 
 if [ -n "$RESET_ROWS" ]; then
+  FOUND_WORK=true
   while IFS='|' read -r INSTANCE_ID SLUG ADMIN_USER NEW_PASS; do
     [ -z "$INSTANCE_ID" ] && continue
     echo "[$(timestamp)] Applying password reset for ${SLUG}"
@@ -233,9 +261,11 @@ if [ -n "$RESET_ROWS" ]; then
   done <<< "$RESET_ROWS"
 fi
 
+done  # end database loop
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 
-if [ -z "$PENDING_ROW" ] && [ -z "$TERMINATING_ROW" ] && [ -z "$RESET_ROWS" ]; then
+if [ "$FOUND_WORK" = "false" ]; then
   echo "[$(timestamp)] No pending work — exiting"
 fi
 

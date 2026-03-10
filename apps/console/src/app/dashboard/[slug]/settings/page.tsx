@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -39,6 +39,25 @@ function CheckIcon() {
   );
 }
 
+function DownloadIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
 export default function InstanceSettingsPage() {
   const router = useRouter();
   const params = useParams<{ slug: string }>();
@@ -56,7 +75,12 @@ export default function InstanceSettingsPage() {
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [credError, setCredError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<"user" | "pass" | null>(null);
+  const [copied, setCopied] = useState<"user" | "pass" | "portfwd" | null>(null);
+
+  // Kubeconfig state
+  const [kubeconfigLoading, setKubeconfigLoading] = useState(false);
+  const [kubeconfigError, setKubeconfigError] = useState<string | null>(null);
+  const kubeconfigDownloaded = useRef(false);
 
   useEffect(() => {
     fetch(`/api/instances/${slug}/credentials`)
@@ -71,7 +95,7 @@ export default function InstanceSettingsPage() {
   }, [slug]);
 
   const copyToClipboard = useCallback(
-    (text: string, field: "user" | "pass") => {
+    (text: string, field: "user" | "pass" | "portfwd") => {
       navigator.clipboard.writeText(text);
       setCopied(field);
       setTimeout(() => setCopied(null), 2000);
@@ -111,6 +135,39 @@ export default function InstanceSettingsPage() {
       setResetting(false);
     }
   }, [confirmReset, slug]);
+
+  const downloadKubeconfig = useCallback(async () => {
+    setKubeconfigLoading(true);
+    setKubeconfigError(null);
+
+    try {
+      const res = await fetch(`/api/instances/${slug}/kubeconfig`);
+
+      if (!res.ok) {
+        const data = await res.json();
+        setKubeconfigError(data.error || "Failed to fetch kubeconfig");
+        return;
+      }
+
+      const data = await res.json();
+      const blob = new Blob([data.kubeconfig], { type: "application/x-yaml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slug}-kubeconfig.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      kubeconfigDownloaded.current = true;
+    } catch {
+      setKubeconfigError("Network error. Please try again.");
+    } finally {
+      setKubeconfigLoading(false);
+    }
+  }, [slug]);
+
+  const portForwardCmd = `kubectl port-forward -n vc-${slug} svc/${slug} 6443:443`;
 
   const canDelete = confirmSlug === slug;
 
@@ -272,6 +329,81 @@ export default function InstanceSettingsPage() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Cluster Access */}
+      <div className="section">
+        <div className="section-header">Cluster Access</div>
+        <div className="card">
+          <div className="settings-section">
+            <h2>kubectl access</h2>
+            <p>
+              Connect to your cluster with kubectl. Download the kubeconfig file
+              and set up a port-forward to access the API server.
+            </p>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  disabled={kubeconfigLoading}
+                  onClick={downloadKubeconfig}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  {kubeconfigLoading ? (
+                    <span className="spinner spinner-sm" />
+                  ) : (
+                    <DownloadIcon />
+                  )}
+                  {kubeconfigLoading ? "Downloading..." : "Download kubeconfig"}
+                </button>
+              </div>
+
+              <div>
+                <span
+                  className="text-sm text-muted"
+                  style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}
+                >
+                  <TerminalIcon /> Then run:
+                </span>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    background: "var(--bg-tertiary)",
+                    borderRadius: 6,
+                    padding: "8px 12px",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 13,
+                  }}
+                >
+                  <code style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
+                    {portForwardCmd}
+                  </code>
+                  <button
+                    className="btn-icon"
+                    title="Copy command"
+                    onClick={() => copyToClipboard(portForwardCmd, "portfwd")}
+                  >
+                    {copied === "portfwd" ? <CheckIcon /> : <CopyIcon />}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-sm text-muted" style={{ margin: 0 }}>
+                Use <code style={{ fontSize: 12 }}>KUBECONFIG=./{slug}-kubeconfig.yaml kubectl get ns</code> to
+                verify the connection.
+              </p>
+
+              {kubeconfigError && (
+                <p className="form-error" style={{ marginTop: 0 }}>
+                  {kubeconfigError}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>

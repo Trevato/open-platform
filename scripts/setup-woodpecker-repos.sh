@@ -229,20 +229,63 @@ wp_api() {
 
 # ── Phase 2: Repo activation ─────────────────────────────────────────────────
 
-# Discover all system org repos (except open-platform and template)
-REPO_LIST=$(forgejo_api "${FORGEJO_API}/orgs/system/repos?limit=50" 2>/dev/null | \
-  jq -r '.[].full_name' 2>/dev/null | \
-  grep -v "^system/open-platform$" | \
-  grep -v "^system/template$" || true)
+# Discover all repos across all orgs (except meta repos like open-platform, template, deploy-bundle)
+SKIP_REPOS="system/open-platform system/template system/deploy-bundle"
 
-if [ -z "$REPO_LIST" ]; then
-  echo "No deployable repos found in system org — skipping activation."
+# Get all orgs
+ALL_ORGS=$(forgejo_api "${FORGEJO_API}/admin/orgs?limit=50" 2>/dev/null | jq -r '.[].username' 2>/dev/null || \
+  forgejo_api "${FORGEJO_API}/orgs/system" 2>/dev/null | jq -r '.username' 2>/dev/null || echo "system")
+
+REPO_LIST=""
+for ORG_NAME in $ALL_ORGS; do
+  ORG_REPOS=$(forgejo_api "${FORGEJO_API}/orgs/${ORG_NAME}/repos?limit=50" 2>/dev/null | \
+    jq -r '.[].full_name' 2>/dev/null || true)
+  if [ -n "$ORG_REPOS" ]; then
+    REPO_LIST="${REPO_LIST}${REPO_LIST:+$'\n'}${ORG_REPOS}"
+  fi
+done
+
+# Also include user repos (repos not in any org)
+USER_REPOS=$(forgejo_api "${FORGEJO_API}/user/repos?limit=50" 2>/dev/null | \
+  jq -r '.[] | select(.owner.type == "Organization" | not) | .full_name' 2>/dev/null || true)
+if [ -n "$USER_REPOS" ]; then
+  REPO_LIST="${REPO_LIST}${REPO_LIST:+$'\n'}${USER_REPOS}"
+fi
+
+# Deduplicate (org repos + user repos may overlap)
+REPO_LIST=$(echo "$REPO_LIST" | sort -u)
+
+# Filter out skip repos and template repos
+FILTERED_LIST=""
+for repo in $REPO_LIST; do
+  skip=false
+  for skip_repo in $SKIP_REPOS; do
+    if [ "$repo" = "$skip_repo" ]; then
+      skip=true
+      break
+    fi
+  done
+  # Also skip repos marked as template
+  if [ "$skip" = "false" ]; then
+    IS_TEMPLATE=$(forgejo_api "${FORGEJO_API}/repos/${repo}" 2>/dev/null | jq -r '.template // false' 2>/dev/null || echo "false")
+    if [ "$IS_TEMPLATE" = "true" ]; then
+      skip=true
+    fi
+  fi
+  if [ "$skip" = "false" ]; then
+    FILTERED_LIST="${FILTERED_LIST}${FILTERED_LIST:+$'\n'}${repo}"
+  fi
+done
+
+if [ -z "$FILTERED_LIST" ]; then
+  echo "No deployable repos found — skipping activation."
   REPOS=()
 else
   REPOS=()
   while IFS= read -r line; do
-    REPOS+=("$line")
-  done <<< "$REPO_LIST"
+    [ -n "$line" ] && REPOS+=("$line")
+  done <<< "$FILTERED_LIST"
+  echo "Found ${#REPOS[@]} deployable repos: ${REPOS[*]}"
 fi
 
 for REPO_FULL in "${REPOS[@]}"; do
@@ -272,32 +315,36 @@ done
 # ── Phase 3: Org-level secrets ────────────────────────────────────────────────
 # Org secrets are inherited by all repos — no per-repo setup needed.
 
-ORG_ID=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r '.[0].id // empty')
-if [ -z "$ORG_ID" ]; then
-  echo "Warning: No Woodpecker org found — skipping secrets."
-  exit 0
+# Create org-level secrets for ALL Woodpecker orgs
+WP_ORGS=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
+if [ -z "$WP_ORGS" ]; then
+  echo "Warning: No Woodpecker orgs found — skipping secrets."
+else
+  for ORG_ID in $WP_ORGS; do
+    ORG_NAME=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
+    echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
+
+    for SECRET_NAME in registry_username registry_token platform_domain registry_host service_prefix; do
+      EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
+      if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
+        continue
+      fi
+
+      case "$SECRET_NAME" in
+        registry_username) VALUE="${ADMIN_USER}" ;;
+        registry_token) VALUE="${ADMIN_PASS}" ;;
+        platform_domain) VALUE="${DOMAIN}" ;;
+        registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
+        service_prefix) VALUE="${PREFIX}" ;;
+      esac
+
+      wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1
+      echo "  Created '${SECRET_NAME}' for org '${ORG_NAME}'."
+    done
+  done
 fi
-
-for SECRET_NAME in registry_username registry_token platform_domain registry_host service_prefix; do
-  EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
-  if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
-    echo "Org secret '${SECRET_NAME}' already exists."
-    continue
-  fi
-
-  case "$SECRET_NAME" in
-    registry_username) VALUE="${ADMIN_USER}" ;;
-    registry_token) VALUE="${ADMIN_PASS}" ;;
-    platform_domain) VALUE="${DOMAIN}" ;;
-    registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
-    service_prefix) VALUE="${PREFIX}" ;;
-  esac
-
-  wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1
-  echo "Created org secret '${SECRET_NAME}'."
-done
 
 # ── Phase 4: Trigger pipelines ────────────────────────────────────────────────
 # Trigger main branch deploys via Woodpecker API (manual event).

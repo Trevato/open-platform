@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { LandingCTA } from "./components/landing-cta";
+import { DeploySequence } from "./components/deploy-sequence";
 
 export default async function LandingPage() {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -30,8 +31,8 @@ export default async function LandingPage() {
       <section className="landing-hero">
         <h1>Your developer platform in minutes</h1>
         <p>
-          Git hosting, CI/CD, Kubernetes dashboard, and object storage.
-          One click. Fully managed.
+          Database, storage, CI/CD, and Git — deployed together,
+          wired together, ready to build on.
         </p>
         <LandingCTA size="lg" />
       </section>
@@ -40,62 +41,49 @@ export default async function LandingPage() {
 
       <section className="landing-section">
         <div className="landing-section-header">
-          <h2>Everything you need to ship</h2>
-          <p>Four services, one platform, zero ops.</p>
+          <h2>What you get</h2>
         </div>
-        <div className="grid-2">
-          <div className="card feature-card">
-            <div className="feature-icon" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="18" cy="18" r="3" />
-                <circle cx="6" cy="6" r="3" />
-                <path d="M6 21V9a9 9 0 0 0 9 9" />
-              </svg>
-            </div>
-            <h3>Git and Code</h3>
+        <div className="what-you-get">
+          <div className="what-you-get-item">
+            <h3>App template</h3>
             <p>
-              Forgejo-powered Git hosting with issues, pull requests,
-              and a container registry. Your code, your server.
+              Next.js with database, storage, and auth wired together.
+              Create from template, push, it deploys.
             </p>
           </div>
-          <div className="card feature-card">
-            <div className="feature-icon" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-              </svg>
-            </div>
-            <h3>CI/CD Pipelines</h3>
+          <div className="what-you-get-item">
+            <h3>PostgreSQL</h3>
             <p>
-              Woodpecker CI builds and deploys on every push. Preview
-              environments for pull requests. Zero config.
+              A database for every app. Schema applied automatically
+              in CI. No setup needed.
             </p>
           </div>
-          <div className="card feature-card">
-            <div className="feature-icon" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M3 9h18" />
-                <path d="M9 21V9" />
-              </svg>
-            </div>
-            <h3>Kubernetes Dashboard</h3>
+          <div className="what-you-get-item">
+            <h3>S3 Storage</h3>
             <p>
-              Headlamp gives you full visibility into your cluster.
-              Pods, deployments, logs — all in the browser.
+              S3-compatible object storage for files, images, and
+              uploads. Works with any S3 client.
             </p>
           </div>
-          <div className="card feature-card">
-            <div className="feature-icon" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-                <line x1="12" y1="22.08" x2="12" y2="12" />
-              </svg>
-            </div>
-            <h3>Object Storage</h3>
+          <div className="what-you-get-item">
+            <h3>Push to deploy</h3>
             <p>
-              S3-compatible MinIO for files, assets, and backups.
-              Works with any S3 client or SDK.
+              Every push builds and deploys automatically. No Docker
+              to manage, no pipelines to write.
+            </p>
+          </div>
+          <div className="what-you-get-item">
+            <h3>Preview environments</h3>
+            <p>
+              Open a PR, get a live preview with its own database and
+              storage. Close it, everything cleans up.
+            </p>
+          </div>
+          <div className="what-you-get-item">
+            <h3>One sign-in</h3>
+            <p>
+              Sign in once. Git, CI, dashboard, every app you
+              build — all connected through one identity.
             </p>
           </div>
         </div>
@@ -105,25 +93,9 @@ export default async function LandingPage() {
 
       <section className="landing-section">
         <div className="landing-section-header">
-          <h2>Three steps to running</h2>
+          <h2>What happens when you deploy</h2>
         </div>
-        <div className="steps">
-          <div className="step">
-            <div className="step-number">1</div>
-            <h3>Sign up</h3>
-            <p>Authenticate with your GitHub account</p>
-          </div>
-          <div className="step">
-            <div className="step-number">2</div>
-            <h3>Name your platform</h3>
-            <p>Pick a slug for your deployment</p>
-          </div>
-          <div className="step">
-            <div className="step-number">3</div>
-            <h3>Start building</h3>
-            <p>Push code. Everything else is handled.</p>
-          </div>
-        </div>
+        <DeploySequence />
       </section>
 
       <hr className="landing-divider" />
@@ -140,10 +112,10 @@ export default async function LandingPage() {
               $0<span> /mo</span>
             </div>
             <ul className="pricing-features">
-              <li>1 instance</li>
-              <li>500m CPU</li>
-              <li>2Gi memory</li>
-              <li>10Gi storage</li>
+              <li>1 platform instance</li>
+              <li>Database per app</li>
+              <li>Preview environments</li>
+              <li>Single sign-on</li>
               <li>Community support</li>
             </ul>
             <LandingCTA size="default" variant="ghost" />
@@ -154,11 +126,11 @@ export default async function LandingPage() {
               $29<span> /mo</span>
             </div>
             <ul className="pricing-features">
-              <li>3 instances</li>
-              <li>2 CPU per instance</li>
-              <li>8Gi memory per instance</li>
-              <li>50Gi storage</li>
+              <li>3 platform instances</li>
+              <li>Database per app</li>
+              <li>Preview environments</li>
               <li>Custom domains</li>
+              <li>2 CPU / 8Gi per instance</li>
               <li>Priority support</li>
             </ul>
             <LandingCTA size="default" />
@@ -169,11 +141,11 @@ export default async function LandingPage() {
               $99<span> /mo</span>
             </div>
             <ul className="pricing-features">
-              <li>10 instances</li>
-              <li>4 CPU per instance</li>
-              <li>16Gi memory per instance</li>
-              <li>200Gi storage</li>
+              <li>10 platform instances</li>
+              <li>Database per app</li>
+              <li>Preview environments</li>
               <li>Custom domains</li>
+              <li>4 CPU / 16Gi per instance</li>
               <li>Dedicated support</li>
             </ul>
             <LandingCTA size="default" variant="ghost" />

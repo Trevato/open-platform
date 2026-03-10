@@ -1,0 +1,13 @@
+{
+  "name": "open-platform-e2e",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:platform": "playwright test platform/",
+    "test:auth": "playwright test platform/*-auth*",
+    "test:apps": "playwright test apps/"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
