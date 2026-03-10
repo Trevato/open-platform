@@ -110,6 +110,14 @@ if [ -n "$PENDING_ROW" ]; then
       rm -f "$KUBECONFIG_FILE"
     fi
 
+    # Store vCluster ClusterIP for in-browser terminal
+    CLUSTERIP_FILE="/tmp/provision-${SLUG}.clusterip"
+    if [ -f "$CLUSTERIP_FILE" ]; then
+      CLUSTER_IP=$(cat "$CLUSTERIP_FILE")
+      db_exec "UPDATE instances SET cluster_ip = '${CLUSTER_IP}' WHERE id = '${INSTANCE_ID}'"
+      rm -f "$CLUSTERIP_FILE"
+    fi
+
     db_exec "UPDATE instances SET status = 'ready', provisioned_at = '$(timestamp)', updated_at = '$(timestamp)' WHERE id = '${INSTANCE_ID}'"
     insert_event "$INSTANCE_ID" "provisioning_complete" "$LAST_MESSAGE"
     echo "[$(timestamp)] Instance ${SLUG} provisioned successfully"

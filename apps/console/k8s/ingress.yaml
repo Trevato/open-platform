@@ -9,6 +9,13 @@ spec:
     - host: console.PLATFORM_DOMAIN
       http:
         paths:
+          - path: /ws/terminal
+            pathType: Prefix
+            backend:
+              service:
+                name: PROJECT_NAME
+                port:
+                  number: 3001
           - path: /
             pathType: Prefix
             backend:

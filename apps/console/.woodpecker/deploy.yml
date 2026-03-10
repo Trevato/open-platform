@@ -12,6 +12,7 @@ steps:
   - name: typecheck
     image: node:20-alpine
     commands:
+      - apk add --no-cache python3 make g++
       - npm install
       - npm run typecheck
 

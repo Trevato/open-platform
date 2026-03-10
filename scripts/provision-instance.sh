@@ -555,41 +555,74 @@ if [ "$HEADLAMP_MW_SET" = "false" ]; then
   log_event "metadata" "warn" "Headlamp ingress not found after 90s — middleware not set, OIDC login will fail"
 fi
 
-# Create IngressRouteTCP for external kubectl access via Traefik TLS passthrough.
-# SNI-based routing on the websecure entrypoint — Traefik passes TLS directly
-# to the vCluster API server without termination.
-cat <<TCP_EOF | kubectl apply -f -
+# Create IngressRoute + ServersTransport for external kubectl access.
+# Token-based auth (not client certs) works through Cloudflare tunnel because
+# Cloudflare terminates TLS and forwards HTTP to Traefik. Traefik re-encrypts
+# to the vCluster API backend via ServersTransport.
+cat <<ROUTE_EOF | kubectl apply -f -
 apiVersion: traefik.io/v1alpha1
-kind: IngressRouteTCP
+kind: ServersTransport
+metadata:
+  name: ${SLUG}-k8s-transport
+  namespace: ${NAMESPACE}
+spec:
+  insecureSkipVerify: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
 metadata:
   name: ${SLUG}-k8s
   namespace: ${NAMESPACE}
 spec:
   entryPoints:
-    - websecure
+    - web
   routes:
-    - match: HostSNI(\`${SLUG}-k8s.${DOMAIN}\`)
+    - match: Host(\`${SLUG}-k8s.${DOMAIN}\`)
+      kind: Rule
       services:
         - name: ${SLUG}
           port: 443
-  tls:
-    passthrough: true
-TCP_EOF
-log_event "metadata" "ok" "IngressRouteTCP created for external kubectl access"
+          scheme: https
+          serversTransport: ${SLUG}-k8s-transport
+ROUTE_EOF
+log_event "metadata" "ok" "IngressRoute created for external kubectl access"
+
+# Store vCluster ClusterIP for in-browser terminal (direct pod-to-pod access)
+CLUSTER_IP=$(kubectl get svc "${SLUG}" -n "${NAMESPACE}" -o jsonpath='{.spec.clusterIP}')
+echo "$CLUSTER_IP" > "/tmp/provision-${SLUG}.clusterip"
+log_event "metadata" "ok" "ClusterIP ${CLUSTER_IP} saved"
 
 # Write admin password to file for reconciler to pick up and store in console DB
 echo "$FORGEJO_ADMIN_PASSWORD" > "/tmp/provision-${SLUG}.password"
 
-# Write user-facing kubeconfig for reconciler to store in console DB.
-# Re-extract raw kubeconfig, then rewrite server URL for external access.
-kubectl get secret "vc-${SLUG}" -n "$NAMESPACE" \
-  -o jsonpath='{.data.config}' | base64 -d > "/tmp/provision-${SLUG}.kubeconfig"
-if sed --version >/dev/null 2>&1; then
-  sed -i "s|server:.*|server: https://${SLUG}-k8s.${DOMAIN}|" "/tmp/provision-${SLUG}.kubeconfig"
-else
-  sed -i '' "s|server:.*|server: https://${SLUG}-k8s.${DOMAIN}|" "/tmp/provision-${SLUG}.kubeconfig"
-fi
-log_event "metadata" "ok" "Kubeconfig saved with server https://${SLUG}-k8s.${DOMAIN}"
+# Create service account + token-based kubeconfig for users.
+# Bearer tokens work through Cloudflare tunnel (unlike client certs which need mTLS).
+KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create serviceaccount platform-admin -n kube-system 2>/dev/null || true
+KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create clusterrolebinding platform-admin-binding \
+  --clusterrole=cluster-admin --serviceaccount=kube-system:platform-admin 2>/dev/null || true
+
+SA_TOKEN=$(KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create token platform-admin -n kube-system --duration=8760h)
+
+cat > "/tmp/provision-${SLUG}.kubeconfig" << KCEOF
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://${SLUG}-k8s.${DOMAIN}
+  name: ${SLUG}
+contexts:
+- context:
+    cluster: ${SLUG}
+    user: ${SLUG}-admin
+  name: ${SLUG}
+current-context: ${SLUG}
+users:
+- name: ${SLUG}-admin
+  user:
+    token: ${SA_TOKEN}
+KCEOF
+log_event "metadata" "ok" "Token-based kubeconfig saved for https://${SLUG}-k8s.${DOMAIN}"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 

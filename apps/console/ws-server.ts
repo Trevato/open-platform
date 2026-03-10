@@ -104,9 +104,9 @@ async function validateSession(
 async function verifyOwnership(
   slug: string,
   userId: string
-): Promise<{ kubeconfig: string } | null> {
+): Promise<{ kubeconfig: string; clusterIp: string | null } | null> {
   const result = await pool.query(
-    `SELECT i.kubeconfig
+    `SELECT i.kubeconfig, i.cluster_ip
      FROM instances i
      JOIN customers c ON c.id = i.customer_id
      WHERE i.slug = $1 AND c.user_id = $2 AND i.status = 'ready'`,
@@ -114,28 +114,27 @@ async function verifyOwnership(
   );
 
   if (result.rows.length === 0 || !result.rows[0].kubeconfig) return null;
-  return { kubeconfig: result.rows[0].kubeconfig };
+  return {
+    kubeconfig: result.rows[0].kubeconfig,
+    clusterIp: result.rows[0].cluster_ip,
+  };
 }
 
-const MANAGED_DOMAIN = process.env.MANAGED_DOMAIN || "open-platform.sh";
-
 /**
- * Prepare kubeconfig for kubectl in the PTY. Rewrites the server URL to the
- * external domain ({slug}-k8s.{domain}) which routes via Traefik
- * IngressRouteTCP with TLS passthrough. Replaces certificate-authority-data
- * with insecure-skip-tls-verify since vCluster cert SANs don't include the
- * external domain.
+ * Prepare kubeconfig for kubectl in the PTY. When a ClusterIP is available,
+ * rewrites the server URL to the vCluster's host-cluster ClusterIP for direct
+ * pod-to-pod access (bypasses DNS and Traefik entirely). The kubeconfig from
+ * the DB already uses token auth and insecure-skip-tls-verify.
  */
-function prepareKubeconfig(kubeconfig: string, slug: string): string {
-  let prepared = kubeconfig.replace(
+function prepareKubeconfig(
+  kubeconfig: string,
+  clusterIp: string | null
+): string {
+  if (!clusterIp) return kubeconfig;
+  return kubeconfig.replace(
     /server:\s*https?:\/\/[^\s]+/,
-    `server: https://${slug}-k8s.${MANAGED_DOMAIN}`
+    `server: https://${clusterIp}:443`
   );
-  prepared = prepared.replace(
-    /\s*certificate-authority-data:\s*[A-Za-z0-9+/=]+\n?/,
-    "\n    insecure-skip-tls-verify: true\n"
-  );
-  return prepared;
 }
 
 function userSessionCount(userId: string): number {
@@ -231,7 +230,10 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     // 5. Write kubeconfig to temp file
     const sessionId = randomBytes(8).toString("hex");
     const kubeconfigPath = join(tmpdir(), `term-${sessionId}.kubeconfig`);
-    const kubeconfigContent = prepareKubeconfig(instance.kubeconfig, slug);
+    const kubeconfigContent = prepareKubeconfig(
+      instance.kubeconfig,
+      instance.clusterIp
+    );
     writeFileSync(kubeconfigPath, kubeconfigContent, { mode: 0o600 });
 
     // 6. Spawn PTY

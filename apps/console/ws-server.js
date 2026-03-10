@@ -8825,26 +8825,24 @@ async function validateSession(cookieHeader) {
 }
 async function verifyOwnership(slug, userId) {
   const result = await pool.query(
-    `SELECT i.kubeconfig
+    `SELECT i.kubeconfig, i.cluster_ip
      FROM instances i
      JOIN customers c ON c.id = i.customer_id
      WHERE i.slug = $1 AND c.user_id = $2 AND i.status = 'ready'`,
     [slug, userId]
   );
   if (result.rows.length === 0 || !result.rows[0].kubeconfig) return null;
-  return { kubeconfig: result.rows[0].kubeconfig };
+  return {
+    kubeconfig: result.rows[0].kubeconfig,
+    clusterIp: result.rows[0].cluster_ip
+  };
 }
-var MANAGED_DOMAIN = process.env.MANAGED_DOMAIN || "open-platform.sh";
-function prepareKubeconfig(kubeconfig, slug) {
-  let prepared = kubeconfig.replace(
+function prepareKubeconfig(kubeconfig, clusterIp) {
+  if (!clusterIp) return kubeconfig;
+  return kubeconfig.replace(
     /server:\s*https?:\/\/[^\s]+/,
-    `server: https://${slug}-k8s.${MANAGED_DOMAIN}`
+    `server: https://${clusterIp}:443`
   );
-  prepared = prepared.replace(
-    /\s*certificate-authority-data:\s*[A-Za-z0-9+/=]+\n?/,
-    "\n    insecure-skip-tls-verify: true\n"
-  );
-  return prepared;
 }
 function userSessionCount(userId) {
   let count = 0;
@@ -8922,7 +8920,10 @@ wss.on("connection", async (ws, req) => {
     }
     const sessionId = (0, import_crypto.randomBytes)(8).toString("hex");
     const kubeconfigPath = (0, import_path.join)((0, import_os.tmpdir)(), `term-${sessionId}.kubeconfig`);
-    const kubeconfigContent = prepareKubeconfig(instance.kubeconfig, slug);
+    const kubeconfigContent = prepareKubeconfig(
+      instance.kubeconfig,
+      instance.clusterIp
+    );
     (0, import_fs.writeFileSync)(kubeconfigPath, kubeconfigContent, { mode: 384 });
     const ptyProcess = pty.spawn("/bin/zsh", ["--login"], {
       name: "xterm-256color",

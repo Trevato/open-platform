@@ -49,15 +49,6 @@ function DownloadIcon() {
   );
 }
 
-function TerminalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  );
-}
-
 export default function InstanceSettingsPage() {
   const router = useRouter();
   const params = useParams<{ slug: string }>();
@@ -340,51 +331,31 @@ export default function InstanceSettingsPage() {
           <div className="settings-section">
             <h2>kubectl access</h2>
             <p>
-              Full cluster access via kubectl. Your API server is at{" "}
-              <code style={{ fontSize: 12 }}>{slug}-k8s.open-platform.sh</code>.
+              Full cluster access from your local machine. Download the
+              kubeconfig and use it with kubectl &mdash; works from anywhere.
             </p>
 
-            <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-              <li>
-                <span style={{ fontWeight: 500 }}>
-                  Connect your machine to the cluster network
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
+              <div>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  disabled={kubeconfigLoading}
+                  onClick={downloadKubeconfig}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                >
+                  {kubeconfigLoading ? (
+                    <span className="spinner spinner-sm" />
+                  ) : (
+                    <DownloadIcon />
+                  )}
+                  {kubeconfigLoading ? "Downloading..." : "Download kubeconfig"}
+                </button>
+              </div>
+
+              <div>
+                <span className="text-sm text-muted" style={{ display: "block", marginBottom: 6 }}>
+                  Then run:
                 </span>
-                <p className="text-sm text-muted" style={{ margin: "4px 0 0", lineHeight: 1.5 }}>
-                  Install{" "}
-                  <a
-                    href="https://tailscale.com/download"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ color: "var(--text-link)" }}
-                  >
-                    Tailscale
-                  </a>
-                  {" "}and join the same network as your cluster node.
-                  Direct LAN access also works if you&apos;re on the same network.
-                </p>
-              </li>
-
-              <li>
-                <span style={{ fontWeight: 500 }}>Download kubeconfig</span>
-                <div style={{ marginTop: 8 }}>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    disabled={kubeconfigLoading}
-                    onClick={downloadKubeconfig}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                  >
-                    {kubeconfigLoading ? (
-                      <span className="spinner spinner-sm" />
-                    ) : (
-                      <DownloadIcon />
-                    )}
-                    {kubeconfigLoading ? "Downloading..." : "Download kubeconfig"}
-                  </button>
-                </div>
-              </li>
-
-              <li>
-                <span style={{ fontWeight: 500 }}>Verify the connection</span>
                 <div
                   style={{
                     display: "flex",
@@ -395,7 +366,6 @@ export default function InstanceSettingsPage() {
                     padding: "8px 12px",
                     fontFamily: "var(--font-mono)",
                     fontSize: 13,
-                    marginTop: 8,
                   }}
                 >
                   <code style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
@@ -409,8 +379,8 @@ export default function InstanceSettingsPage() {
                     {copied === "portfwd" ? <CheckIcon /> : <CopyIcon />}
                   </button>
                 </div>
-              </li>
-            </ol>
+              </div>
+            </div>
 
             {kubeconfigError && (
               <p className="form-error" style={{ marginTop: 8 }}>

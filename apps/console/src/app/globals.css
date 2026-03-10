@@ -1525,3 +1525,51 @@ select.input {
   color: var(--text-secondary);
   line-height: 1.5;
 }
+
+/* ─── Terminal Page ─── */
+
+.terminal-page {
+  height: calc(100vh - 56px);
+  display: flex;
+  flex-direction: column;
+  background: #0f0f13;
+  overflow: hidden;
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.terminal-slug {
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  color: var(--text-muted);
+}
+
+.terminal-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.terminal-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.terminal-container {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  position: relative;
+}
