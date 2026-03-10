@@ -130,19 +130,38 @@ log_event "config" "ok" "Resources: cpu=${CPU_LIMIT}, memory=${MEM_LIMIT}, stora
 
 # ── Cleanup on exit ──────────────────────────────────────────────────────────
 
-PF_PID=""
 WORK_DIR=""
 
 cleanup() {
-  if [ -n "$PF_PID" ]; then
-    kill "$PF_PID" 2>/dev/null || true
-    wait "$PF_PID" 2>/dev/null || true
-  fi
   if [ -n "$WORK_DIR" ] && [ -d "$WORK_DIR" ]; then
     rm -rf "$WORK_DIR"
   fi
 }
 trap cleanup EXIT
+
+# ── vCluster API Connectivity ────────────────────────────────────────────────
+# After helm upgrades (pod restarts), wait for the vCluster API to be reachable
+# via in-cluster service DNS. No port-forward needed.
+
+ensure_vcluster_api() {
+  # Quick check — already reachable?
+  if KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl get namespaces --request-timeout=5s >/dev/null 2>&1; then
+    return 0
+  fi
+
+  log_event "connectivity" "ok" "Waiting for vCluster API to become reachable"
+
+  for attempt in $(seq 1 30); do
+    if KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl get namespaces --request-timeout=5s >/dev/null 2>&1; then
+      log_event "connectivity" "ok" "vCluster API reachable"
+      return 0
+    fi
+    sleep 3
+  done
+
+  log_event "connectivity" "error" "Cannot reach vCluster API after 90s"
+  return 1
+}
 
 # ── Phase 1: Create Namespace ────────────────────────────────────────────────
 
@@ -166,6 +185,12 @@ log_event "vcluster-create" "ok" "Installing vCluster ${SLUG} in ${NAMESPACE}"
 helm repo add vcluster https://charts.loft.sh >/dev/null 2>&1 || true
 helm repo update vcluster >/dev/null 2>&1 || true
 
+# Extra SANs for the vCluster API server TLS cert:
+#   [0] In-cluster DNS — provisioner connects via this during bootstrap
+#   [1] External hostname — users connect via Traefik TLS passthrough
+VCLUSTER_SAN="${SLUG}.${NAMESPACE}.svc.cluster.local"
+VCLUSTER_EXTERNAL="${SLUG}-k8s.${DOMAIN}"
+
 if helm status "$SLUG" -n "$NAMESPACE" >/dev/null 2>&1; then
   log_event "vcluster-create" "ok" "vCluster ${SLUG} already installed — upgrading"
   helm upgrade "$SLUG" vcluster/vcluster -n "$NAMESPACE" \
@@ -173,6 +198,8 @@ if helm status "$SLUG" -n "$NAMESPACE" >/dev/null 2>&1; then
     --set "controlPlane.statefulSet.resources.limits.cpu=${CPU_LIMIT}" \
     --set "controlPlane.statefulSet.resources.limits.memory=${MEM_LIMIT}" \
     --set "controlPlane.statefulSet.persistence.volumeClaim.size=${STORAGE_LIMIT}" \
+    --set "controlPlane.proxy.extraSANs[0]=${VCLUSTER_SAN}" \
+    --set "controlPlane.proxy.extraSANs[1]=${VCLUSTER_EXTERNAL}" \
     --wait --timeout 300s
 else
   helm install "$SLUG" vcluster/vcluster -n "$NAMESPACE" \
@@ -180,6 +207,8 @@ else
     --set "controlPlane.statefulSet.resources.limits.cpu=${CPU_LIMIT}" \
     --set "controlPlane.statefulSet.resources.limits.memory=${MEM_LIMIT}" \
     --set "controlPlane.statefulSet.persistence.volumeClaim.size=${STORAGE_LIMIT}" \
+    --set "controlPlane.proxy.extraSANs[0]=${VCLUSTER_SAN}" \
+    --set "controlPlane.proxy.extraSANs[1]=${VCLUSTER_EXTERNAL}" \
     --wait --timeout 300s
 fi
 
@@ -217,58 +246,33 @@ VCLUSTER_KUBECONFIG="${WORK_DIR}/kubeconfig"
 kubectl get secret "vc-${SLUG}" -n "$NAMESPACE" \
   -o jsonpath='{.data.config}' | base64 -d > "$VCLUSTER_KUBECONFIG"
 
-# Find a free port for port-forward (start searching from 14443)
-find_free_port() {
-  local port=14443
-  while [ "$port" -lt 15443 ]; do
-    if ! (echo >/dev/tcp/127.0.0.1/$port) 2>/dev/null; then
-      echo "$port"
-      return 0
-    fi
-    port=$((port + 1))
-  done
-  echo "Error: No free port found in range 14443-15443" >&2
-  return 1
-}
-
-LOCAL_PORT=$(find_free_port)
-
-# Rewrite kubeconfig server URL to use port-forward
+# Rewrite kubeconfig server URL to use in-cluster service DNS (no port-forward needed).
+# The provisioner pod runs on the host cluster and can reach the vCluster service directly.
+VCLUSTER_SVC="https://${SLUG}.${NAMESPACE}.svc.cluster.local:443"
 if sed --version >/dev/null 2>&1; then
-  sed -i "s|server:.*|server: https://127.0.0.1:${LOCAL_PORT}|" "$VCLUSTER_KUBECONFIG"
+  sed -i "s|server:.*|server: ${VCLUSTER_SVC}|" "$VCLUSTER_KUBECONFIG"
 else
-  sed -i '' "s|server:.*|server: https://127.0.0.1:${LOCAL_PORT}|" "$VCLUSTER_KUBECONFIG"
+  sed -i '' "s|server:.*|server: ${VCLUSTER_SVC}|" "$VCLUSTER_KUBECONFIG"
 fi
 
-log_event "kubeconfig" "ok" "Kubeconfig extracted and rewritten to localhost:${LOCAL_PORT}"
+log_event "kubeconfig" "ok" "Kubeconfig extracted and rewritten to ${VCLUSTER_SVC}"
 
-# ── Phase 5: Start Port-Forward ──────────────────────────────────────────────
+# ── Phase 5: Verify vCluster API Connectivity ────────────────────────────────
 
-log_event "port-forward" "ok" "Starting port-forward to vCluster on port ${LOCAL_PORT}"
+log_event "connectivity" "ok" "Verifying vCluster API via in-cluster DNS"
 
-kubectl port-forward -n "$NAMESPACE" "svc/${SLUG}" "${LOCAL_PORT}:443" &>/dev/null &
-PF_PID=$!
-sleep 3
-
-# Verify port-forward is alive
-if ! kill -0 "$PF_PID" 2>/dev/null; then
-  log_event "port-forward" "error" "Port-forward died immediately"
-  exit 1
-fi
-
-# Verify connectivity to vCluster API
 for attempt in $(seq 1 20); do
   if KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl get namespaces --request-timeout=5s >/dev/null 2>&1; then
     break
   fi
   if [ "$attempt" -eq 20 ]; then
-    log_event "port-forward" "error" "Cannot reach vCluster API after 60s"
+    log_event "connectivity" "error" "Cannot reach vCluster API after 60s"
     exit 1
   fi
   sleep 3
 done
 
-log_event "port-forward" "ok" "Port-forward established and vCluster API reachable"
+log_event "connectivity" "ok" "vCluster API reachable via in-cluster DNS"
 
 # ── Phase 6: Generate Instance Config ────────────────────────────────────────
 
@@ -454,18 +458,13 @@ OIDC_EOF
   helm upgrade "$SLUG" vcluster/vcluster -n "$NAMESPACE" \
     -f "$VCLUSTER_VALUES" \
     -f "$OIDC_OVERRIDE" \
+    --set "controlPlane.proxy.extraSANs[0]=${VCLUSTER_SAN}" \
+    --set "controlPlane.proxy.extraSANs[1]=${VCLUSTER_EXTERNAL}" \
     --wait --timeout 300s 2>&1 || log_event "deploy-oidc" "warn" "vCluster OIDC upgrade had issues"
 
-  # Re-set KUBECONFIG to vCluster
-  export KUBECONFIG="${VCLUSTER_KUBECONFIG}"
-
   # Wait for vCluster API to be reachable after OIDC upgrade (pod restarts)
-  for attempt in $(seq 1 30); do
-    if kubectl get namespaces --request-timeout=5s >/dev/null 2>&1; then
-      break
-    fi
-    sleep 3
-  done
+  export KUBECONFIG="${VCLUSTER_KUBECONFIG}"
+  ensure_vcluster_api
 
   log_event "deploy-oidc" "ok" "vCluster API server OIDC configured with CA cert"
 
@@ -478,6 +477,7 @@ OIDC_EOF
   else
     log_event "deploy-oidc" "warn" "OIDC discovery endpoint NOT reachable — Headlamp login may fail"
   fi
+
   export KUBECONFIG="${VCLUSTER_KUBECONFIG}"
 
   # Create RBAC binding so OIDC-authenticated user gets cluster-admin
@@ -555,14 +555,41 @@ if [ "$HEADLAMP_MW_SET" = "false" ]; then
   log_event "metadata" "warn" "Headlamp ingress not found after 90s — middleware not set, OIDC login will fail"
 fi
 
+# Create IngressRouteTCP for external kubectl access via Traefik TLS passthrough.
+# SNI-based routing on the websecure entrypoint — Traefik passes TLS directly
+# to the vCluster API server without termination.
+cat <<TCP_EOF | kubectl apply -f -
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: ${SLUG}-k8s
+  namespace: ${NAMESPACE}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - match: HostSNI(\`${SLUG}-k8s.${DOMAIN}\`)
+      services:
+        - name: ${SLUG}
+          port: 443
+  tls:
+    passthrough: true
+TCP_EOF
+log_event "metadata" "ok" "IngressRouteTCP created for external kubectl access"
+
 # Write admin password to file for reconciler to pick up and store in console DB
 echo "$FORGEJO_ADMIN_PASSWORD" > "/tmp/provision-${SLUG}.password"
 
-# Write user-facing kubeconfig for reconciler to store in console DB
-# Re-extract raw kubeconfig (the one we have is rewritten for local port-forward)
+# Write user-facing kubeconfig for reconciler to store in console DB.
+# Re-extract raw kubeconfig, then rewrite server URL for external access.
 kubectl get secret "vc-${SLUG}" -n "$NAMESPACE" \
   -o jsonpath='{.data.config}' | base64 -d > "/tmp/provision-${SLUG}.kubeconfig"
-log_event "metadata" "ok" "Kubeconfig saved for user download"
+if sed --version >/dev/null 2>&1; then
+  sed -i "s|server:.*|server: https://${SLUG}-k8s.${DOMAIN}|" "/tmp/provision-${SLUG}.kubeconfig"
+else
+  sed -i '' "s|server:.*|server: https://${SLUG}-k8s.${DOMAIN}|" "/tmp/provision-${SLUG}.kubeconfig"
+fi
+log_event "metadata" "ok" "Kubeconfig saved with server https://${SLUG}-k8s.${DOMAIN}"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 

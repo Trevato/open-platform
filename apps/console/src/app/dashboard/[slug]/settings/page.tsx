@@ -167,7 +167,7 @@ export default function InstanceSettingsPage() {
     }
   }, [slug]);
 
-  const portForwardCmd = `kubectl port-forward -n vc-${slug} svc/${slug} 6443:443`;
+  const kubectlCmd = `KUBECONFIG=./${slug}-kubeconfig.yaml kubectl get ns`;
 
   const canDelete = confirmSlug === slug;
 
@@ -340,34 +340,51 @@ export default function InstanceSettingsPage() {
           <div className="settings-section">
             <h2>kubectl access</h2>
             <p>
-              Connect to your cluster with kubectl. Download the kubeconfig file
-              and set up a port-forward to access the API server.
+              Full cluster access via kubectl. Your API server is at{" "}
+              <code style={{ fontSize: 12 }}>{slug}-k8s.open-platform.sh</code>.
             </p>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  disabled={kubeconfigLoading}
-                  onClick={downloadKubeconfig}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-                >
-                  {kubeconfigLoading ? (
-                    <span className="spinner spinner-sm" />
-                  ) : (
-                    <DownloadIcon />
-                  )}
-                  {kubeconfigLoading ? "Downloading..." : "Download kubeconfig"}
-                </button>
-              </div>
-
-              <div>
-                <span
-                  className="text-sm text-muted"
-                  style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}
-                >
-                  <TerminalIcon /> Then run:
+            <ol style={{ margin: "12px 0 0", paddingLeft: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+              <li>
+                <span style={{ fontWeight: 500 }}>
+                  Connect your machine to the cluster network
                 </span>
+                <p className="text-sm text-muted" style={{ margin: "4px 0 0", lineHeight: 1.5 }}>
+                  Install{" "}
+                  <a
+                    href="https://tailscale.com/download"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: "var(--text-link)" }}
+                  >
+                    Tailscale
+                  </a>
+                  {" "}and join the same network as your cluster node.
+                  Direct LAN access also works if you&apos;re on the same network.
+                </p>
+              </li>
+
+              <li>
+                <span style={{ fontWeight: 500 }}>Download kubeconfig</span>
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    disabled={kubeconfigLoading}
+                    onClick={downloadKubeconfig}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                  >
+                    {kubeconfigLoading ? (
+                      <span className="spinner spinner-sm" />
+                    ) : (
+                      <DownloadIcon />
+                    )}
+                    {kubeconfigLoading ? "Downloading..." : "Download kubeconfig"}
+                  </button>
+                </div>
+              </li>
+
+              <li>
+                <span style={{ fontWeight: 500 }}>Verify the connection</span>
                 <div
                   style={{
                     display: "flex",
@@ -378,32 +395,28 @@ export default function InstanceSettingsPage() {
                     padding: "8px 12px",
                     fontFamily: "var(--font-mono)",
                     fontSize: 13,
+                    marginTop: 8,
                   }}
                 >
                   <code style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
-                    {portForwardCmd}
+                    {kubectlCmd}
                   </code>
                   <button
                     className="btn-icon"
                     title="Copy command"
-                    onClick={() => copyToClipboard(portForwardCmd, "portfwd")}
+                    onClick={() => copyToClipboard(kubectlCmd, "portfwd")}
                   >
                     {copied === "portfwd" ? <CheckIcon /> : <CopyIcon />}
                   </button>
                 </div>
-              </div>
+              </li>
+            </ol>
 
-              <p className="text-sm text-muted" style={{ margin: 0 }}>
-                Use <code style={{ fontSize: 12 }}>KUBECONFIG=./{slug}-kubeconfig.yaml kubectl get ns</code> to
-                verify the connection.
+            {kubeconfigError && (
+              <p className="form-error" style={{ marginTop: 8 }}>
+                {kubeconfigError}
               </p>
-
-              {kubeconfigError && (
-                <p className="form-error" style={{ marginTop: 0 }}>
-                  {kubeconfigError}
-                </p>
-              )}
-            </div>
+            )}
           </div>
         </div>
       </div>
