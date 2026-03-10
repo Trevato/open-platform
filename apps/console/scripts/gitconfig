@@ -1,0 +1,31 @@
+[user]
+    name = trevato
+    email = me@trevato.dev
+[init]
+    defaultBranch = main
+[pull]
+    rebase = true
+[push]
+    autoSetupRemote = true
+[rebase]
+    autoStash = true
+[merge]
+    conflictstyle = zdiff3
+[diff]
+    algorithm = histogram
+[rerere]
+    enabled = true
+[fetch]
+    prune = true
+[alias]
+    st = status -sb
+    amend = commit --amend --no-edit
+    undo = reset --soft HEAD~1
+[core]
+    pager = delta
+[interactive]
+    diffFilter = delta --color-only
+[delta]
+    navigate = true
+    side-by-side = true
+    line-numbers = true

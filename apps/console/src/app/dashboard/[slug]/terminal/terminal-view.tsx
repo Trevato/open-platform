@@ -3,26 +3,26 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 const theme = {
-  background: "#0f0f13",
-  foreground: "#e0e0f0",
-  cursor: "#60a0ff",
-  selectionBackground: "rgba(96, 160, 255, 0.3)",
-  black: "#1a1a24",
-  red: "#f87171",
-  green: "#4ade80",
-  yellow: "#fbbf24",
-  blue: "#60a0ff",
-  magenta: "#a855f7",
-  cyan: "#22d3ee",
-  white: "#e0e0f0",
-  brightBlack: "#555570",
-  brightRed: "#fca5a5",
-  brightGreen: "#86efac",
-  brightYellow: "#fde68a",
-  brightBlue: "#93c5fd",
-  brightMagenta: "#c084fc",
-  brightCyan: "#67e8f9",
-  brightWhite: "#f0f0ff",
+  background: "#1e1e2e",
+  foreground: "#cdd6f4",
+  cursor: "#f5e0dc",
+  selectionBackground: "#353749",
+  black: "#45475a",
+  red: "#f38ba8",
+  green: "#a6e3a1",
+  yellow: "#f9e2af",
+  blue: "#89b4fa",
+  magenta: "#f5c2e7",
+  cyan: "#94e2d5",
+  white: "#a6adc8",
+  brightBlack: "#585b70",
+  brightRed: "#f38ba8",
+  brightGreen: "#a6e3a1",
+  brightYellow: "#f9e2af",
+  brightBlue: "#89b4fa",
+  brightMagenta: "#f5c2e7",
+  brightCyan: "#94e2d5",
+  brightWhite: "#bac2de",
 };
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -64,10 +64,38 @@ export function TerminalView({ slug }: { slug: string }) {
       term.loadAddon(fitAddon);
       term.open(containerRef.current);
 
-      // Defer fit until WASM has measured font metrics (returns 0 on first frame)
-      requestAnimationFrame(() => {
+      // Force font remeasure so fit() gets real character dimensions.
+      // ghostty-web caches metrics from term.open() which may be zero
+      // if the web font hasn't loaded yet.
+      const remeasure = () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const renderer = (term as any).renderer;
+        if (renderer?.remeasureFont) renderer.remeasureFont();
+      };
+
+      // Fit terminal to container and send dimensions to PTY.
+      // Must be called after WebSocket is open so the resize message
+      // actually reaches the server (the real bug: fit() was firing
+      // before the WebSocket connected, so the resize was silently dropped).
+      const sendSize = (ws: WebSocket) => {
+        remeasure();
         fitAddon.fit();
-        fitAddon.observeResize();
+        // Always send current dimensions — fit() only triggers onResize
+        // if dimensions changed, but the PTY needs them on first connect.
+        ws.send(JSON.stringify({
+          type: "resize",
+          cols: term.cols,
+          rows: term.rows,
+        }));
+      };
+
+      // Start observing container resize after fonts are ready
+      document.fonts.ready.then(() => {
+        requestAnimationFrame(() => {
+          remeasure();
+          fitAddon.fit();
+          fitAddon.observeResize();
+        });
       });
 
       termRef.current = term;
@@ -80,7 +108,6 @@ export function TerminalView({ slug }: { slug: string }) {
       wsRef.current = ws;
 
       // Clipboard via DOM listener (avoids breaking ghostty-web key handling)
-      // Cmd+C / Ctrl+Shift+C = copy selection, Cmd+V / Ctrl+Shift+V = paste
       const container = containerRef.current;
       const handleClipboard = (event: KeyboardEvent) => {
         const isMac = navigator.platform.includes("Mac");
@@ -104,10 +131,6 @@ export function TerminalView({ slug }: { slug: string }) {
       };
       container.addEventListener("keydown", handleClipboard);
 
-      ws.onopen = () => {
-        // Wait for 'connected' message from server
-      };
-
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
@@ -115,6 +138,8 @@ export function TerminalView({ slug }: { slug: string }) {
           switch (msg.type) {
             case "connected":
               setStatus("connected");
+              // Send real terminal dimensions now that WebSocket is open
+              sendSize(ws);
               term.focus();
               break;
             case "output":
@@ -148,7 +173,7 @@ export function TerminalView({ slug }: { slug: string }) {
         }
       });
 
-      // Terminal resize → server
+      // Terminal resize → server (for window resizes after initial connect)
       term.onResize(({ cols, rows }: { cols: number; rows: number }) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "resize", cols, rows }));

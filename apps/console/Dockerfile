@@ -23,6 +23,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Install terminal tools (kubectl, k9s, helm via binary download; rest via apk)
 RUN apk add --no-cache \
       curl zsh git jq yq ripgrep bat fzf neovim btop tree kustomize \
+      eza delta zsh-autosuggestions zsh-syntax-highlighting \
     && curl -sLo /usr/local/bin/kubectl \
       "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     && chmod +x /usr/local/bin/kubectl \
@@ -47,6 +48,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/node-pty ./node_modu
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.sh ./scripts/start.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/.zshrc ./scripts/.zshrc
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/shell-init.sh ./scripts/shell-init.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/starship.toml ./scripts/starship.toml
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/gitconfig ./scripts/gitconfig
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/btop.conf ./scripts/btop.conf
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/k9s ./scripts/k9s
 RUN chmod +x scripts/start.sh
 USER nextjs
 EXPOSE 3000 3001

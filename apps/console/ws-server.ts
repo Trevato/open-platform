@@ -249,6 +249,11 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
         ZDOTDIR: "/app/scripts",
         SHELL: "/bin/zsh",
         LANG: "C.UTF-8",
+        STARSHIP_CONFIG: "/app/scripts/starship.toml",
+        K9S_CONFIG_DIR: "/app/scripts/k9s",
+        GIT_CONFIG_GLOBAL: "/app/scripts/gitconfig",
+        BAT_THEME: "Catppuccin Mocha",
+        FZF_DEFAULT_OPTS: "--height 40% --border",
       },
     });
 

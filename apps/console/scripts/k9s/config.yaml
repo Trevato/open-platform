@@ -1,0 +1,10 @@
+k9s:
+  liveViewAutoRefresh: false
+  refreshRate: 2
+  ui:
+    enableMouse: false
+    headless: false
+    logoless: false
+    crumbsless: false
+    noIcons: false
+    skin: catppuccin-mocha-transparent

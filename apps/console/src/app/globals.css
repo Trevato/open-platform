@@ -1532,7 +1532,7 @@ select.input {
   height: calc(100vh - 56px);
   display: flex;
   flex-direction: column;
-  background: #0f0f13;
+  background: #1e1e2e;
   overflow: hidden;
 }
 
