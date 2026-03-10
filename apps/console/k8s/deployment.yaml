@@ -65,6 +65,18 @@ spec:
             - name: platform-ca
               mountPath: /etc/ssl/custom
               readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /api/auth/get-session
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/auth/get-session
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
           resources:
             requests:
               cpu: "100m"

@@ -17,7 +17,11 @@ export async function GET(
   const { slug } = await params;
 
   const result = await pool.query(
-    `SELECT i.*, c.tier as customer_tier, c.email as customer_email
+    `SELECT i.id, i.slug, i.display_name, i.tier, i.status,
+            i.admin_username, i.admin_email, i.custom_domain,
+            i.error_message, i.created_at, i.updated_at,
+            i.provisioned_at, i.password_reset_at, i.last_healthy_at,
+            i.customer_id, c.tier as customer_tier, c.email as customer_email
      FROM instances i
      JOIN customers c ON c.id = i.customer_id
      WHERE i.slug = $1 AND c.user_id = $2`,

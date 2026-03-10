@@ -27,6 +27,8 @@ db_exec() {
 
 insert_event() {
   local instance_id="$1" phase="$2" message="$3" status="${4:-info}"
+  phase="${phase//\'/\'\'}"
+  message="${message//\'/\'\'}"
   local ts
   ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   db_exec "INSERT INTO provision_events (instance_id, phase, status, message, created_at) VALUES ('${instance_id}', '${phase}', '${status}', '${message}', '${ts}')"

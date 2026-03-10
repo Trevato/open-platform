@@ -92,3 +92,9 @@ CREATE TABLE IF NOT EXISTS provision_events (
   message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Performance indexes
+CREATE INDEX IF NOT EXISTS idx_instances_customer_id ON instances(customer_id);
+CREATE INDEX IF NOT EXISTS idx_instances_slug ON instances(slug);
+CREATE INDEX IF NOT EXISTS idx_provision_events_instance_id ON provision_events(instance_id);
+CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id);

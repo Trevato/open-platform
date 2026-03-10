@@ -28,6 +28,8 @@ db_exec() {
 
 insert_event() {
   local instance_id="$1" phase="$2" message="$3" status="${4:-info}"
+  phase="${phase//\'/\'\'}"
+  message="${message//\'/\'\'}"
   local ts
   ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   db_exec "INSERT INTO provision_events (instance_id, phase, status, message, created_at) VALUES ('${instance_id}', '${phase}', '${status}', '${message}', '${ts}')"
@@ -70,13 +72,22 @@ while IFS='|' read -r INSTANCE_ID SLUG LAST_HEALTHY; do
 
   NOW=$(timestamp)
 
+  FAIL_FILE="/tmp/health-fail-${SLUG}"
+
   if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 500 ]; then
-    # Healthy: update last_healthy_at
+    # Healthy: update last_healthy_at and reset failure counter
     db_exec "UPDATE instances SET last_healthy_at = '${NOW}', updated_at = '${NOW}' WHERE id = '${INSTANCE_ID}'"
+    rm -f "$FAIL_FILE"
     HEALTHY=$((HEALTHY + 1))
   else
-    # Unreachable: check if beyond threshold
+    # Unreachable: increment consecutive failure counter
     UNHEALTHY=$((UNHEALTHY + 1))
+    PREV_FAILS=0
+    if [ -f "$FAIL_FILE" ]; then
+      PREV_FAILS=$(cat "$FAIL_FILE" 2>/dev/null || echo "0")
+    fi
+    CONSECUTIVE_FAILS=$((PREV_FAILS + 1))
+    echo "$CONSECUTIVE_FAILS" > "$FAIL_FILE"
 
     if [ -z "$LAST_HEALTHY" ] || [ "$LAST_HEALTHY" = "" ]; then
       # Never been healthy — could still be initializing. Check provisioned_at.
@@ -93,12 +104,13 @@ while IFS='|' read -r INSTANCE_ID SLUG LAST_HEALTHY; do
     # Calculate minutes since last healthy (using PostgreSQL for reliable timestamp math)
     MINUTES_SINCE=$(db_query "SELECT EXTRACT(EPOCH FROM (NOW() - '${REFERENCE_TIME}'::timestamptz))::int / 60" || echo "0")
 
-    if [ "$MINUTES_SINCE" -ge "$UNHEALTHY_THRESHOLD_MINUTES" ]; then
+    if [ "$CONSECUTIVE_FAILS" -ge 3 ] && [ "$MINUTES_SINCE" -ge "$UNHEALTHY_THRESHOLD_MINUTES" ]; then
       db_exec "UPDATE instances SET status = 'unhealthy', updated_at = '${NOW}' WHERE id = '${INSTANCE_ID}' AND status = 'ready'"
-      insert_event "$INSTANCE_ID" "health_failed" "Instance ${SLUG} unreachable for ${MINUTES_SINCE}m (HTTP ${HTTP_CODE})"
-      echo "[$(timestamp)] Instance ${SLUG} marked UNHEALTHY (unreachable ${MINUTES_SINCE}m, HTTP ${HTTP_CODE})"
+      insert_event "$INSTANCE_ID" "health_failed" "Instance ${SLUG} unreachable for ${MINUTES_SINCE}m, ${CONSECUTIVE_FAILS} consecutive failures (HTTP ${HTTP_CODE})"
+      echo "[$(timestamp)] Instance ${SLUG} marked UNHEALTHY (unreachable ${MINUTES_SINCE}m, ${CONSECUTIVE_FAILS} consecutive failures, HTTP ${HTTP_CODE})"
+      rm -f "$FAIL_FILE"
     else
-      echo "[$(timestamp)] Instance ${SLUG} unreachable (HTTP ${HTTP_CODE}, ${MINUTES_SINCE}m/${UNHEALTHY_THRESHOLD_MINUTES}m threshold)"
+      echo "[$(timestamp)] Instance ${SLUG} unreachable (HTTP ${HTTP_CODE}, ${CONSECUTIVE_FAILS}/3 failures, ${MINUTES_SINCE}m/${UNHEALTHY_THRESHOLD_MINUTES}m threshold)"
     fi
   fi
 done <<< "$READY_ROWS"
@@ -118,6 +130,7 @@ if [ -n "$UNHEALTHY_ROWS" ]; then
       db_exec "UPDATE instances SET status = 'ready', last_healthy_at = '${NOW}', updated_at = '${NOW}' WHERE id = '${INSTANCE_ID}'"
       insert_event "$INSTANCE_ID" "health_recovered" "Instance ${SLUG} recovered from unhealthy (HTTP ${HTTP_CODE})"
       echo "[$(timestamp)] Instance ${SLUG} recovered from unhealthy (HTTP ${HTTP_CODE})"
+      rm -f "/tmp/health-fail-${SLUG}"
       HEALTHY=$((HEALTHY + 1))
     fi
   done <<< "$UNHEALTHY_ROWS"

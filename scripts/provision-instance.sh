@@ -372,7 +372,7 @@ log_event "deploy-helmfile" "ok" "Running helmfile sync inside vCluster (excludi
 
 cd "$INSTANCE_DIR"
 HELMFILE_EXIT=0
-helmfile sync --selector 'tier!=platform' || HELMFILE_EXIT=$?
+timeout 600 helmfile sync --selector 'tier!=platform' || HELMFILE_EXIT=$?
 
 if [ "$HELMFILE_EXIT" -ne 0 ]; then
   # helmfile may fail from non-critical postsync hooks (woodpecker repos, system org).
@@ -601,7 +601,7 @@ KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create serviceaccount platform-admin -
 KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create clusterrolebinding platform-admin-binding \
   --clusterrole=cluster-admin --serviceaccount=kube-system:platform-admin 2>/dev/null || true
 
-SA_TOKEN=$(KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create token platform-admin -n kube-system --duration=8760h)
+SA_TOKEN=$(KUBECONFIG="$VCLUSTER_KUBECONFIG" kubectl create token platform-admin -n kube-system --duration=720h)
 
 cat > "/tmp/provision-${SLUG}.kubeconfig" << KCEOF
 apiVersion: v1

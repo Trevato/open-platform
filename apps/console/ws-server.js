@@ -8985,7 +8985,8 @@ wss.on("connection", async (ws, req) => {
             Math.max(1, Math.min(200, msg.rows))
           );
         }
-      } catch {
+      } catch (err) {
+        console.error("Failed to parse WebSocket message:", err);
       }
     });
     ws.on("close", () => cleanupSession(ws));
