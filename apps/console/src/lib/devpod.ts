@@ -119,6 +119,7 @@ export async function createDevPod(spec: DevPodSpec): Promise<void> {
           metadata: { labels: l },
           spec: {
             serviceAccountName: "devpod-sa",
+            imagePullSecrets: [{ name: "forgejo-registry" }],
             terminationGracePeriodSeconds: 10,
             containers: [
               {

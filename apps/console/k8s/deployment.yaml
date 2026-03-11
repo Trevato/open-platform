@@ -20,7 +20,7 @@ spec:
         - name: forgejo-registry
       containers:
         - name: app
-          image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
+          image: SERVICE_PREFIXforgejo.PLATFORM_DOMAIN/ORG_NAME/PROJECT_NAME:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -51,15 +51,11 @@ spec:
             - name: BETTER_AUTH_TRUSTED_ORIGINS
               value: "https://SERVICE_PREFIXconsole.PLATFORM_DOMAIN"
             - name: AUTH_FORGEJO_URL
-              value: "https://REGISTRY_HOST"
+              value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
             - name: AUTH_FORGEJO_INTERNAL_URL
               value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
             - name: CONSOLE_MODE
               value: "platform"
-            - name: PLATFORM_DOMAIN
-              value: "PLATFORM_DOMAIN"
-            - name: SERVICE_PREFIX
-              value: "SERVICE_PREFIX"
             - name: FORGEJO_ADMIN_USER
               valueFrom:
                 secretKeyRef:
@@ -78,6 +74,8 @@ spec:
               value: "PLATFORM_DOMAIN"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
+            - name: NODE_TLS_REJECT_UNAUTHORIZED
+              value: "0"
           volumeMounts:
             - name: platform-ca
               mountPath: /etc/ssl/custom

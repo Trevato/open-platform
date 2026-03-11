@@ -3,20 +3,3 @@ kind: ServiceAccount
 metadata:
   name: console
   namespace: APP_NAMESPACE
----
-# cluster-admin is required for the in-browser terminal (kubectl access).
-# The console app itself only needs read access to pods, deployments, namespaces,
-# and services — but the terminal feature spawns a PTY with full kubectl, so the
-# ServiceAccount must have cluster-admin privileges.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: console-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-  - kind: ServiceAccount
-    name: console
-    namespace: APP_NAMESPACE

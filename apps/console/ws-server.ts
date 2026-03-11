@@ -451,17 +451,13 @@ async function handleDevPodConnection(
   const saToken = getServiceAccountToken();
   const caCert = getServiceAccountCA();
 
-  const k8sWsOptions: Record<string, unknown> = {
+  const k8sWs = new WebSocket(k8sUrl, ["v4.channel.k8s.io"], {
     headers: {
       Authorization: `Bearer ${saToken}`,
     },
     rejectUnauthorized: !!caCert,
     ca: caCert,
-    // K8s uses the v4.channel.k8s.io subprotocol for exec
-    protocol: "v4.channel.k8s.io",
-  };
-
-  const k8sWs = new WebSocket(k8sUrl, k8sWsOptions as never);
+  });
 
   k8sWs.on("error", (err) => {
     console.error(`[ws-server] K8s exec WebSocket error for ${username}:`, err.message);

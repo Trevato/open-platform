@@ -45,6 +45,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/ws-server.js ./ws-server.js
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/node-pty ./node_modules/node-pty
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@kubernetes ./node_modules/@kubernetes
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.sh ./scripts/start.sh
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/.zshrc ./scripts/.zshrc
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/shell-init.sh ./scripts/shell-init.sh
