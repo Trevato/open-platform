@@ -27,7 +27,7 @@ const theme = {
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
-export function TerminalView({ slug }: { slug: string }) {
+export function TerminalView({ slug }: { slug?: string } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<unknown>(null);
@@ -103,7 +103,7 @@ export function TerminalView({ slug }: { slug: string }) {
       // Connect WebSocket
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
       const ws = new WebSocket(
-        `${protocol}//${location.host}/ws/terminal?slug=${slug}`
+        `${protocol}//${location.host}/ws/terminal${slug ? `?slug=${slug}` : ""}`
       );
       wsRef.current = ws;
 

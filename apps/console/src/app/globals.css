@@ -928,6 +928,11 @@ select.input {
   color: #22c55e;
 }
 
+.service-icon-db {
+  background: rgba(244, 114, 182, 0.12);
+  color: #f472b6;
+}
+
 .service-card h3 {
   font-size: 14px;
   font-weight: 600;
@@ -1572,4 +1577,84 @@ select.input {
   min-height: 0;
   padding: 8px;
   position: relative;
+}
+
+/* ─── Platform Sidebar ─── */
+
+.dashboard-with-sidebar .nav {
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-body {
+  display: flex;
+  min-height: calc(100vh - 49px);
+}
+
+.sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  padding: 12px 8px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-btn);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  transition: color 0.15s, background 0.15s;
+}
+
+.sidebar-link:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.sidebar-link-active {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sidebar-link-active svg {
+  color: var(--accent);
+}
+
+.dashboard-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .dashboard-body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    padding: 8px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+  }
+
+  .sidebar-link {
+    white-space: nowrap;
+    padding: 6px 10px;
+  }
 }

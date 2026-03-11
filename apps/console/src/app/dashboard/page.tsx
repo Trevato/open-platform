@@ -1,8 +1,10 @@
+import { isPlatform } from "@/lib/mode";
 import { auth } from "@/auth";
 import { headers } from "next/headers";
 import Link from "next/link";
 import pool from "@/lib/db";
 import { InstanceList } from "@/app/components/instance-list";
+import { PlatformDashboard } from "@/app/components/platform-dashboard";
 
 function PlusIcon() {
   return (
@@ -43,7 +45,7 @@ function EmptyIcon() {
   );
 }
 
-export default async function DashboardPage() {
+async function HostedDashboard() {
   // Session is validated by the dashboard layout — no redirect needed here.
   // We still read it for the user ID to query customer data.
   // Non-null assertion: layout guarantees authenticated session
@@ -104,6 +106,21 @@ export default async function DashboardPage() {
         </Link>
       </div>
       <InstanceList initialInstances={instances} />
+    </div>
+  );
+}
+
+export default async function DashboardPage() {
+  if (!isPlatform) {
+    return <HostedDashboard />;
+  }
+
+  return (
+    <div className="container">
+      <div className="dashboard-header">
+        <h1>Dashboard</h1>
+      </div>
+      <PlatformDashboard />
     </div>
   );
 }

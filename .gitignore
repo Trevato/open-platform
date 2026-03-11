@@ -27,3 +27,11 @@ open-platform.yaml
 open-platform.state.yaml
 open-platform.yaml.*
 !open-platform.yaml.example
+
+# Generated config (deployment-specific)
+# Source of truth: config/templates/
+/platform/
+*-values.yaml
+!host/vcluster-values.yaml
+helmfile.yaml
+manifests/oidc-rbac.yaml

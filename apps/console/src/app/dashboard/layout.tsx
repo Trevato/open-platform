@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { UserMenu } from "@/app/components/sign-in-button";
+import { isPlatform } from "@/lib/mode";
+import { PlatformNav } from "@/app/components/platform-nav";
 
 export default async function DashboardLayout({
   children,
@@ -16,7 +18,7 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div>
+    <div className={isPlatform ? "dashboard-with-sidebar" : ""}>
       <nav className="nav">
         <Link href="/dashboard" className="nav-brand">
           <div className="nav-brand-mark" aria-hidden="true">
@@ -39,7 +41,14 @@ export default async function DashboardLayout({
         </Link>
         <UserMenu />
       </nav>
-      <main>{children}</main>
+      {isPlatform ? (
+        <div className="dashboard-body">
+          <PlatformNav />
+          <main className="dashboard-main">{children}</main>
+        </div>
+      ) : (
+        <main>{children}</main>
+      )}
     </div>
   );
 }

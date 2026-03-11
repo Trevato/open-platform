@@ -12,6 +12,7 @@ const MAX_SESSIONS_PER_USER = 3;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_SESSION_MS = 2 * 60 * 60 * 1000;
 const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
+const CONSOLE_MODE = process.env.CONSOLE_MODE || "platform";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -41,7 +42,6 @@ function parseCookies(header: string | undefined): Record<string, string> {
 /**
  * Verify the HMAC-SHA256 signature on a better-auth signed cookie.
  * Cookie format: {value}.{base64-hmac-sha256-signature}
- * The signature is always 44 base64 characters ending with '='.
  */
 function verifySignedCookie(
   rawValue: string,
@@ -54,8 +54,7 @@ function verifySignedCookie(
   const value = decoded.substring(0, lastDot);
   const signature = decoded.substring(lastDot + 1);
 
-  // better-auth/better-call signatures are 44-char base64 ending with '='
-  if (signature.length !== 44 || !signature.endsWith("=")) return null;
+  if (!signature) return null;
 
   const expected = createHmac("sha256", secret)
     .update(value)
@@ -207,54 +206,68 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
       return;
     }
 
-    // 3. Extract slug
+    // 3. Extract slug (required in hosted mode, optional in platform mode)
     const url = new URL(req.url || "/", `http://localhost:${PORT}`);
     const slug = url.searchParams.get("slug");
-    if (!slug || !/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
-      sendMessage(ws, { type: "error", message: "Invalid instance slug." });
-      ws.close();
-      return;
+
+    let kubeconfigPath = "";
+
+    if (CONSOLE_MODE === "platform") {
+      // Platform mode: use in-cluster ServiceAccount — no slug, no DB lookup
+      kubeconfigPath = "";
+    } else {
+      // Hosted mode: validate slug, verify ownership, write kubeconfig
+      if (!slug || !/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
+        sendMessage(ws, { type: "error", message: "Invalid instance slug." });
+        ws.close();
+        return;
+      }
+
+      const instance = await verifyOwnership(slug, user.userId);
+      if (!instance) {
+        sendMessage(ws, {
+          type: "error",
+          message: "Instance not found or not ready.",
+        });
+        ws.close();
+        return;
+      }
+
+      const sessionId = randomBytes(8).toString("hex");
+      kubeconfigPath = join(tmpdir(), `term-${sessionId}.kubeconfig`);
+      const kubeconfigContent = prepareKubeconfig(
+        instance.kubeconfig,
+        instance.clusterIp
+      );
+      writeFileSync(kubeconfigPath, kubeconfigContent, { mode: 0o600 });
     }
 
-    // 4. Verify ownership and get kubeconfig
-    const instance = await verifyOwnership(slug, user.userId);
-    if (!instance) {
-      sendMessage(ws, {
-        type: "error",
-        message: "Instance not found or not ready.",
-      });
-      ws.close();
-      return;
+    // Spawn PTY
+    const ptyEnv: Record<string, string> = {
+      PATH: "/usr/local/bin:/usr/bin:/bin",
+      TERM: "xterm-256color",
+      HOME: "/tmp",
+      ZDOTDIR: "/app/scripts",
+      SHELL: "/bin/zsh",
+      LANG: "C.UTF-8",
+      STARSHIP_CONFIG: "/app/scripts/starship.toml",
+      K9S_CONFIG_DIR: "/app/scripts/k9s",
+      GIT_CONFIG_GLOBAL: "/app/scripts/gitconfig",
+      BAT_THEME: "Catppuccin Mocha",
+      FZF_DEFAULT_OPTS: "--height 40% --border",
+    };
+
+    // Only set KUBECONFIG if we have a custom one (hosted mode)
+    // In platform mode, kubectl uses the in-cluster ServiceAccount automatically
+    if (kubeconfigPath) {
+      ptyEnv.KUBECONFIG = kubeconfigPath;
     }
 
-    // 5. Write kubeconfig to temp file
-    const sessionId = randomBytes(8).toString("hex");
-    const kubeconfigPath = join(tmpdir(), `term-${sessionId}.kubeconfig`);
-    const kubeconfigContent = prepareKubeconfig(
-      instance.kubeconfig,
-      instance.clusterIp
-    );
-    writeFileSync(kubeconfigPath, kubeconfigContent, { mode: 0o600 });
-
-    // 6. Spawn PTY
     const ptyProcess = pty.spawn("/bin/zsh", ["--login"], {
       name: "xterm-256color",
       cols: 80,
       rows: 24,
-      env: {
-        KUBECONFIG: kubeconfigPath,
-        PATH: "/usr/local/bin:/usr/bin:/bin",
-        TERM: "xterm-256color",
-        HOME: "/tmp",
-        ZDOTDIR: "/app/scripts",
-        SHELL: "/bin/zsh",
-        LANG: "C.UTF-8",
-        STARSHIP_CONFIG: "/app/scripts/starship.toml",
-        K9S_CONFIG_DIR: "/app/scripts/k9s",
-        GIT_CONFIG_GLOBAL: "/app/scripts/gitconfig",
-        BAT_THEME: "Catppuccin Mocha",
-        FZF_DEFAULT_OPTS: "--height 40% --border",
-      },
+      env: ptyEnv,
     });
 
     // 7. Set up session tracking
@@ -276,7 +289,7 @@ wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
 
     sessions.set(ws, {
       userId: user.userId,
-      slug,
+      slug: slug || "",
       ptyProcess,
       kubeconfigPath,
       idleTimer,

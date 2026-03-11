@@ -1,6 +1,6 @@
 [user]
-    name = trevato
-    email = me@trevato.dev
+    name = open-platform
+    email = noreply@open-platform.sh
 [init]
     defaultBranch = main
 [pull]

@@ -47,7 +47,19 @@ CREATE TABLE IF NOT EXISTS verification (
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Console app tables
+-- Platform mode tables (per-platform console)
+
+CREATE TABLE IF NOT EXISTS platform (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  domain TEXT NOT NULL,
+  tls_mode TEXT NOT NULL DEFAULT 'selfsigned',
+  admin_username TEXT NOT NULL,
+  admin_email TEXT NOT NULL,
+  setup_completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Hosted mode tables (multi-tenant console)
 
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
@@ -70,6 +82,8 @@ CREATE TABLE IF NOT EXISTS instances (
   admin_email TEXT NOT NULL,
   admin_password TEXT,
   custom_domain TEXT,
+  kubeconfig TEXT,
+  cluster_ip TEXT,
   error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),

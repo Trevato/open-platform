@@ -52,12 +52,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // GitHub may return null email if user has no public email set
   if (!session.user.email) {
     return NextResponse.json(
       {
         error:
-          "No email associated with your GitHub account. Please set a public email in your GitHub profile settings.",
+          "No email associated with your account. Please set a public email in your profile settings.",
       },
       { status: 400 }
     );
@@ -120,8 +119,6 @@ export async function POST(request: NextRequest) {
     );
 
     if (customer.rows.length === 0) {
-      // session.user.name is the GitHub username — mapProfileToUser maps
-      // profile.login (GitHub username) to the name field.
       customer = await client.query(
         `INSERT INTO customers (user_id, email, name, github_username)
          VALUES ($1, $2, $3, $4)

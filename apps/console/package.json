@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
     "better-auth": "^1.5.0",
     "ghostty-web": "^0.4.0",
     "next": "^15.0.0",

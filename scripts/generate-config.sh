@@ -228,6 +228,21 @@ template_platform() {
   echo "  platform/${rel}"
 }
 
+# Static platform files (no variable substitution, but managed as templates)
+template_platform "kustomization.yaml"
+template_platform "cluster/infra-controllers.yaml"
+template_platform "cluster/infra-configs.yaml"
+template_platform "cluster/identity.yaml"
+template_platform "cluster/apps.yaml"
+template_platform "infrastructure/controllers/traefik.yaml"
+template_platform "infrastructure/controllers/cnpg.yaml"
+template_platform "infrastructure/configs/namespaces.yaml"
+template_platform "infrastructure/configs/postgres-cluster.yaml"
+template_platform "infrastructure/configs/traefik-tls.yaml"
+template_platform "apps/woodpecker-rbac.yaml"
+
+# Templated platform files (with variable substitution)
+template_platform "identity/oidc-rbac.yaml"
 template_platform "identity/forgejo.yaml"
 template_platform "apps/woodpecker.yaml"
 template_platform "apps/headlamp.yaml"
@@ -301,10 +316,6 @@ echo "Templating manifests..."
 
 template_file "$TEMPLATES_DIR/manifests/oidc-rbac.yaml.tmpl" "$ROOT_DIR/manifests/oidc-rbac.yaml"
 echo "  manifests/oidc-rbac.yaml"
-
-# Also template the Flux copy
-template_file "$TEMPLATES_DIR/manifests/oidc-rbac.yaml.tmpl" "$ROOT_DIR/platform/identity/oidc-rbac.yaml"
-echo "  platform/identity/oidc-rbac.yaml"
 
 # ── Template: helmfile.yaml ───────────────────────────────────────────────────
 

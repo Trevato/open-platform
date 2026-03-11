@@ -1,128 +1,81 @@
 # Open Platform
 
-Self-hosted developer infrastructure on Kubernetes. Git hosting, CI/CD, object storage, GitOps, and cluster management — all authenticated through a single identity provider.
+Self-hosted developer platform on Kubernetes. Git hosting, CI/CD, object storage, dashboards, and cluster management — all authenticated through a single identity provider.
 
-VxRail (NixOS) runs the k3s control plane. Mac joins optionally as a compute agent via Colima.
+## What You Get
 
-```
-forgejo.product-garden.com     Git, packages, container registry, SSO
-ci.product-garden.com          CI/CD pipelines (Woodpecker)
-headlamp.dev.test              Kubernetes dashboard
-minio.dev.test                 S3-compatible storage
-social.product-garden.com      Social app (from template)
-minecraft.product-garden.com   Minecraft server hosting (from template)
-```
+- **Forgejo** — Git, packages, container registry, SSO
+- **Woodpecker CI** — CI/CD pipelines
+- **Headlamp** — Kubernetes dashboard
+- **MinIO** — S3-compatible storage
+- **Console** — Platform management dashboard
+- **Flux** — GitOps (self-managing after bootstrap)
+- **PostgreSQL** — CNPG operator
 
-All services are also available at `*.dev.test` locally.
+All services use a single domain (`*.yourdomain.com`) and authenticate through Forgejo as the central identity provider.
 
-## Deploy
-
-```bash
-cp .env.example .env   # fill in passwords, Cloudflare tokens, k3s join info
-make deploy            # everything — secrets, services, OAuth2, system org, GitOps
-```
-
-On first deploy, the platform:
-1. Bootstraps all services via Helmfile
-2. Creates a `system` org in Forgejo with an app template and demo apps
-3. Installs Flux and connects it to `system/open-platform`
-4. Flux adopts all releases — the platform is now self-managing
-
-After that, push changes to `system/open-platform` on Forgejo → Flux reconciles → platform updates.
-
-## Mac Agent (Optional)
-
-Join a Mac as additional compute:
+## Quick Start
 
 ```bash
-make mac-start   # start Colima VM, join VxRail cluster as k3s agent
-make mac-stop    # drain and stop the Mac agent
+# 1. Clone and configure
+git clone <repo-url>
+cd open-platform
+cp open-platform.yaml.example open-platform.yaml
+# Edit open-platform.yaml — set domain, admin user, TLS mode
+
+# 2. Generate and deploy
+make deploy
 ```
 
-Requires `K3S_SERVER`, `K3S_TOKEN`, and `NODE_EXTERNAL_IP` set in `.env`.
+## How It Works
 
-## First-Time Setup
+1. `open-platform.yaml` defines your platform (domain, admin, TLS mode)
+2. `generate-config.sh` creates all Helm values and Flux manifests from templates
+3. `deploy.sh` bootstraps services via Helmfile with automated hooks
+4. Flux adopts all releases — platform is now self-managing
+5. Push changes to `system/open-platform` on your Forgejo → Flux reconciles
 
-After `make deploy` completes, one manual step is required for Headlamp SSO to work with the Kubernetes API:
+## Configuration
 
-```bash
-# Get the auto-generated Headlamp client ID
-kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 -d
-```
+See `open-platform.yaml.example` for all options:
 
-On VxRail, add the OIDC flags to `~/nix-darwin-config/modules/nixos.nix` and rebuild:
-```bash
-ssh vxrail 'sudo nixos-rebuild switch --flake ~/nix-darwin-config#otavert-vxrail'
-```
+- `domain` — your platform domain (e.g., `dev.test`, `myplatform.com`)
+- `admin.username` / `admin.email` — platform admin
+- `tls_mode` — `selfsigned`, `letsencrypt`, or `cloudflare`
+- `cloudflare` — optional tunnel configuration
+- `service_prefix` — optional prefix for multi-tenant deployments
 
-This is only needed once. After that, `make deploy` is fully idempotent.
+## App Development
+
+Create apps from the built-in template:
+
+1. Use `system/template` as a template in Forgejo to create a new repo
+2. CI/CD pipelines are included — push to deploy
+3. PR previews with isolated databases and storage
+
+The template includes: Next.js 15, PostgreSQL, S3, Forgejo OAuth2, 4 CI workflows.
 
 ## Day-to-Day
 
 ```bash
 make deploy     # idempotent full sync
-make diff       # preview changes before applying
+make diff       # preview changes
 make status     # check release status
 make urls       # print service URLs
-make lint       # validate all releases
-make teardown   # destroy all Open Platform releases (with confirmation)
 ```
-
-## How It Works
-
-### Bootstrap (Helmfile)
-
-[Helmfile](https://github.com/helmfile/helmfile) orchestrates seven Helm releases with dependency ordering. Shell scripts handle the parts that need API calls:
-
-- `scripts/ensure-secrets.sh` — creates K8s secrets from `.env` (validates required vars)
-- `scripts/setup-oauth2.sh` — registers OAuth2 apps in Forgejo
-- `scripts/setup-system-org.sh` — creates system org, pushes template and platform config
-- `scripts/setup-woodpecker-repos.sh` — activates repos in Woodpecker, sets org-level secrets
-- `scripts/setup-flux.sh` — connects Flux to `system/open-platform`
-
-### Steady State (Flux)
-
-After bootstrap, [Flux](https://fluxcd.io/) watches `system/open-platform` on Forgejo and reconciles all platform services. The platform config lives in `platform/` — HelmRelease resources with inlined values, organized into dependency layers:
-
-```
-infra-controllers (traefik, cnpg)
-        ↓
-infra-configs (minio, postgres, namespaces, TLS, cloudflared)
-        ↓
-identity (forgejo, OIDC RBAC)
-        ↓
-apps (headlamp, woodpecker, oauth2-proxy)
-```
-
-### App Development (Woodpecker)
-
-The `system/template` repo is a Next.js 15 app scaffold with:
-- **Deploy pipeline**: Kaniko build → push to Forgejo container registry → kubectl deploy
-- **Preview pipeline**: build → provision isolated DB/bucket → seed → deploy preview → comment URL on PR
-- **Cleanup pipeline**: delete preview resources on PR close
-- **Reset pipeline**: manual data wipe and re-seed
-
-Create a new app: use `system/template` as a template in Forgejo → new repo with CI/CD ready to go. Org-level secrets are inherited automatically.
-
-## Domains
-
-| Domain | Purpose |
-|--------|---------|
-| `*.product-garden.com` | Public access via Cloudflare Tunnel (canonical URLs) |
-| `*.dev.test` | Local access via self-signed TLS + /etc/hosts |
-
-Both resolve to the same services. OAuth flows use `forgejo.product-garden.com` for browser redirects and `forgejo.dev.test` for server-side token exchange (avoids Cloudflare hairpin).
 
 ## Prerequisites
 
-- VxRail server running NixOS with k3s
-- [Helm](https://helm.sh) + [Helmfile](https://github.com/helmfile/helmfile)
-- `curl` and `jq` (used by automation scripts)
-- `*.dev.test` resolving to the cluster (via `/etc/hosts` or local DNS)
-- Self-signed CA trusted by your browser (see `certs/`)
-- Cloudflare account with tunnel configured (for `*.product-garden.com`)
-- Optional: [Colima](https://github.com/abiosoft/colima) for Mac agent
+- Linux server with k3s (or any Kubernetes cluster)
+- Helm + Helmfile
+- curl and jq
 
-## Secrets
+## Documentation
 
-Bootstrap credentials (admin password, DB password, Cloudflare tunnel token, k3s join token) live in `.env` which is gitignored. OAuth2 client credentials are auto-generated and stored directly in Kubernetes secrets — they never touch disk.
+- `CLAUDE.md` — comprehensive architecture reference
+- `open-platform.yaml.example` — configuration reference
+- `config/templates/` — all configuration templates
+
+## License
+
+Apache License 2.0 — see [LICENSE](LICENSE)

@@ -19,7 +19,7 @@ function formatDate(date: string): string {
 
 function ServiceCount({ status }: { status: string }) {
   if (status === "ready") {
-    return <span className="text-sm text-muted">4 services</span>;
+    return <span className="text-sm text-muted">5 services</span>;
   }
   return null;
 }

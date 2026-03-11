@@ -92,3 +92,14 @@ metadata:
     open-platform.sh/repo: "events"
     open-platform.sh/tier: "workload"
     open-platform.sh/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-system-console
+  labels:
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "console"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"

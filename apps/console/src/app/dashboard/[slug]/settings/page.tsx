@@ -361,7 +361,7 @@ export default function InstanceSettingsPage() {
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    background: "var(--bg-tertiary)",
+                    background: "var(--bg-inset)",
                     borderRadius: 6,
                     padding: "8px 12px",
                     fontFamily: "var(--font-mono)",

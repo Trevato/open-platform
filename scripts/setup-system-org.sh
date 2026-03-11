@@ -243,4 +243,8 @@ push_content "events" "${ROOT_DIR}/apps/events"
 create_repo "hub" "Platform hub — activity feed, cross-app dashboard, user profiles"
 push_content "hub" "${ROOT_DIR}/apps/hub"
 
+# Console — platform control center
+create_repo "console" "Platform console — dashboard, services, apps, users, terminal"
+push_content "console" "${ROOT_DIR}/apps/console"
+
 echo "System org setup complete."

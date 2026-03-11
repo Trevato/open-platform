@@ -15,11 +15,12 @@ spec:
       labels:
         app: PROJECT_NAME
     spec:
+      serviceAccountName: console
       imagePullSecrets:
         - name: forgejo-registry
       containers:
         - name: app
-          image: forgejo.PLATFORM_DOMAIN/ORG_NAME/PROJECT_NAME:latest
+          image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -46,34 +47,50 @@ spec:
                   key: client-secret
                   optional: true
             - name: BETTER_AUTH_URL
-              value: "https://console.PLATFORM_DOMAIN"
+              value: "https://SERVICE_PREFIXconsole.PLATFORM_DOMAIN"
             - name: BETTER_AUTH_TRUSTED_ORIGINS
-              value: "https://console.PLATFORM_DOMAIN"
+              value: "https://SERVICE_PREFIXconsole.PLATFORM_DOMAIN"
             - name: AUTH_FORGEJO_URL
-              value: "https://forgejo.PLATFORM_DOMAIN"
+              value: "https://REGISTRY_HOST"
             - name: AUTH_FORGEJO_INTERNAL_URL
-              value: "https://forgejo.PLATFORM_DOMAIN"
+              value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
+            - name: CONSOLE_MODE
+              value: "platform"
+            - name: PLATFORM_DOMAIN
+              value: "PLATFORM_DOMAIN"
+            - name: SERVICE_PREFIX
+              value: "SERVICE_PREFIX"
+            - name: FORGEJO_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-credentials
+                  key: username
+                  optional: true
+            - name: FORGEJO_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-credentials
+                  key: password
+                  optional: true
             - name: MANAGED_DOMAIN
               value: "PLATFORM_DOMAIN"
             - name: NEXT_PUBLIC_MANAGED_DOMAIN
               value: "PLATFORM_DOMAIN"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
-            - name: NODE_TLS_REJECT_UNAUTHORIZED
-              value: "0"
           volumeMounts:
             - name: platform-ca
               mountPath: /etc/ssl/custom
               readOnly: true
           livenessProbe:
             httpGet:
-              path: /api/auth/get-session
+              path: /
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /api/auth/get-session
+              path: /
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 5

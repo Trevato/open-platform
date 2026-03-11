@@ -210,11 +210,6 @@ create_app_auth_secret "Minecraft" "minecraft-auth" "op-system-minecraft"
 create_app_auth_secret "Arcade" "arcade-auth" "op-system-arcade"
 create_app_auth_secret "Events" "events-auth" "op-system-events"
 create_app_auth_secret "Hub" "hub-auth" "op-system-hub"
-# Console only runs in the ops vCluster — skip if namespace doesn't exist
-if kubectl get namespace op-system-console >/dev/null 2>&1; then
-  create_app_auth_secret "Console" "console-auth" "op-system-console"
-else
-  echo "Skipping Console auth secret (op-system-console namespace not found)"
-fi
+create_app_auth_secret "Console" "console-auth" "op-system-console"
 
 echo "OAuth2 setup complete."

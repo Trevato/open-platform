@@ -5,7 +5,7 @@ set -euo pipefail
 # Also installs the platform CA cert and container registry config.
 #
 # On Colima: writes /etc/rancher/k3s/config.yaml, installs CA, restarts k3s.
-# On VxRail: prints NixOS instructions (OIDC is managed declaratively).
+# Otherwise: prints instructions for manual k3s OIDC configuration.
 #
 # Idempotent — safe to run on every deploy. Only restarts k3s if config changed.
 
@@ -153,11 +153,13 @@ CEOF
   fi
 }
 
-setup_vxrail() {
+setup_manual() {
   echo ""
-  echo "k3s OIDC configuration for VxRail (NixOS):"
+  echo "k3s OIDC configuration (manual setup required):"
   echo ""
-  echo "Add to ~/nix-darwin-config/modules/nixos.nix on VxRail:"
+  echo "Add the following flags to your k3s server configuration."
+  echo ""
+  echo "For NixOS (services.k3s.extraFlags):"
   echo ""
   echo "  services.k3s.extraFlags = ["
   echo "    \"--kube-apiserver-arg=oidc-issuer-url=${OIDC_ISSUER}\""
@@ -167,7 +169,16 @@ setup_vxrail() {
   echo "    \"--kube-apiserver-arg=oidc-groups-claim=groups\""
   echo "  ];"
   echo ""
-  echo "Then: ssh vxrail 'sudo nixos-rebuild switch --flake ~/nix-darwin-config#otavert-vxrail'"
+  echo "For /etc/rancher/k3s/config.yaml:"
+  echo ""
+  echo "  kube-apiserver-arg:"
+  echo "    - \"oidc-issuer-url=${OIDC_ISSUER}\""
+  echo "    - \"oidc-client-id=${OIDC_CLIENT_ID}\""
+  echo "    - \"oidc-username-claim=preferred_username\""
+  echo "    - \"oidc-username-prefix=-\""
+  echo "    - \"oidc-groups-claim=groups\""
+  echo ""
+  echo "Then restart k3s for the changes to take effect."
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -183,5 +194,5 @@ fi
 if [ -n "$COLIMA_PROFILE" ]; then
   setup_colima "$COLIMA_PROFILE"
 else
-  setup_vxrail
+  setup_manual
 fi
