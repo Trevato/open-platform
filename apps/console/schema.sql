@@ -107,6 +107,26 @@ CREATE TABLE IF NOT EXISTS provision_events (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Dev pods (platform mode)
+
+CREATE TABLE IF NOT EXISTS dev_pods (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  forgejo_username TEXT NOT NULL UNIQUE,
+  status TEXT NOT NULL DEFAULT 'stopped',
+  pod_name TEXT NOT NULL UNIQUE,
+  pvc_name TEXT NOT NULL,
+  cpu_limit TEXT NOT NULL DEFAULT '2000m',
+  memory_limit TEXT NOT NULL DEFAULT '4Gi',
+  storage_size TEXT NOT NULL DEFAULT '20Gi',
+  last_activity_at TIMESTAMPTZ,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dev_pods_user_id ON dev_pods(user_id);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_instances_customer_id ON instances(customer_id);
 CREATE INDEX IF NOT EXISTS idx_instances_slug ON instances(slug);

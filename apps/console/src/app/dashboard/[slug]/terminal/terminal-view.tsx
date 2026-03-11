@@ -27,7 +27,10 @@ const theme = {
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
-export function TerminalView({ slug }: { slug?: string } = {}) {
+export function TerminalView({
+  slug,
+  wsPath,
+}: { slug?: string; wsPath?: string } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<unknown>(null);
@@ -102,9 +105,10 @@ export function TerminalView({ slug }: { slug?: string } = {}) {
 
       // Connect WebSocket
       const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(
-        `${protocol}//${location.host}/ws/terminal${slug ? `?slug=${slug}` : ""}`
-      );
+      const wsUrl = wsPath
+        ? `${protocol}//${location.host}${wsPath}`
+        : `${protocol}//${location.host}/ws/terminal${slug ? `?slug=${slug}` : ""}`;
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       // Clipboard via DOM listener (avoids breaking ghostty-web key handling)
@@ -184,7 +188,7 @@ export function TerminalView({ slug }: { slug?: string } = {}) {
       setStatus("error");
       setErrorMessage("Failed to initialize terminal.");
     }
-  }, [slug]);
+  }, [slug, wsPath]);
 
   useEffect(() => {
     connect();

@@ -39,7 +39,18 @@ export default async function DashboardLayout({
           </div>
           Open Platform
         </Link>
-        <UserMenu />
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {!isPlatform && (
+            <Link
+              href="/dashboard/dev-pods"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 13 }}
+            >
+              Dev Pods
+            </Link>
+          )}
+          <UserMenu />
+        </div>
       </nav>
       {isPlatform ? (
         <div className="dashboard-body">
