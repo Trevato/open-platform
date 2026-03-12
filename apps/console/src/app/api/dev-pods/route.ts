@@ -20,6 +20,7 @@ export async function GET() {
       `SELECT dp.*, u.name as user_name, u.email as user_email, u.image as user_image
        FROM dev_pods dp
        JOIN "user" u ON u.id = dp.user_id
+       WHERE dp.instance_slug IS NULL
        ORDER BY dp.created_at DESC`
     );
   } else {
@@ -27,7 +28,7 @@ export async function GET() {
       `SELECT dp.*, u.name as user_name, u.email as user_email, u.image as user_image
        FROM dev_pods dp
        JOIN "user" u ON u.id = dp.user_id
-       WHERE dp.user_id = $1
+       WHERE dp.user_id = $1 AND dp.instance_slug IS NULL
        ORDER BY dp.created_at DESC`,
       [session.user.id]
     );
@@ -83,9 +84,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Check if user already has a dev pod
+  // Check if user already has a host dev pod
   const existing = await pool.query(
-    `SELECT id FROM dev_pods WHERE user_id = $1`,
+    `SELECT id FROM dev_pods WHERE user_id = $1 AND instance_slug IS NULL`,
     [session.user.id]
   );
   if (existing.rows.length > 0) {
@@ -140,13 +141,13 @@ export async function POST(request: NextRequest) {
     });
 
     await pool.query(
-      `UPDATE dev_pods SET status = 'running', updated_at = NOW() WHERE forgejo_username = $1`,
+      `UPDATE dev_pods SET status = 'running', updated_at = NOW() WHERE forgejo_username = $1 AND instance_slug IS NULL`,
       [username]
     );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
     await pool.query(
-      `UPDATE dev_pods SET status = 'error', error_message = $1, updated_at = NOW() WHERE forgejo_username = $2`,
+      `UPDATE dev_pods SET status = 'error', error_message = $1, updated_at = NOW() WHERE forgejo_username = $2 AND instance_slug IS NULL`,
       [message, username]
     );
     return NextResponse.json({ error: message }, { status: 500 });

@@ -101,10 +101,12 @@ function PodRow({
   pod,
   onAction,
   acting,
+  terminalBase,
 }: {
   pod: DevPod;
   onAction: (username: string, action: string) => void;
   acting: string | null;
+  terminalBase: string;
 }) {
   const router = useRouter();
   const isActing = acting === pod.forgejo_username;
@@ -151,7 +153,7 @@ function PodRow({
         {pod.status === "running" && (
           <button
             className="btn btn-accent btn-sm"
-            onClick={() => router.push(`/dashboard/dev-pods/${pod.forgejo_username}`)}
+            onClick={() => router.push(`${terminalBase}/${pod.forgejo_username}`)}
             style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
           >
             <svg
@@ -207,16 +209,21 @@ function PodRow({
   );
 }
 
-export function DevPodList() {
+export function DevPodList({ slug }: { slug?: string } = {}) {
   const [pods, setPods] = useState<DevPod[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [acting, setActing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const apiBase = slug ? `/api/instances/${slug}/dev-pods` : "/api/dev-pods";
+  const terminalBase = slug
+    ? `/dashboard/${slug}/dev-pods`
+    : "/dashboard/dev-pods";
+
   const fetchPods = useCallback(async () => {
     try {
-      const res = await fetch("/api/dev-pods");
+      const res = await fetch(apiBase);
       if (!res.ok) return;
       const data = await res.json();
       setPods(data.pods);
@@ -225,7 +232,7 @@ export function DevPodList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [apiBase]);
 
   useEffect(() => {
     fetchPods();
@@ -237,7 +244,7 @@ export function DevPodList() {
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch("/api/dev-pods", {
+      const res = await fetch(apiBase, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -260,7 +267,7 @@ export function DevPodList() {
     setError(null);
     try {
       if (action === "delete") {
-        const res = await fetch(`/api/dev-pods/${username}`, {
+        const res = await fetch(`${apiBase}/${username}`, {
           method: "DELETE",
         });
         if (!res.ok) {
@@ -268,7 +275,7 @@ export function DevPodList() {
           setError(data.error || "Failed to delete");
         }
       } else {
-        const res = await fetch(`/api/dev-pods/${username}`, {
+        const res = await fetch(`${apiBase}/${username}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
@@ -340,6 +347,7 @@ export function DevPodList() {
                 pod={pod}
                 onAction={handleAction}
                 acting={acting}
+                terminalBase={terminalBase}
               />
             ))}
           </div>

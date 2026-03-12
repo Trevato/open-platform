@@ -12,7 +12,6 @@ const MAX_SESSIONS_PER_USER = 3;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_SESSION_MS = 2 * 60 * 60 * 1000;
 const AUTH_SECRET = process.env.BETTER_AUTH_SECRET || "";
-const CONSOLE_MODE = process.env.CONSOLE_MODE || "platform";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -39,7 +38,18 @@ interface DevPodSession {
   maxTimer: ReturnType<typeof setTimeout>;
 }
 
-type Session = TerminalSession | DevPodSession;
+interface DevPodPtySession {
+  kind: "devpod-pty";
+  userId: string;
+  username: string;
+  slug: string;
+  ptyProcess: pty.IPty;
+  kubeconfigPath: string;
+  idleTimer: ReturnType<typeof setTimeout>;
+  maxTimer: ReturnType<typeof setTimeout>;
+}
+
+type Session = TerminalSession | DevPodSession | DevPodPtySession;
 
 const sessions = new Map<WebSocket, Session>();
 
@@ -204,7 +214,7 @@ function cleanupSession(ws: WebSocket) {
   clearTimeout(session.idleTimer);
   clearTimeout(session.maxTimer);
 
-  if (session.kind === "terminal") {
+  if (session.kind === "terminal" || session.kind === "devpod-pty") {
     try {
       session.ptyProcess.kill();
     } catch {}
@@ -237,6 +247,28 @@ function resetIdleTimer(ws: WebSocket) {
   }, IDLE_TIMEOUT_MS);
 }
 
+// --- Admin check helpers ---
+
+async function getUserName(userId: string): Promise<string | null> {
+  const result = await pool.query(`SELECT name FROM "user" WHERE id = $1`, [userId]);
+  return result.rows[0]?.name || null;
+}
+
+async function checkAdminViaForgejo(username: string): Promise<boolean> {
+  const forgejoUrl = process.env.AUTH_FORGEJO_INTERNAL_URL || process.env.AUTH_FORGEJO_URL || "";
+  const adminUser = process.env.FORGEJO_ADMIN_USER || "";
+  const adminPass = process.env.FORGEJO_ADMIN_PASSWORD || "";
+  try {
+    const res = await fetch(
+      `${forgejoUrl}/api/v1/orgs/system/members/${encodeURIComponent(username)}`,
+      { headers: { Authorization: `Basic ${Buffer.from(`${adminUser}:${adminPass}`).toString("base64")}` } }
+    );
+    return res.status === 204;
+  } catch {
+    return false;
+  }
+}
+
 // --- Terminal handler (existing) ---
 
 async function handleTerminalConnection(
@@ -267,10 +299,17 @@ async function handleTerminalConnection(
 
   let kubeconfigPath = "";
 
-  if (CONSOLE_MODE === "platform") {
+  if (!slug) {
+    // Platform terminal — admin only
+    const userName = await getUserName(user.userId);
+    if (!userName || !(await checkAdminViaForgejo(userName))) {
+      sendMessage(ws, { type: "error", message: "Admin access required" });
+      ws.close();
+      return;
+    }
     kubeconfigPath = "";
   } else {
-    if (!slug || !/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
+    if (!/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
       sendMessage(ws, { type: "error", message: "Invalid instance slug." });
       ws.close();
       return;
@@ -407,9 +446,10 @@ async function handleDevPodConnection(
     return;
   }
 
-  // 3. Get username from query params
+  // 3. Get username and optional slug from query params
   const url = new URL(req.url || "/", `http://localhost:${PORT}`);
   const username = url.searchParams.get("username");
+  const slug = url.searchParams.get("slug");
 
   if (!username || !/^[a-zA-Z][a-zA-Z0-9_-]{0,38}[a-zA-Z0-9]$/.test(username)) {
     sendMessage(ws, { type: "error", message: "Invalid username." });
@@ -417,10 +457,80 @@ async function handleDevPodConnection(
     return;
   }
 
+  // Instance-scoped dev pod — use PTY with instance kubeconfig
+  if (slug) {
+    if (!/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
+      sendMessage(ws, { type: "error", message: "Invalid instance slug." });
+      ws.close();
+      return;
+    }
+
+    // Verify dev pod ownership with instance scope
+    const dpResult = await pool.query(
+      `SELECT dp.* FROM dev_pods dp
+       WHERE dp.forgejo_username = $1 AND dp.user_id = $2 AND dp.status = 'running' AND dp.instance_slug = $3`,
+      [username, user.userId, slug]
+    );
+
+    if (dpResult.rows.length === 0) {
+      // Check admin access
+      const userName = await getUserName(user.userId);
+      if (!userName || !(await checkAdminViaForgejo(userName))) {
+        sendMessage(ws, { type: "error", message: "Dev pod not found or not running." });
+        ws.close();
+        return;
+      }
+
+      // Admin can access any instance dev pod — verify it exists
+      const adminCheck = await pool.query(
+        `SELECT dp.* FROM dev_pods dp
+         WHERE dp.forgejo_username = $1 AND dp.status = 'running' AND dp.instance_slug = $2`,
+        [username, slug]
+      );
+      if (adminCheck.rows.length === 0) {
+        sendMessage(ws, { type: "error", message: "Dev pod not found or not running." });
+        ws.close();
+        return;
+      }
+    }
+
+    // Get instance kubeconfig
+    const instance = await verifyOwnership(slug, user.userId);
+    if (!instance) {
+      // Try admin path
+      const userName = await getUserName(user.userId);
+      const isAdmin = userName ? await checkAdminViaForgejo(userName) : false;
+      if (!isAdmin) {
+        sendMessage(ws, { type: "error", message: "Instance not found or not ready." });
+        ws.close();
+        return;
+      }
+
+      const adminResult = await pool.query(
+        `SELECT kubeconfig, cluster_ip FROM instances WHERE slug = $1 AND status = 'ready'`,
+        [slug]
+      );
+      if (adminResult.rows.length === 0 || !adminResult.rows[0].kubeconfig) {
+        sendMessage(ws, { type: "error", message: "Instance not found or not ready." });
+        ws.close();
+        return;
+      }
+
+      return spawnInstanceDevPodPty(ws, user.userId, username, slug, {
+        kubeconfig: adminResult.rows[0].kubeconfig,
+        clusterIp: adminResult.rows[0].cluster_ip,
+      });
+    }
+
+    return spawnInstanceDevPodPty(ws, user.userId, username, slug, instance);
+  }
+
+  // Host-level dev pod — use K8s exec API directly
+
   // 4. Verify the user owns this dev pod
   const result = await pool.query(
     `SELECT dp.* FROM dev_pods dp
-     WHERE dp.forgejo_username = $1 AND dp.user_id = $2 AND dp.status = 'running'`,
+     WHERE dp.forgejo_username = $1 AND dp.user_id = $2 AND dp.status = 'running' AND dp.instance_slug IS NULL`,
     [username, user.userId]
   );
 
@@ -552,7 +662,7 @@ async function handleDevPodConnection(
         // Update activity timestamp
         pool
           .query(
-            `UPDATE dev_pods SET last_activity_at = NOW() WHERE forgejo_username = $1`,
+            `UPDATE dev_pods SET last_activity_at = NOW() WHERE forgejo_username = $1 AND instance_slug IS NULL`,
             [username]
           )
           .catch(() => {});
@@ -584,6 +694,108 @@ async function handleDevPodConnection(
 
   ws.on("close", () => cleanupSession(ws));
   ws.on("error", () => cleanupSession(ws));
+}
+
+/**
+ * Spawn a PTY-based kubectl exec session for an instance dev pod.
+ * Uses the instance's kubeconfig to connect to the vCluster.
+ */
+function spawnInstanceDevPodPty(
+  ws: WebSocket,
+  userId: string,
+  username: string,
+  slug: string,
+  instance: { kubeconfig: string; clusterIp: string | null }
+) {
+  const sessionId = randomBytes(8).toString("hex");
+  const kubeconfigPath = join(tmpdir(), `devpod-${sessionId}.kubeconfig`);
+  const kubeconfigContent = prepareKubeconfig(instance.kubeconfig, instance.clusterIp);
+  writeFileSync(kubeconfigPath, kubeconfigContent, { mode: 0o600 });
+
+  const ptyProcess = pty.spawn("kubectl", [
+    "exec", "-n", "op-dev-pods",
+    `devpod-${username}`, "-c", "dev",
+    "-it", "--", "/bin/zsh", "--login",
+  ], {
+    name: "xterm-256color",
+    cols: 80,
+    rows: 24,
+    env: {
+      PATH: "/usr/local/bin:/usr/bin:/bin",
+      TERM: "xterm-256color",
+      KUBECONFIG: kubeconfigPath,
+    },
+  });
+
+  const idleTimer = setTimeout(() => {
+    sendMessage(ws, {
+      type: "error",
+      message: "Session closed due to inactivity.",
+    });
+    ws.close();
+  }, IDLE_TIMEOUT_MS);
+
+  const maxTimer = setTimeout(() => {
+    sendMessage(ws, {
+      type: "error",
+      message: "Maximum session duration reached.",
+    });
+    ws.close();
+  }, MAX_SESSION_MS);
+
+  sessions.set(ws, {
+    kind: "devpod-pty",
+    userId,
+    username,
+    slug,
+    ptyProcess,
+    kubeconfigPath,
+    idleTimer,
+    maxTimer,
+  });
+
+  ptyProcess.onData((data: string) => {
+    sendMessage(ws, { type: "output", data });
+  });
+
+  ptyProcess.onExit(() => {
+    sendMessage(ws, { type: "closed", reason: "Shell exited." });
+    ws.close();
+  });
+
+  ws.on("message", (raw: Buffer | string) => {
+    resetIdleTimer(ws);
+    try {
+      const msg = JSON.parse(raw.toString());
+      if (msg.type === "input" && typeof msg.data === "string") {
+        ptyProcess.write(msg.data);
+
+        // Update activity timestamp
+        pool
+          .query(
+            `UPDATE dev_pods SET last_activity_at = NOW() WHERE forgejo_username = $1 AND instance_slug = $2`,
+            [username, slug]
+          )
+          .catch(() => {});
+      } else if (
+        msg.type === "resize" &&
+        typeof msg.cols === "number" &&
+        typeof msg.rows === "number"
+      ) {
+        ptyProcess.resize(
+          Math.max(1, Math.min(500, msg.cols)),
+          Math.max(1, Math.min(200, msg.rows))
+        );
+      }
+    } catch (err) {
+      console.error("Failed to parse WebSocket message:", err);
+    }
+  });
+
+  ws.on("close", () => cleanupSession(ws));
+  ws.on("error", () => cleanupSession(ws));
+
+  sendMessage(ws, { type: "connected", username, slug });
 }
 
 /**

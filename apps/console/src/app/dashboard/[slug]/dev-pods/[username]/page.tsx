@@ -1,40 +1,31 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
-import { redirect, notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
+import { getInstanceAccess } from "@/lib/instance-access";
 import pool from "@/lib/db";
 import { TerminalView } from "@/app/dashboard/[slug]/terminal/terminal-view";
 
-export default async function DevPodTerminalPage({
+export default async function InstanceDevPodTerminalPage({
   params,
 }: {
-  params: Promise<{ username: string }>;
+  params: Promise<{ slug: string; username: string }>;
 }) {
-
-  const { username } = await params;
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/");
+  const { slug, username } = await params;
+  const access = await getInstanceAccess(slug);
+  if (!access) notFound();
 
   const result = await pool.query(
-    `SELECT status, forgejo_username FROM dev_pods WHERE forgejo_username = $1 AND instance_slug IS NULL`,
-    [username]
+    `SELECT status FROM dev_pods WHERE forgejo_username = $1 AND instance_slug = $2`,
+    [username, slug]
   );
 
-  if (result.rows.length === 0) {
-    notFound();
-  }
-
-  const pod = result.rows[0];
-
-  if (pod.status !== "running") {
-    redirect("/dashboard/dev-pods");
-  }
+  if (result.rows.length === 0) notFound();
+  if (result.rows[0].status !== "running") redirect(`/dashboard/${slug}/dev-pods`);
 
   return (
     <div className="terminal-page">
       <div className="terminal-header">
         <Link
-          href="/dashboard/dev-pods"
+          href={`/dashboard/${slug}/dev-pods`}
           className="text-sm text-muted"
           style={{
             display: "inline-flex",
@@ -60,7 +51,7 @@ export default async function DevPodTerminalPage({
         </Link>
         <span className="terminal-slug">{username}</span>
       </div>
-      <TerminalView wsPath={`/ws/devpod?username=${username}`} />
+      <TerminalView wsPath={`/ws/devpod?username=${username}&slug=${slug}`} />
     </div>
   );
 }

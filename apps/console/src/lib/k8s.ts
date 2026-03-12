@@ -175,7 +175,7 @@ const instanceClients = new Map<
 >();
 const CLIENT_TTL_MS = 60_000;
 
-async function getClientsForInstance(slug: string) {
+export async function getClientsForInstance(slug: string) {
   const cached = instanceClients.get(slug);
   if (cached && Date.now() - cached.cachedAt < CLIENT_TTL_MS) {
     return { appsV1: cached.appsV1, coreV1: cached.coreV1 };

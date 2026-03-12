@@ -1,4 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
+import { getClientsForInstance } from "@/lib/k8s";
 
 const NAMESPACE = "op-dev-pods";
 const DEVPOD_IMAGE =
@@ -334,6 +335,328 @@ export async function getDevPodStatus(
   username: string
 ): Promise<{ exists: boolean; replicas: number; readyReplicas: number }> {
   const { appsV1 } = getClients();
+  const name = podName(username);
+
+  try {
+    const dep = await appsV1.readNamespacedDeployment({
+      name,
+      namespace: NAMESPACE,
+    });
+
+    return {
+      exists: true,
+      replicas: dep.spec?.replicas ?? 0,
+      readyReplicas: dep.status?.readyReplicas ?? 0,
+    };
+  } catch {
+    return { exists: false, replicas: 0, readyReplicas: 0 };
+  }
+}
+
+// ─── Instance-scoped dev pod operations ───
+
+async function ensureNamespace(
+  coreV1: k8s.CoreV1Api,
+  namespace: string
+): Promise<void> {
+  try {
+    await coreV1.readNamespace({ name: namespace });
+  } catch {
+    await coreV1.createNamespace({
+      body: {
+        metadata: { name: namespace },
+      },
+    });
+  }
+}
+
+async function getInstanceClients(slug: string) {
+  const clients = await getClientsForInstance(slug);
+  if (!clients) throw new Error(`Instance "${slug}" not found or not ready`);
+  return clients;
+}
+
+/**
+ * Create PVC + Secret + Deployment for a dev pod inside an instance's vCluster.
+ */
+export async function createInstanceDevPod(
+  slug: string,
+  spec: DevPodSpec
+): Promise<void> {
+  const { appsV1, coreV1 } = await getInstanceClients(slug);
+  await ensureNamespace(coreV1, NAMESPACE);
+
+  const name = podName(spec.username);
+  const pvc = pvcName(spec.username);
+  const secret = secretName(spec.username);
+  const l = labels(spec.username);
+  const registryHost = `${slug}-forgejo.${process.env.PLATFORM_DOMAIN || "open-platform.sh"}`;
+  const image = `${registryHost}/${DEVPOD_IMAGE}`;
+
+  // 1. Create PVC
+  try {
+    await coreV1.readNamespacedPersistentVolumeClaim({
+      name: pvc,
+      namespace: NAMESPACE,
+    });
+  } catch {
+    await coreV1.createNamespacedPersistentVolumeClaim({
+      namespace: NAMESPACE,
+      body: {
+        metadata: { name: pvc, namespace: NAMESPACE, labels: l },
+        spec: {
+          accessModes: ["ReadWriteOnce"],
+          resources: {
+            requests: { storage: spec.storageSize || "20Gi" },
+          },
+        },
+      },
+    });
+  }
+
+  // 2. Create credentials secret
+  try {
+    await coreV1.deleteNamespacedSecret({ name: secret, namespace: NAMESPACE });
+  } catch {
+    // doesn't exist yet
+  }
+
+  await coreV1.createNamespacedSecret({
+    namespace: NAMESPACE,
+    body: {
+      metadata: { name: secret, namespace: NAMESPACE, labels: l },
+      type: "Opaque",
+      stringData: {
+        username: spec.username,
+        email: spec.email,
+        full_name: spec.fullName,
+        token: spec.forgejoToken,
+        forgejo_url: spec.forgejoUrl,
+      },
+    },
+  });
+
+  // 3. Create Deployment
+  const cpuLimit = spec.cpuLimit || "2000m";
+  const memoryLimit = spec.memoryLimit || "4Gi";
+
+  await appsV1.createNamespacedDeployment({
+    namespace: NAMESPACE,
+    body: {
+      metadata: { name, namespace: NAMESPACE, labels: l },
+      spec: {
+        replicas: 1,
+        selector: { matchLabels: { app: name } },
+        template: {
+          metadata: { labels: l },
+          spec: {
+            imagePullSecrets: [{ name: "forgejo-registry" }],
+            terminationGracePeriodSeconds: 10,
+            containers: [
+              {
+                name: "dev",
+                image,
+                tty: true,
+                stdin: true,
+                env: [
+                  {
+                    name: "FORGEJO_USERNAME",
+                    valueFrom: {
+                      secretKeyRef: { name: secret, key: "username" },
+                    },
+                  },
+                  {
+                    name: "FORGEJO_EMAIL",
+                    valueFrom: {
+                      secretKeyRef: { name: secret, key: "email" },
+                    },
+                  },
+                  {
+                    name: "FORGEJO_FULL_NAME",
+                    valueFrom: {
+                      secretKeyRef: { name: secret, key: "full_name" },
+                    },
+                  },
+                  {
+                    name: "FORGEJO_TOKEN",
+                    valueFrom: {
+                      secretKeyRef: { name: secret, key: "token" },
+                    },
+                  },
+                  {
+                    name: "FORGEJO_URL",
+                    valueFrom: {
+                      secretKeyRef: { name: secret, key: "forgejo_url" },
+                    },
+                  },
+                  {
+                    name: "DOCKER_HOST",
+                    value: "tcp://localhost:2376",
+                  },
+                  {
+                    name: "DOCKER_TLS_VERIFY",
+                    value: "1",
+                  },
+                  {
+                    name: "DOCKER_CERT_PATH",
+                    value: "/certs/client",
+                  },
+                ],
+                volumeMounts: [
+                  { name: "home", mountPath: "/home/dev" },
+                  {
+                    name: "docker-certs",
+                    mountPath: "/certs/client",
+                    readOnly: true,
+                  },
+                ],
+                resources: {
+                  requests: { cpu: "500m", memory: "1Gi" },
+                  limits: { cpu: cpuLimit, memory: memoryLimit },
+                },
+              },
+              {
+                name: "dind",
+                image: "docker:dind",
+                securityContext: { privileged: true },
+                env: [{ name: "DOCKER_TLS_CERTDIR", value: "/certs" }],
+                volumeMounts: [
+                  { name: "docker-certs", mountPath: "/certs" },
+                  { name: "dind-storage", mountPath: "/var/lib/docker" },
+                ],
+                resources: {
+                  requests: { cpu: "250m", memory: "512Mi" },
+                  limits: { cpu: "1000m", memory: "2Gi" },
+                },
+              },
+            ],
+            volumes: [
+              {
+                name: "home",
+                persistentVolumeClaim: { claimName: pvc },
+              },
+              { name: "docker-certs", emptyDir: {} },
+              { name: "dind-storage", emptyDir: {} },
+            ],
+          },
+        },
+      },
+    },
+  });
+}
+
+/**
+ * Start a stopped instance dev pod (scale replicas 0 -> 1).
+ */
+export async function startInstanceDevPod(
+  slug: string,
+  username: string
+): Promise<void> {
+  const { appsV1 } = await getInstanceClients(slug);
+  const name = podName(username);
+
+  await appsV1.patchNamespacedDeployment({
+    name,
+    namespace: NAMESPACE,
+    body: { spec: { replicas: 1 } },
+  });
+}
+
+/**
+ * Stop a running instance dev pod (scale replicas 1 -> 0).
+ */
+export async function stopInstanceDevPod(
+  slug: string,
+  username: string
+): Promise<void> {
+  const { appsV1 } = await getInstanceClients(slug);
+  const name = podName(username);
+
+  await appsV1.patchNamespacedDeployment({
+    name,
+    namespace: NAMESPACE,
+    body: { spec: { replicas: 0 } },
+  });
+}
+
+/**
+ * Delete an instance dev pod and all its resources.
+ */
+export async function deleteInstanceDevPod(
+  slug: string,
+  username: string
+): Promise<void> {
+  const { appsV1, coreV1 } = await getInstanceClients(slug);
+  const name = podName(username);
+  const pvc = pvcName(username);
+  const secret = secretName(username);
+
+  try {
+    await appsV1.deleteNamespacedDeployment({ name, namespace: NAMESPACE });
+  } catch {
+    // may not exist
+  }
+
+  try {
+    await coreV1.deleteNamespacedPersistentVolumeClaim({
+      name: pvc,
+      namespace: NAMESPACE,
+    });
+  } catch {
+    // may not exist
+  }
+
+  try {
+    await coreV1.deleteNamespacedSecret({ name: secret, namespace: NAMESPACE });
+  } catch {
+    // may not exist
+  }
+}
+
+/**
+ * Get the running pod name for an instance dev pod deployment.
+ */
+export async function getInstanceDevPodPodName(
+  slug: string,
+  username: string
+): Promise<string | null> {
+  const { coreV1 } = await getInstanceClients(slug);
+
+  try {
+    const pods = await coreV1.listNamespacedPod({
+      namespace: NAMESPACE,
+      labelSelector: `app=devpod-${username}`,
+    });
+
+    for (const pod of pods.items) {
+      const ready = pod.status?.conditions?.some(
+        (c) => c.type === "Ready" && c.status === "True"
+      );
+      if (ready && pod.metadata?.name) {
+        return pod.metadata.name;
+      }
+    }
+
+    for (const pod of pods.items) {
+      if (pod.status?.phase === "Running" && pod.metadata?.name) {
+        return pod.metadata.name;
+      }
+    }
+  } catch {
+    // listing failed
+  }
+
+  return null;
+}
+
+/**
+ * Check if an instance dev pod deployment exists and get its replica count.
+ */
+export async function getInstanceDevPodStatus(
+  slug: string,
+  username: string
+): Promise<{ exists: boolean; replicas: number; readyReplicas: number }> {
+  const { appsV1 } = await getInstanceClients(slug);
   const name = podName(username);
 
   try {
