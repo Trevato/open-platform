@@ -140,8 +140,7 @@ steps:
       - kubectl apply -f k8s/
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
     environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
+      SERVICE_PREFIX: ""
       REGISTRY_HOST:
         from_secret: registry_host
       PLATFORM_DOMAIN:

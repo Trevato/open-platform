@@ -42,8 +42,7 @@ steps:
         from_secret: registry_token
       REGISTRY_HOST:
         from_secret: registry_host
-      SERVICE_PREFIX:
-        from_secret: service_prefix
+      SERVICE_PREFIX: ""
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
@@ -178,8 +177,7 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
+      SERVICE_PREFIX: ""
       REGISTRY_HOST:
         from_secret: registry_host
       PLATFORM_DOMAIN:
@@ -330,8 +328,7 @@ steps:
       kubernetes:
         serviceAccountName: woodpecker-pipeline
     environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
+      SERVICE_PREFIX: ""
       REGISTRY_HOST:
         from_secret: registry_host
       PLATFORM_DOMAIN:

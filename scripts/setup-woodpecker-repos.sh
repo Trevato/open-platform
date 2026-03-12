@@ -338,6 +338,12 @@ else
         service_prefix) VALUE="${PREFIX}" ;;
       esac
 
+      # Skip secrets with empty values (Woodpecker rejects them)
+      if [ -z "$VALUE" ]; then
+        echo "  Skipping '${SECRET_NAME}' (empty value)."
+        continue
+      fi
+
       if wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
         -H "Content-Type: application/json" \
         -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1; then
