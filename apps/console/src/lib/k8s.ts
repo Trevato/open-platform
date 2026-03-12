@@ -171,14 +171,14 @@ export async function getApps(): Promise<AppInfo[]> {
 
 const instanceClients = new Map<
   string,
-  { appsV1: k8s.AppsV1Api; coreV1: k8s.CoreV1Api; rbacV1: k8s.RbacAuthorizationV1Api; cachedAt: number }
+  { appsV1: k8s.AppsV1Api; coreV1: k8s.CoreV1Api; rbacV1: k8s.RbacAuthorizationV1Api; kc: k8s.KubeConfig; cachedAt: number }
 >();
 const CLIENT_TTL_MS = 60_000;
 
 export async function getClientsForInstance(slug: string) {
   const cached = instanceClients.get(slug);
   if (cached && Date.now() - cached.cachedAt < CLIENT_TTL_MS) {
-    return { appsV1: cached.appsV1, coreV1: cached.coreV1, rbacV1: cached.rbacV1 };
+    return { appsV1: cached.appsV1, coreV1: cached.coreV1, rbacV1: cached.rbacV1, kc: cached.kc };
   }
 
   const result = await pool.query(
@@ -200,8 +200,8 @@ export async function getClientsForInstance(slug: string) {
   const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
   const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
   const rbacV1 = kc.makeApiClient(k8s.RbacAuthorizationV1Api);
-  instanceClients.set(slug, { appsV1, coreV1, rbacV1, cachedAt: Date.now() });
-  return { appsV1, coreV1, rbacV1 };
+  instanceClients.set(slug, { appsV1, coreV1, rbacV1, kc, cachedAt: Date.now() });
+  return { appsV1, coreV1, rbacV1, kc };
 }
 
 export async function getInstanceServiceStatuses(
