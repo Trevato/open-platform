@@ -3,8 +3,10 @@ import Link from "next/link";
 import pool from "@/lib/db";
 import { getInstanceAccess } from "@/lib/instance-access";
 import { StatusBadge } from "@/app/components/status-badge";
+import { TIER_RESOURCES } from "@/app/components/instance-card";
 import { ProvisionTerminal } from "./components/provision-terminal";
 import { GettingStarted } from "./components/getting-started";
+import { InstanceManagement } from "./components/instance-management";
 
 interface ProvisionEvent {
   phase: string;
@@ -18,6 +20,7 @@ interface Instance {
   slug: string;
   display_name: string;
   status: string;
+  tier: string;
   admin_email: string;
   created_at: string;
   provisioned_at: string | null;
@@ -50,6 +53,12 @@ function timelineDotClass(status: string): string {
       return "timeline-dot-info";
   }
 }
+
+const TIER_COLORS: Record<string, { bg: string; text: string }> = {
+  free: { bg: "rgba(255,255,255,0.06)", text: "var(--text-muted)" },
+  pro: { bg: "rgba(99,179,237,0.12)", text: "#63b3ed" },
+  team: { bg: "rgba(183,148,244,0.12)", text: "#b794f4" },
+};
 
 function ServiceCards({ slug, domain }: { slug: string; domain: string }) {
   const services = [
@@ -98,19 +107,6 @@ function ServiceCards({ slug, domain }: { slug: string; domain: string }) {
           <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
           <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
           <line x1="12" y1="22.08" x2="12" y2="12" />
-        </>
-      ),
-    },
-    {
-      name: "Console",
-      icon: "console",
-      iconClass: "service-icon-dashboard",
-      url: `${slug}-console.${domain}`,
-      svgPath: (
-        <>
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <path d="M7 8l4 4-4 4" />
-          <line x1="13" y1="16" x2="17" y2="16" />
         </>
       ),
     },
@@ -164,9 +160,7 @@ function EventsTimeline({ events }: { events: ProvisionEvent[] }) {
     <div className="timeline">
       {events.map((event, i) => (
         <div className="timeline-item" key={i}>
-          <div
-            className={`timeline-dot ${timelineDotClass(event.status)}`}
-          />
+          <div className={`timeline-dot ${timelineDotClass(event.status)}`} />
           <div className="timeline-content">
             <div className="timeline-phase">{event.phase}</div>
             {event.message && (
@@ -194,6 +188,9 @@ export default async function InstanceDetailPage({
   }
 
   const instance: Instance = access.instance;
+  const tier = instance.tier || "free";
+  const resources = TIER_RESOURCES[tier as keyof typeof TIER_RESOURCES] || TIER_RESOURCES.free;
+  const tierColor = TIER_COLORS[tier] || TIER_COLORS.free;
 
   const eventsResult = await pool.query(
     `SELECT phase, status, message, created_at
@@ -247,78 +244,60 @@ export default async function InstanceDetailPage({
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <h1>{instance.display_name}</h1>
             <StatusBadge status={instance.status} />
+            <span
+              style={{
+                display: "inline-block",
+                fontSize: 11,
+                fontWeight: 500,
+                padding: "2px 8px",
+                borderRadius: 4,
+                background: tierColor.bg,
+                color: tierColor.text,
+                textTransform: "capitalize",
+              }}
+            >
+              {tier}
+            </span>
           </div>
           <div className="instance-meta">
             <span>{instance.slug}</span>
+            <span className="instance-meta-divider" />
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {resources.cpu} CPU · {resources.memory} RAM · {resources.storage} disk
+            </span>
             <span className="instance-meta-divider" />
             <span>Created {formatDate(instance.created_at)}</span>
             {instance.provisioned_at && (
               <>
                 <span className="instance-meta-divider" />
-                <span>
-                  Provisioned {formatDate(instance.provisioned_at)}
-                </span>
+                <span>Provisioned {formatDate(instance.provisioned_at)}</span>
               </>
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {isReady && (
-            <a
-              href={`https://${slug}-console.${domain}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-accent btn-sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                <polyline points="15 3 21 3 21 9" />
-                <line x1="10" y1="14" x2="21" y2="3" />
-              </svg>
-              Open Console
-            </a>
-          )}
-          {isReady && (
-            <Link
-              href={`/dashboard/${slug}/terminal`}
-              className="btn btn-ghost btn-sm"
-              style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-            >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <polyline points="4 17 10 11 4 5" />
-                <line x1="12" y1="19" x2="20" y2="19" />
-              </svg>
-              Terminal
-            </Link>
-          )}
+        {isReady && (
           <Link
-            href={`/dashboard/${slug}/settings`}
+            href={`/dashboard/${slug}/terminal`}
             className="btn btn-ghost btn-sm"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
           >
-            Settings
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            Terminal
           </Link>
-        </div>
+        )}
       </div>
 
       {isProvisioning && (
@@ -337,6 +316,8 @@ export default async function InstanceDetailPage({
       )}
 
       {isReady && <GettingStarted slug={slug} domain={domain} />}
+
+      {isReady && <InstanceManagement slug={slug} />}
 
       <div className="section" style={{ marginTop: isReady ? 16 : 0 }}>
         <div className="section-header">Events</div>
