@@ -1,0 +1,952 @@
+openapi: 3.1.0
+info:
+  title: Open Platform API
+  description: |
+    Unified API for managing Open Platform services — Forgejo organizations and
+    repositories, Woodpecker CI pipelines, deployed applications, and platform
+    health. Also exposes an MCP (Model Context Protocol) endpoint for AI agent
+    integration.
+
+    Authentication uses Forgejo personal access tokens passed as Bearer tokens.
+  version: 1.0.0
+  contact:
+    name: trevato
+    url: https://trevato.dev
+  license:
+    name: MIT
+
+servers:
+  - url: https://api.{domain}
+    description: Production
+    variables:
+      domain:
+        default: product-garden.com
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Status
+    description: Platform health and service status
+  - name: Organizations
+    description: Forgejo organization management
+  - name: Repositories
+    description: Forgejo repository management
+  - name: Pull Requests
+    description: Pull request lifecycle
+  - name: Pipelines
+    description: Woodpecker CI pipeline management
+  - name: Applications
+    description: Deployed application status and deployment
+  - name: Users
+    description: Current user information
+  - name: MCP
+    description: Model Context Protocol endpoint
+
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      description: Returns service health. No authentication required.
+      operationId: healthCheck
+      security: []
+      tags: [Status]
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                required: [status]
+
+  /api/v1/status:
+    get:
+      summary: Platform status
+      description: Returns health of all platform services and deployed applications.
+      operationId: getPlatformStatus
+      tags: [Status]
+      responses:
+        "200":
+          description: Platform status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/orgs:
+    get:
+      summary: List organizations
+      description: Lists all organizations accessible to the authenticated user.
+      operationId: listOrgs
+      tags: [Organizations]
+      responses:
+        "200":
+          description: List of organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create organization
+      description: Creates a new organization. Requires admin access.
+      operationId: createOrg
+      tags: [Organizations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Organization name
+                description:
+                  type: string
+                  description: Organization description
+              required: [name]
+      responses:
+        "201":
+          description: Organization created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/repos/{org}:
+    get:
+      summary: List repositories
+      description: Lists all repositories in an organization.
+      operationId: listRepos
+      tags: [Repositories]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+      responses:
+        "200":
+          description: List of repositories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Repository"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/repos/{org}/{repo}:
+    get:
+      summary: Get repository
+      description: Returns details for a specific repository.
+      operationId: getRepo
+      tags: [Repositories]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      responses:
+        "200":
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/repos/{org}/{repo}/generate:
+    post:
+      summary: Generate from template
+      description: Creates a new repository from a template repository.
+      operationId: generateFromTemplate
+      tags: [Repositories]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: New repository name
+                description:
+                  type: string
+                  description: Repository description
+              required: [name]
+      responses:
+        "201":
+          description: Repository created from template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Repository"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/prs/{org}/{repo}:
+    get:
+      summary: List pull requests
+      description: Lists pull requests for a repository, filtered by state.
+      operationId: listPRs
+      tags: [Pull Requests]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, all]
+            default: open
+          description: Filter by PR state
+      responses:
+        "200":
+          description: List of pull requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PullRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Create pull request
+      description: Creates a new pull request.
+      operationId: createPR
+      tags: [Pull Requests]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: PR title
+                body:
+                  type: string
+                  description: PR description
+                head:
+                  type: string
+                  description: Source branch
+                base:
+                  type: string
+                  description: Target branch
+                  default: main
+              required: [title, head]
+      responses:
+        "201":
+          description: Pull request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/prs/{org}/{repo}/{number}/merge:
+    post:
+      summary: Merge pull request
+      description: Merges a pull request using the specified method.
+      operationId: mergePR
+      tags: [Pull Requests]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - $ref: "#/components/parameters/PRNumberPath"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                method:
+                  type: string
+                  enum: [merge, rebase, squash]
+                  default: merge
+      responses:
+        "200":
+          description: Pull request merged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  merged:
+                    type: boolean
+                required: [merged]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/prs/{org}/{repo}/{number}/comments:
+    get:
+      summary: List PR comments
+      description: Lists all comments on a pull request.
+      operationId: listPRComments
+      tags: [Pull Requests]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - $ref: "#/components/parameters/PRNumberPath"
+      responses:
+        "200":
+          description: List of comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Comment on PR
+      description: Adds a comment to a pull request.
+      operationId: commentOnPR
+      tags: [Pull Requests]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - $ref: "#/components/parameters/PRNumberPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  description: Comment text
+              required: [body]
+      responses:
+        "201":
+          description: Comment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/pipelines/{org}/{repo}:
+    get:
+      summary: List pipelines
+      description: Lists CI/CD pipelines for a repository.
+      operationId: listPipelines
+      tags: [Pipelines]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      responses:
+        "200":
+          description: List of pipelines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pipeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Trigger pipeline
+      description: Triggers a new CI/CD pipeline run.
+      operationId: triggerPipeline
+      tags: [Pipelines]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch:
+                  type: string
+                  default: main
+                  description: Branch to build
+      responses:
+        "201":
+          description: Pipeline triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/pipelines/{org}/{repo}/{id}:
+    get:
+      summary: Get pipeline
+      description: Returns details for a specific pipeline run.
+      operationId: getPipeline
+      tags: [Pipelines]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Pipeline number
+      responses:
+        "200":
+          description: Pipeline details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/pipelines/{org}/{repo}/{id}/logs:
+    get:
+      summary: Get pipeline logs
+      description: Returns logs for a specific pipeline step.
+      operationId: getPipelineLogs
+      tags: [Pipelines]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: Pipeline number
+        - name: step
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: Step number
+      responses:
+        "200":
+          description: Pipeline step logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: string
+                required: [logs]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /api/v1/apps:
+    get:
+      summary: List applications
+      description: Lists all deployed applications on the platform.
+      operationId: listApps
+      tags: [Applications]
+      responses:
+        "200":
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Application"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/apps/{org}/{repo}:
+    get:
+      summary: Get application status
+      description: Returns deployment status for a specific application.
+      operationId: getAppStatus
+      tags: [Applications]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      responses:
+        "200":
+          description: Application status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      summary: Deploy application
+      description: Triggers a deployment pipeline for the application.
+      operationId: deployApp
+      tags: [Applications]
+      parameters:
+        - $ref: "#/components/parameters/OrgPath"
+        - $ref: "#/components/parameters/RepoPath"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                branch:
+                  type: string
+                  default: main
+                  description: Branch to deploy
+      responses:
+        "201":
+          description: Deploy pipeline triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pipeline"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/users/me:
+    get:
+      summary: Get current user
+      description: Returns the authenticated user's profile information.
+      operationId: getCurrentUser
+      tags: [Users]
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /mcp:
+    post:
+      summary: MCP request
+      description: |
+        Streamable HTTP transport for the Model Context Protocol. Send an
+        `initialize` request without a session ID to start a new session. Include
+        the returned `Mcp-Session-Id` header on subsequent requests.
+
+        Available tools: `list_orgs`, `create_org`, `list_repos`, `get_repo`,
+        `create_repo_from_template`, `list_prs`, `create_pr`, `merge_pr`,
+        `comment_on_pr`, `trigger_deploy`, `get_pipeline_status`,
+        `get_pipeline_logs`, `list_apps`, `get_app_status`,
+        `get_platform_status`, `whoami`.
+      operationId: mcpRequest
+      tags: [MCP]
+      parameters:
+        - name: Mcp-Session-Id
+          in: header
+          schema:
+            type: string
+            format: uuid
+          description: Session ID from a previous initialize response
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON-RPC 2.0 request (MCP protocol)
+      responses:
+        "200":
+          description: MCP response (JSON-RPC 2.0)
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: MCP SSE stream
+      description: Server-Sent Events stream for an active MCP session.
+      operationId: mcpStream
+      tags: [MCP]
+      parameters:
+        - name: Mcp-Session-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      summary: Close MCP session
+      description: Closes and cleans up an MCP session.
+      operationId: mcpClose
+      tags: [MCP]
+      parameters:
+        - name: Mcp-Session-Id
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Session closed
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Forgejo personal access token
+
+  parameters:
+    OrgPath:
+      name: org
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Organization or owner name
+    RepoPath:
+      name: repo
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Repository name
+    PRNumberPath:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: integer
+      description: Pull request number
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid request body or parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Organization:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        full_name:
+          type: string
+        description:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+        visibility:
+          type: string
+          enum: [public, limited, private]
+      required: [id, name]
+
+    Repository:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        full_name:
+          type: string
+        description:
+          type: string
+        owner:
+          type: object
+          properties:
+            login:
+              type: string
+            id:
+              type: integer
+          required: [login, id]
+        html_url:
+          type: string
+          format: uri
+        clone_url:
+          type: string
+          format: uri
+        template:
+          type: boolean
+        default_branch:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        stars_count:
+          type: integer
+        forks_count:
+          type: integer
+        open_issues_count:
+          type: integer
+      required: [id, name, full_name]
+
+    PullRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+          enum: [open, closed]
+        user:
+          type: object
+          properties:
+            login:
+              type: string
+            avatar_url:
+              type: string
+              format: uri
+          required: [login]
+        head:
+          type: object
+          properties:
+            ref:
+              type: string
+            label:
+              type: string
+          required: [ref]
+        base:
+          type: object
+          properties:
+            ref:
+              type: string
+            label:
+              type: string
+          required: [ref]
+        html_url:
+          type: string
+          format: uri
+        mergeable:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, number, title, state]
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        body:
+          type: string
+        user:
+          type: object
+          properties:
+            login:
+              type: string
+          required: [login]
+        created_at:
+          type: string
+          format: date-time
+      required: [id, body]
+
+    Pipeline:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [pending, running, success, failure, error, killed, blocked, declined, skipped]
+        event:
+          type: string
+          enum: [push, pull_request, tag, manual, cron]
+        branch:
+          type: string
+        message:
+          type: string
+        author:
+          type: string
+        started:
+          type: integer
+          description: Unix timestamp
+        finished:
+          type: integer
+          description: Unix timestamp
+        created:
+          type: integer
+          description: Unix timestamp
+      required: [id, number, status]
+
+    Application:
+      type: object
+      properties:
+        org:
+          type: string
+        repo:
+          type: string
+        namespace:
+          type: string
+        status:
+          type: string
+          enum: [running, degraded, stopped]
+        replicas:
+          type: object
+          properties:
+            ready:
+              type: integer
+            desired:
+              type: integer
+          required: [ready, desired]
+        url:
+          type: string
+          format: uri
+      required: [org, repo, namespace, status]
+
+    ServiceStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+        ready:
+          type: boolean
+        replicas:
+          type: object
+          properties:
+            ready:
+              type: integer
+            total:
+              type: integer
+          required: [ready, total]
+        url:
+          type: string
+      required: [name, namespace, ready]
+
+    PlatformStatus:
+      type: object
+      properties:
+        healthy:
+          type: boolean
+        services:
+          type: array
+          items:
+            $ref: "#/components/schemas/ServiceStatus"
+        apps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Application"
+      required: [healthy, services, apps]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        login:
+          type: string
+        email:
+          type: string
+          format: email
+        fullName:
+          type: string
+        isAdmin:
+          type: boolean
+        avatarUrl:
+          type: string
+          format: uri
+      required: [id, login, email]

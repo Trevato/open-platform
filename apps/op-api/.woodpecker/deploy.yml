@@ -1,0 +1,56 @@
+when:
+  - event: [push, manual]
+    branch: main
+
+clone:
+  - name: clone
+    image: woodpeckerci/plugin-git
+    settings:
+      skip_verify: true
+
+steps:
+  - name: typecheck
+    image: node:20-alpine
+    commands:
+      - npm install
+      - npm run typecheck
+
+  - name: build
+    image: woodpeckerci/plugin-kaniko
+    settings:
+      repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
+      registry:
+        from_secret: registry_host
+      tags:
+        - ${CI_COMMIT_SHA:0:8}
+        - latest
+      username:
+        from_secret: registry_username
+      password:
+        from_secret: registry_token
+      skip_tls_verify: true
+      cache: true
+
+  - name: provision
+    image: bitnami/kubectl:latest
+    commands:
+      - APP_NS="op-$CI_REPO_OWNER-$CI_REPO_NAME"
+      - kubectl create namespace $APP_NS --dry-run=client -o yaml | kubectl apply -f -
+      - kubectl label namespace $APP_NS open-platform.sh/managed=true open-platform.sh/org=$CI_REPO_OWNER open-platform.sh/repo=$CI_REPO_NAME open-platform.sh/tier=workload open-platform.sh/environment=production --overwrite
+      - kubectl get secret minio-credentials -n minio -o json | sed "s/\"namespace\":.*/\"namespace\":\"$APP_NS\",/" | kubectl apply -n $APP_NS -f -
+      - kubectl get configmap platform-ca -n forgejo -o json | sed "s/\"namespace\":.*/\"namespace\":\"$APP_NS\",/" | kubectl apply -n $APP_NS -f - || true
+
+  - name: deploy
+    image: bitnami/kubectl:latest
+    commands:
+      - APP_NS="op-$CI_REPO_OWNER-$CI_REPO_NAME"
+      - REGISTRY_HOST=$(cat /etc/woodpecker/registry_host 2>/dev/null || echo "")
+      - sed -i "s|APP_NAMESPACE|$APP_NS|g" k8s/*.yaml
+      - sed -i "s|REGISTRY_HOST|$REGISTRY_HOST|g" k8s/*.yaml
+      - sed -i "s|ORG_NAME|$CI_REPO_OWNER|g" k8s/*.yaml
+      - sed -i "s|PROJECT_NAME|$CI_REPO_NAME|g" k8s/*.yaml
+      - sed -i "s|PLATFORM_DOMAIN|$(cat /etc/woodpecker/platform_domain 2>/dev/null || echo "")|g" k8s/*.yaml
+      - sed -i "s|SERVICE_PREFIX|$(cat /etc/woodpecker/service_prefix 2>/dev/null || echo "")|g" k8s/*.yaml
+      - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
+      - kubectl apply -f k8s/
+      - kubectl rollout status deployment/op-api -n $APP_NS --timeout=120s

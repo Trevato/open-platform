@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: op-api
+  namespace: APP_NAMESPACE
+  labels:
+    app: op-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: op-api
+  template:
+    metadata:
+      labels:
+        app: op-api
+    spec:
+      serviceAccountName: op-api
+      containers:
+        - name: app
+          image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: FORGEJO_INTERNAL_URL
+              value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
+            - name: FORGEJO_URL
+              value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
+            - name: WOODPECKER_INTERNAL_URL
+              value: "http://woodpecker-server.woodpecker.svc:80"
+            - name: WOODPECKER_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: op-api-secrets
+                  key: woodpecker-admin-token
+            - name: PLATFORM_DOMAIN
+              value: "PLATFORM_DOMAIN"
+            - name: SERVICE_PREFIX
+              value: "SERVICE_PREFIX"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/etc/ssl/custom/ca.crt"
+          volumeMounts:
+            - name: platform-ca
+              mountPath: /etc/ssl/custom
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+      volumes:
+        - name: platform-ca
+          configMap:
+            name: platform-ca
+            optional: true

@@ -33,6 +33,7 @@ spec:
           enabled: true
           name: "oidc"
         issuerURL: https://forgejo.product-garden.com
+        callbackURL: https://headlamp.product-garden.com/oidc-callback
         scopes: "openid,profile,email,groups"
     ingress:
       enabled: true

@@ -99,14 +99,14 @@ steps:
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
       - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
-      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g; s/SERVICE_PREFIX//g" k8s/*.yaml
+      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g; s/SERVICE_PREFIX/$SERVICE_PREFIX/g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - |
         kubectl get secret forgejo-admin-credentials -n forgejo -o json | \
           sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d; /"namespace"/d' | \
           kubectl apply -n $APP_NS -f - 2>/dev/null || true
       - kubectl apply -f k8s/
-      - kubectl set env deployment/${CI_REPO_NAME} -n $APP_NS PLATFORM_DOMAIN=$PLATFORM_DOMAIN
+      - kubectl set env deployment/${CI_REPO_NAME} -n $APP_NS PLATFORM_DOMAIN=$PLATFORM_DOMAIN SERVICE_PREFIX=$SERVICE_PREFIX
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
     environment:
       PLATFORM_DOMAIN:

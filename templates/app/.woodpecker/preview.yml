@@ -299,8 +299,6 @@ steps:
         metadata:
           name: $$PREVIEW_NAME
           namespace: $$PREVIEW_NS
-          annotations:
-            traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-redirect@kubernetescrd,oauth2-proxy-oauth2-proxy-auth@kubernetescrd
         spec:
           ingressClassName: traefik
           rules:

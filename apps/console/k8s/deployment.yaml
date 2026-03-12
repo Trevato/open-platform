@@ -54,8 +54,6 @@ spec:
               value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
             - name: AUTH_FORGEJO_INTERNAL_URL
               value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
-            - name: CONSOLE_MODE
-              value: "platform"
             - name: FORGEJO_ADMIN_USER
               valueFrom:
                 secretKeyRef:

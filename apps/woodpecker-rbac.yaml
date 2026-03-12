@@ -7,7 +7,7 @@ rules:
     resources: ["deployments"]
     verbs: ["get", "list", "watch", "patch", "update", "create", "delete"]
   - apiGroups: [""]
-    resources: ["services", "secrets", "pods", "pods/log", "pods/exec"]
+    resources: ["services", "secrets", "configmaps", "pods", "pods/log", "pods/exec"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
@@ -17,7 +17,13 @@ rules:
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "list", "create"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["serviceaccounts"]
+    verbs: ["get", "list", "create", "update", "patch"]
 ---
 apiVersion: v1
 kind: ServiceAccount

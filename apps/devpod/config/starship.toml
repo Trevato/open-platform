@@ -1,0 +1,32 @@
+add_newline = false
+format = "$directory$git_branch$git_status$kubernetes$nix_shell$cmd_duration$character"
+
+[directory]
+truncation_length = 3
+truncate_to_repo = false
+style = "bold #89b4fa"
+
+[git_branch]
+style = "bold #cba6f7"
+
+[git_status]
+style = "bold #f38ba8"
+
+[kubernetes]
+disabled = false
+symbol = "⎈ "
+style = "bold #89dceb"
+format = "[$symbol$context( \\($namespace\\))]($style) "
+
+[nix_shell]
+symbol = "❄️ "
+style = "bold blue"
+format = "[$symbol]($style) "
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+[cmd_duration]
+min_time = 2_000
+style = "bold #f9e2af"
