@@ -11,12 +11,40 @@ const TIER_LIMITS: Record<string, number> = {
   team: 10,
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const all = searchParams.get("all") === "true";
+
+  if (all) {
+    const { checkIsAdmin } = await import("@/lib/roles");
+    const isAdmin = await checkIsAdmin(session.user.name);
+    if (isAdmin) {
+      const instances = await pool.query(
+        `SELECT i.*,
+           c.name as owner_name, c.email as owner_email,
+           (SELECT json_agg(e ORDER BY e.created_at DESC)
+            FROM (
+              SELECT phase, status, message, created_at
+              FROM provision_events
+              WHERE instance_id = i.id
+              ORDER BY created_at DESC
+              LIMIT 10
+            ) e
+           ) as recent_events
+         FROM instances i
+         JOIN customers c ON c.id = i.customer_id
+         ORDER BY i.created_at DESC`
+      );
+      return NextResponse.json({ instances: instances.rows });
+    }
+  }
+
+  // User-scoped query (existing behavior)
   const customer = await pool.query(
     `SELECT * FROM customers WHERE user_id = $1`,
     [session.user.id]
@@ -63,7 +91,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json();
-  const { slug, display_name, admin_email } = body;
+  const { slug, display_name, admin_email, tier: requestedTier } = body;
 
   // Validate slug: lowercase alphanumeric + hyphens, 3-32 chars, starts with letter
   if (!slug || !/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(slug)) {
@@ -167,11 +195,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Create instance
+    const tier = ["free", "pro", "team"].includes(requestedTier) ? requestedTier : "free";
     const instance = await client.query(
       `INSERT INTO instances (customer_id, slug, display_name, tier, admin_email, admin_username)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [cust.id, slug, display_name, cust.tier, admin_email, "opadmin"]
+      [cust.id, slug, display_name, tier, admin_email, "opadmin"]
     );
 
     // Log initial provision event

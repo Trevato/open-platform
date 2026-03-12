@@ -1,10 +1,9 @@
-import { isPlatform } from "@/lib/mode";
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import Link from "next/link";
 import pool from "@/lib/db";
 import { InstanceList } from "@/app/components/instance-list";
+import { type Instance } from "@/app/components/instance-card";
 import { PlatformDashboard } from "@/app/components/platform-dashboard";
+import { getSessionWithRole } from "@/lib/session-role";
 
 function PlusIcon() {
   return (
@@ -45,37 +44,42 @@ function EmptyIcon() {
   );
 }
 
-async function HostedDashboard() {
-  // Session is validated by the dashboard layout — no redirect needed here.
-  // We still read it for the user ID to query customer data.
-  // Non-null assertion: layout guarantees authenticated session
-  const session = (await auth.api.getSession({ headers: await headers() }))!;
+export default async function DashboardPage() {
+  const result = await getSessionWithRole();
+  if (!result) return null;
+  const { session, role } = result;
+  const isAdmin = role === "admin";
 
-  const customerResult = await pool.query(
-    `SELECT * FROM customers WHERE user_id = $1`,
-    [session.user.id]
-  );
+  let instances: Instance[] = [];
 
-  let instances: Array<{
-    id: string;
-    slug: string;
-    display_name: string;
-    status: string;
-    created_at: string;
-  }> = [];
-
-  if (customerResult.rows.length > 0) {
-    const instancesResult = await pool.query(
-      `SELECT id, slug, display_name, status, created_at
-       FROM instances
-       WHERE customer_id = $1
-       ORDER BY created_at DESC`,
-      [customerResult.rows[0].id]
+  if (isAdmin) {
+    // Admin sees all instances with owner info
+    const allInstances = await pool.query(
+      `SELECT i.id, i.slug, i.display_name, i.status, i.tier, i.created_at,
+              c.name as owner_name
+       FROM instances i
+       JOIN customers c ON c.id = i.customer_id
+       ORDER BY i.created_at DESC`
     );
-    instances = instancesResult.rows;
+    instances = allInstances.rows;
+  } else {
+    const customerResult = await pool.query(
+      `SELECT * FROM customers WHERE user_id = $1`,
+      [session.user.id]
+    );
+    if (customerResult.rows.length > 0) {
+      const instancesResult = await pool.query(
+        `SELECT id, slug, display_name, status, tier, created_at
+         FROM instances
+         WHERE customer_id = $1
+         ORDER BY created_at DESC`,
+        [customerResult.rows[0].id]
+      );
+      instances = instancesResult.rows;
+    }
   }
 
-  if (instances.length === 0) {
+  if (instances.length === 0 && !isAdmin) {
     return (
       <div className="container">
         <div className="empty-state">
@@ -105,22 +109,23 @@ async function HostedDashboard() {
           New Instance
         </Link>
       </div>
-      <InstanceList initialInstances={instances} />
-    </div>
-  );
-}
 
-export default async function DashboardPage() {
-  if (!isPlatform) {
-    return <HostedDashboard />;
-  }
+      {instances.length === 0 ? (
+        <p className="text-sm text-muted" style={{ padding: "24px 0" }}>
+          No instances yet. Users will appear here when they create platforms.
+        </p>
+      ) : (
+        <InstanceList initialInstances={instances} isAdmin={isAdmin} />
+      )}
 
-  return (
-    <div className="container">
-      <div className="dashboard-header">
-        <h1>Dashboard</h1>
-      </div>
-      <PlatformDashboard />
+      {isAdmin && (
+        <div style={{ marginTop: 40 }}>
+          <div className="dashboard-header" style={{ marginBottom: 16 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Platform Health</h2>
+          </div>
+          <PlatformDashboard />
+        </div>
+      )}
     </div>
   );
 }

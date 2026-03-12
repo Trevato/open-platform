@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import pool from "@/lib/db";
+import { getInstanceAccess } from "@/lib/instance-access";
 
 export const dynamic = "force-dynamic";
 
@@ -9,30 +8,14 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const { slug } = await params;
+  const access = await getInstanceAccess(slug);
 
-  const result = await pool.query(
-    `SELECT i.id, i.slug, i.display_name, i.tier, i.status,
-            i.admin_username, i.admin_email, i.custom_domain,
-            i.error_message, i.created_at, i.updated_at,
-            i.provisioned_at, i.password_reset_at, i.last_healthy_at,
-            i.customer_id, c.tier as customer_tier, c.email as customer_email
-     FROM instances i
-     JOIN customers c ON c.id = i.customer_id
-     WHERE i.slug = $1 AND c.user_id = $2`,
-    [slug, session.user.id]
-  );
-
-  if (result.rows.length === 0) {
+  if (!access) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const instance = result.rows[0];
+  const { instance } = access;
 
   const events = await pool.query(
     `SELECT phase, status, message, created_at
@@ -65,35 +48,32 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const access = await getInstanceAccess((await params).slug);
+
+  if (!access) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { slug } = await params;
+  const { instance } = access;
 
-  const result = await pool.query(
-    `UPDATE instances SET status = 'terminating'
-     FROM customers
-     WHERE instances.customer_id = customers.id
-       AND instances.slug = $1
-       AND customers.user_id = $2
-       AND instances.status NOT IN ('terminated', 'terminating')
-     RETURNING instances.*`,
-    [slug, session.user.id]
-  );
-
-  if (result.rows.length === 0) {
+  if (instance.status === "terminated" || instance.status === "terminating") {
     return NextResponse.json(
-      { error: "Not found or already terminating" },
-      { status: 404 }
+      { error: "Already terminating" },
+      { status: 400 }
     );
   }
+
+  const result = await pool.query(
+    `UPDATE instances SET status = 'terminating', updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [instance.id]
+  );
 
   await pool.query(
     `INSERT INTO provision_events (instance_id, phase, status, message)
      VALUES ($1, 'teardown', 'info', 'Teardown requested')`,
-    [result.rows[0].id]
+    [instance.id]
   );
 
   return NextResponse.json({ instance: result.rows[0] });

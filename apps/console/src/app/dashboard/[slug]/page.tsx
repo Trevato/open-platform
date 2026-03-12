@@ -1,8 +1,7 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
-import { redirect, notFound } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import pool from "@/lib/db";
+import { getInstanceAccess } from "@/lib/instance-access";
 import { StatusBadge } from "@/app/components/status-badge";
 import { ProvisionTerminal } from "./components/provision-terminal";
 import { GettingStarted } from "./components/getting-started";
@@ -189,31 +188,12 @@ export default async function InstanceDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    redirect("/");
-  }
-
-  const customerResult = await pool.query(
-    `SELECT id FROM customers WHERE user_id = $1`,
-    [session.user.id]
-  );
-
-  if (customerResult.rows.length === 0) {
-    redirect("/dashboard");
-  }
-
-  const instanceResult = await pool.query(
-    `SELECT * FROM instances
-     WHERE slug = $1 AND customer_id = $2`,
-    [slug, customerResult.rows[0].id]
-  );
-
-  if (instanceResult.rows.length === 0) {
+  const access = await getInstanceAccess(slug);
+  if (!access) {
     notFound();
   }
 
-  const instance: Instance = instanceResult.rows[0];
+  const instance: Instance = access.instance;
 
   const eventsResult = await pool.query(
     `SELECT phase, status, message, created_at

@@ -23,6 +23,7 @@ export default function NewInstancePage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [adminEmail, setAdminEmail] = useState("");
   const [emailTouched, setEmailTouched] = useState(false);
+  const [tier, setTier] = useState("free");
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -85,6 +86,7 @@ export default function NewInstancePage() {
             slug,
             display_name: displayName,
             admin_email: effectiveEmail,
+            tier,
           }),
         });
 
@@ -102,7 +104,7 @@ export default function NewInstancePage() {
         setSubmitting(false);
       }
     },
-    [slug, displayName, effectiveEmail, validate, router]
+    [slug, displayName, effectiveEmail, tier, validate, router]
   );
 
   return (
@@ -193,6 +195,47 @@ export default function NewInstancePage() {
             {fieldErrors.email && (
               <p className="form-error">{fieldErrors.email}</p>
             )}
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Resource tier</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {[
+                { value: "free", label: "Free", desc: "500m CPU, 2Gi RAM, 10Gi storage" },
+                { value: "pro", label: "Pro", desc: "2 CPU, 8Gi RAM, 50Gi storage" },
+                { value: "team", label: "Team", desc: "4 CPU, 16Gi RAM, 100Gi storage" },
+              ].map((t) => (
+                <label
+                  key={t.value}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "10px 12px",
+                    borderRadius: "var(--radius-btn)",
+                    border: `1px solid ${tier === t.value ? "var(--accent)" : "var(--border)"}`,
+                    background: tier === t.value ? "rgba(99,179,237,0.04)" : "transparent",
+                    cursor: "pointer",
+                    transition: "border-color 0.15s, background 0.15s",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="tier"
+                    value={t.value}
+                    checked={tier === t.value}
+                    onChange={(e) => setTier(e.target.value)}
+                    style={{ marginTop: 2 }}
+                  />
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 500 }}>{t.label}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {t.desc}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
 
           {error && (

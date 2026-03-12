@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const navItems = [
   {
     href: "/dashboard",
-    label: "Dashboard",
+    label: "Instances",
     icon: (
       <>
         <rect x="3" y="3" width="7" height="7" rx="1" />
