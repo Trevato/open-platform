@@ -1,7 +1,5 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isHosted } from "@/lib/mode";
+import { getSessionWithRole } from "@/lib/session-role";
 import { CopyButton } from "@/app/components/copy-button";
 
 function ExternalLinkIcon() {
@@ -42,15 +40,8 @@ const commands = [
 ];
 
 export default async function PlatformSettingsPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
-
-  if (!session) {
-    redirect("/");
-  }
-
-  if (isHosted) {
-    redirect("/dashboard");
-  }
+  const result = await getSessionWithRole();
+  if (!result || result.role !== "admin") redirect("/dashboard");
 
   const domain = process.env.PLATFORM_DOMAIN ?? "localhost";
   const prefix = process.env.SERVICE_PREFIX ?? "";

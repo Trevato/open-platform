@@ -1,26 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import pool from "@/lib/db";
 import {
-  isSystemOrgMember,
   getForgejoUser,
   createUserToken,
 } from "@/lib/forgejo";
 import { createDevPod, getDevPodStatus } from "@/lib/devpod";
+import { getSessionWithRole } from "@/lib/session-role";
 
 export async function GET() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
+  const sessionResult = await getSessionWithRole();
+  if (!sessionResult) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const { session, role } = sessionResult;
 
-  const result = await pool.query(
-    `SELECT dp.*, u.name as user_name, u.email as user_email, u.image as user_image
-     FROM dev_pods dp
-     JOIN "user" u ON u.id = dp.user_id
-     ORDER BY dp.created_at DESC`
-  );
+  let result;
+  if (role === "admin") {
+    result = await pool.query(
+      `SELECT dp.*, u.name as user_name, u.email as user_email, u.image as user_image
+       FROM dev_pods dp
+       JOIN "user" u ON u.id = dp.user_id
+       ORDER BY dp.created_at DESC`
+    );
+  } else {
+    result = await pool.query(
+      `SELECT dp.*, u.name as user_name, u.email as user_email, u.image as user_image
+       FROM dev_pods dp
+       JOIN "user" u ON u.id = dp.user_id
+       WHERE dp.user_id = $1
+       ORDER BY dp.created_at DESC`,
+      [session.user.id]
+    );
+  }
 
   // Enrich with live K8s status
   const pods = await Promise.all(
@@ -57,10 +68,11 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
+  const sessionResult = await getSessionWithRole();
+  if (!sessionResult) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const { session } = sessionResult;
 
   // Get the user's Forgejo identity
   const forgejoUser = await getForgejoUser(session.user.name);
@@ -68,15 +80,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Forgejo user not found" },
       { status: 404 }
-    );
-  }
-
-  // Check system org membership
-  const isMember = await isSystemOrgMember(forgejoUser.login);
-  if (!isMember) {
-    return NextResponse.json(
-      { error: "Must be a member of the system org" },
-      { status: 403 }
     );
   }
 

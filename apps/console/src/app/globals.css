@@ -1658,3 +1658,88 @@ select.input {
     padding: 6px 10px;
   }
 }
+
+/* ─── Cluster Selector ─── */
+
+.cluster-selector {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.cluster-selector-sep {
+  color: var(--text-muted);
+  margin: 0 2px;
+  font-size: 16px;
+  font-weight: 300;
+  user-select: none;
+}
+
+.cluster-selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--radius-btn);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.cluster-selector-trigger:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.cluster-selector-chevron {
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+
+.cluster-selector-chevron.open {
+  transform: rotate(180deg);
+}
+
+.cluster-selector-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: 4px;
+  z-index: 100;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.cluster-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+
+.cluster-option:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.cluster-option.active {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}

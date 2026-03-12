@@ -1,14 +1,10 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isHosted } from "@/lib/mode";
+import { getSessionWithRole } from "@/lib/session-role";
 import { AppList } from "@/app/components/app-list";
 
 export default async function AppsPage() {
-  if (isHosted) redirect("/dashboard");
-
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/");
+  const result = await getSessionWithRole();
+  if (!result || result.role !== "admin") redirect("/dashboard");
 
   return (
     <div className="container">

@@ -1,19 +1,11 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { isHosted } from "@/lib/mode";
+import { getSessionWithRole } from "@/lib/session-role";
 import { TerminalView } from "@/app/dashboard/[slug]/terminal/terminal-view";
 
 export default async function PlatformTerminalPage() {
-  if (isHosted) {
-    redirect("/dashboard");
-  }
-
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) {
-    redirect("/");
-  }
+  const result = await getSessionWithRole();
+  if (!result || result.role !== "admin") redirect("/dashboard");
 
   return (
     <div className="terminal-page">

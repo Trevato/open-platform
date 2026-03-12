@@ -1,12 +1,9 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import pool from "@/lib/db";
 import { getInstanceAccess } from "@/lib/instance-access";
 import { StatusBadge } from "@/app/components/status-badge";
 import { TIER_RESOURCES } from "@/app/components/instance-card";
 import { ProvisionTerminal } from "./components/provision-terminal";
-import { GettingStarted } from "./components/getting-started";
-import { InstanceManagement } from "./components/instance-management";
 
 interface ProvisionEvent {
   phase: string;
@@ -189,7 +186,8 @@ export default async function InstanceDetailPage({
 
   const instance: Instance = access.instance;
   const tier = instance.tier || "free";
-  const resources = TIER_RESOURCES[tier as keyof typeof TIER_RESOURCES] || TIER_RESOURCES.free;
+  const resources =
+    TIER_RESOURCES[tier as keyof typeof TIER_RESOURCES] || TIER_RESOURCES.free;
   const tierColor = TIER_COLORS[tier] || TIER_COLORS.free;
 
   const eventsResult = await pool.query(
@@ -211,34 +209,6 @@ export default async function InstanceDetailPage({
 
   return (
     <div className="container">
-      <div style={{ marginBottom: 8 }}>
-        <Link
-          href="/dashboard"
-          className="text-sm text-muted"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            transition: "color 0.15s",
-          }}
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          Instances
-        </Link>
-      </div>
-
       <div className="instance-header">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -263,41 +233,21 @@ export default async function InstanceDetailPage({
             <span>{instance.slug}</span>
             <span className="instance-meta-divider" />
             <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {resources.cpu} CPU · {resources.memory} RAM · {resources.storage} disk
+              {resources.cpu} CPU · {resources.memory} RAM ·{" "}
+              {resources.storage} disk
             </span>
             <span className="instance-meta-divider" />
             <span>Created {formatDate(instance.created_at)}</span>
             {instance.provisioned_at && (
               <>
                 <span className="instance-meta-divider" />
-                <span>Provisioned {formatDate(instance.provisioned_at)}</span>
+                <span>
+                  Provisioned {formatDate(instance.provisioned_at)}
+                </span>
               </>
             )}
           </div>
         </div>
-        {isReady && (
-          <Link
-            href={`/dashboard/${slug}/terminal`}
-            className="btn btn-ghost btn-sm"
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="4 17 10 11 4 5" />
-              <line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-            Terminal
-          </Link>
-        )}
       </div>
 
       {isProvisioning && (
@@ -314,10 +264,6 @@ export default async function InstanceDetailPage({
           <ServiceCards slug={slug} domain={domain} />
         </div>
       )}
-
-      {isReady && <GettingStarted slug={slug} domain={domain} />}
-
-      {isReady && <InstanceManagement slug={slug} />}
 
       <div className="section" style={{ marginTop: isReady ? 16 : 0 }}>
         <div className="section-header">Events</div>
