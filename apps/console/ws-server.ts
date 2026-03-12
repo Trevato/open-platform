@@ -714,7 +714,7 @@ function spawnInstanceDevPodPty(
 
   const ptyProcess = pty.spawn("kubectl", [
     "exec", "-n", "op-dev-pods",
-    `devpod-${username}`, "-c", "dev",
+    `deployment/devpod-${username}`, "-c", "dev",
     "-it", "--", "/bin/zsh", "--login",
   ], {
     name: "xterm-256color",

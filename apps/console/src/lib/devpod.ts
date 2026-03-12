@@ -1,5 +1,11 @@
 import * as k8s from "@kubernetes/client-node";
+import { setHeaderOptions } from "@kubernetes/client-node";
 import { getClientsForInstance } from "@/lib/k8s";
+
+const MERGE_PATCH = setHeaderOptions(
+  "Content-Type",
+  "application/strategic-merge-patch+json"
+);
 
 const NAMESPACE = "op-dev-pods";
 const DEVPOD_IMAGE =
@@ -239,7 +245,7 @@ export async function startDevPod(username: string): Promise<void> {
     name,
     namespace: NAMESPACE,
     body: { spec: { replicas: 1 } },
-  });
+  }, MERGE_PATCH);
 }
 
 /**
@@ -253,7 +259,7 @@ export async function stopDevPod(username: string): Promise<void> {
     name,
     namespace: NAMESPACE,
     body: { spec: { replicas: 0 } },
-  });
+  }, MERGE_PATCH);
 }
 
 /**
@@ -370,6 +376,42 @@ async function ensureNamespace(
   }
 }
 
+/**
+ * Ensure forgejo-registry imagePullSecret exists in the target namespace.
+ * Uses HOST Forgejo credentials so instance vClusters can pull the devpod image.
+ */
+async function ensureRegistrySecret(
+  coreV1: k8s.CoreV1Api,
+  namespace: string
+): Promise<void> {
+  const secretName = "forgejo-registry";
+  try {
+    await coreV1.readNamespacedSecret({ name: secretName, namespace });
+    return; // already exists
+  } catch {
+    // create it
+  }
+
+  const registryHost = REGISTRY_HOST;
+  const username = process.env.FORGEJO_ADMIN_USER || "";
+  const password = process.env.FORGEJO_ADMIN_PASSWORD || "";
+  const auth = Buffer.from(`${username}:${password}`).toString("base64");
+  const dockerConfigJson = JSON.stringify({
+    auths: {
+      [registryHost]: { auth },
+    },
+  });
+
+  await coreV1.createNamespacedSecret({
+    namespace,
+    body: {
+      metadata: { name: secretName, namespace },
+      type: "kubernetes.io/dockerconfigjson",
+      stringData: { ".dockerconfigjson": dockerConfigJson },
+    },
+  });
+}
+
 async function getInstanceClients(slug: string) {
   const clients = await getClientsForInstance(slug);
   if (!clients) throw new Error(`Instance "${slug}" not found or not ready`);
@@ -377,7 +419,107 @@ async function getInstanceClients(slug: string) {
 }
 
 /**
+ * Get Forgejo admin credentials for an instance's vCluster.
+ * Reads the forgejo-admin-credentials secret from the forgejo namespace.
+ */
+async function getInstanceForgejoCredentials(
+  coreV1: k8s.CoreV1Api,
+  slug: string
+): Promise<{ username: string; password: string; url: string } | null> {
+  const domain = process.env.PLATFORM_DOMAIN || "open-platform.sh";
+  try {
+    const secret = await coreV1.readNamespacedSecret({
+      name: "forgejo-admin-credentials",
+      namespace: "forgejo",
+    });
+    const username = Buffer.from(
+      secret.data?.["username"] || "",
+      "base64"
+    ).toString();
+    const password = Buffer.from(
+      secret.data?.["password"] || "",
+      "base64"
+    ).toString();
+    return {
+      username,
+      password,
+      url: `https://${slug}-forgejo.${domain}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a Forgejo PAT on an instance's Forgejo for git access.
+ */
+async function createInstanceForgejoToken(
+  forgejoUrl: string,
+  adminUser: string,
+  adminPass: string,
+  targetUser: string,
+  tokenName: string
+): Promise<string> {
+  const authHeader = `Basic ${Buffer.from(`${adminUser}:${adminPass}`).toString("base64")}`;
+  const headers = { Authorization: authHeader, "Content-Type": "application/json" };
+
+  // The target user might not exist in the instance Forgejo — use admin user instead
+  const user = targetUser || adminUser;
+
+  // Delete existing token with same name
+  try {
+    const listRes = await fetch(
+      `${forgejoUrl}/api/v1/users/${encodeURIComponent(user)}/tokens`,
+      { headers, cache: "no-store" }
+    );
+    if (listRes.ok) {
+      const tokens = await listRes.json();
+      const existing = tokens.find((t: { name: string; id: number }) => t.name === tokenName);
+      if (existing) {
+        await fetch(
+          `${forgejoUrl}/api/v1/users/${encodeURIComponent(user)}/tokens/${existing.id}`,
+          { method: "DELETE", headers }
+        );
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  const res = await fetch(
+    `${forgejoUrl}/api/v1/users/${encodeURIComponent(user)}/tokens`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: tokenName,
+        scopes: [
+          "read:user",
+          "write:repository",
+          "read:repository",
+          "read:organization",
+          "write:issue",
+          "read:issue",
+          "read:package",
+          "write:package",
+        ],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    // Fall back to empty token — dev pod still works, just no git
+    return "";
+  }
+
+  const token = await res.json();
+  return token.sha1 || "";
+}
+
+/**
  * Create PVC + Secret + Deployment for a dev pod inside an instance's vCluster.
+ * Uses the HOST Forgejo registry for the devpod image and creates registry
+ * credentials in the instance's namespace.
  */
 export async function createInstanceDevPod(
   slug: string,
@@ -385,13 +527,31 @@ export async function createInstanceDevPod(
 ): Promise<void> {
   const { appsV1, coreV1 } = await getInstanceClients(slug);
   await ensureNamespace(coreV1, NAMESPACE);
+  await ensureRegistrySecret(coreV1, NAMESPACE);
 
   const name = podName(spec.username);
   const pvc = pvcName(spec.username);
   const secret = secretName(spec.username);
   const l = labels(spec.username);
-  const registryHost = `${slug}-forgejo.${process.env.PLATFORM_DOMAIN || "open-platform.sh"}`;
-  const image = `${registryHost}/${DEVPOD_IMAGE}`;
+  // Use HOST registry — the devpod image is built and stored on the host Forgejo
+  const image = `${REGISTRY_HOST}/${DEVPOD_IMAGE}`;
+
+  // Try to get Forgejo credentials from the instance's vCluster
+  let forgejoToken = spec.forgejoToken;
+  let forgejoUrl = spec.forgejoUrl;
+  if (!forgejoToken) {
+    const creds = await getInstanceForgejoCredentials(coreV1, slug);
+    if (creds) {
+      forgejoUrl = creds.url;
+      forgejoToken = await createInstanceForgejoToken(
+        creds.url,
+        creds.username,
+        creds.password,
+        creds.username, // use instance admin for now
+        `devpod-${spec.username}`
+      );
+    }
+  }
 
   // 1. Create PVC
   try {
@@ -430,8 +590,8 @@ export async function createInstanceDevPod(
         username: spec.username,
         email: spec.email,
         full_name: spec.fullName,
-        token: spec.forgejoToken,
-        forgejo_url: spec.forgejoUrl,
+        token: forgejoToken,
+        forgejo_url: forgejoUrl,
       },
     },
   });
@@ -559,7 +719,7 @@ export async function startInstanceDevPod(
     name,
     namespace: NAMESPACE,
     body: { spec: { replicas: 1 } },
-  });
+  }, MERGE_PATCH);
 }
 
 /**
@@ -576,7 +736,7 @@ export async function stopInstanceDevPod(
     name,
     namespace: NAMESPACE,
     body: { spec: { replicas: 0 } },
-  });
+  }, MERGE_PATCH);
 }
 
 /**
