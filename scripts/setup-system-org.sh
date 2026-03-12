@@ -84,8 +84,9 @@ push_content() {
   trap "rm -rf ${TMP_DIR}" RETURN
 
   cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
-  # Also copy dotfiles (like .woodpecker/)
+  # Also copy dotfiles (like .woodpecker/) but exclude .git
   cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+  rm -rf "${TMP_DIR}/.git"
   # Remove build artifacts that may exist locally
   rm -rf "${TMP_DIR}/node_modules" "${TMP_DIR}/.next" "${TMP_DIR}/bun.lock"
   rm -f "${TMP_DIR}/tsconfig.tsbuildinfo"
@@ -163,6 +164,7 @@ push_social() {
   # Copy full app (feat/markdown-posts version)
   cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
   cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+  rm -rf "${TMP_DIR}/.git"
   # Remove build artifacts that may exist locally
   rm -rf "${TMP_DIR}/node_modules" "${TMP_DIR}/.next" "${TMP_DIR}/bun.lock"
   rm -f "${TMP_DIR}/tsconfig.tsbuildinfo"

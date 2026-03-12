@@ -204,11 +204,13 @@ template_file() {
 echo ""
 echo "Templating helm values..."
 
+template_file "$TEMPLATES_DIR/traefik-values.yaml.tmpl"    "$ROOT_DIR/traefik-values.yaml"
 template_file "$TEMPLATES_DIR/forgejo-values.yaml.tmpl"    "$ROOT_DIR/forgejo-values.yaml"
 template_file "$TEMPLATES_DIR/woodpecker-values.yaml.tmpl"  "$ROOT_DIR/woodpecker-values.yaml"
 template_file "$TEMPLATES_DIR/headlamp-values.yaml.tmpl"    "$ROOT_DIR/headlamp-values.yaml"
 template_file "$TEMPLATES_DIR/minio-values.yaml.tmpl"       "$ROOT_DIR/minio-values.yaml"
 
+echo "  traefik-values.yaml"
 echo "  forgejo-values.yaml"
 echo "  woodpecker-values.yaml"
 echo "  headlamp-values.yaml"

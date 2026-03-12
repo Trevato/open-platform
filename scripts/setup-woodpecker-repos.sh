@@ -338,10 +338,13 @@ else
         service_prefix) VALUE="${PREFIX}" ;;
       esac
 
-      wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
+      if wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
         -H "Content-Type: application/json" \
-        -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1
-      echo "  Created '${SECRET_NAME}' for org '${ORG_NAME}'."
+        -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1; then
+        echo "  Created '${SECRET_NAME}' for org '${ORG_NAME}'."
+      else
+        echo "  Warning: Failed to create '${SECRET_NAME}' for org '${ORG_NAME}' — skipping."
+      fi
     done
   done
 fi
@@ -415,11 +418,11 @@ if [ -n "$PR_NUMBER" ]; then
     echo "Triggering social PR preview pipeline..."
     forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_NUMBER}" \
       -H "Content-Type: application/json" \
-      -d '{"state":"closed"}' >/dev/null 2>&1
+      -d '{"state":"closed"}' >/dev/null 2>&1 || true
     sleep 1
     forgejo_api -X PATCH "${FORGEJO_API}/repos/system/social/pulls/${PR_NUMBER}" \
       -H "Content-Type: application/json" \
-      -d '{"state":"open"}' >/dev/null 2>&1
+      -d '{"state":"open"}' >/dev/null 2>&1 || true
     echo "Social PR reopened — preview pipeline triggered."
   fi
 fi
