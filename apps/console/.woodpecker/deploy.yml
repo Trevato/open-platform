@@ -102,10 +102,12 @@ steps:
         kubectl get secret forgejo-admin-credentials -n forgejo -o json | \
           sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d; /"namespace"/d' | \
           kubectl apply -n $APP_NS -f - 2>/dev/null || true
-      - kubectl apply -f k8s/
+      - kubectl apply -f k8s/rbac.yaml 2>/dev/null || true
+      - kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml -f k8s/ingress.yaml
       - kubectl set env deployment/${CI_REPO_NAME} -n $APP_NS PLATFORM_DOMAIN=$PLATFORM_DOMAIN SERVICE_PREFIX=$SERVICE_PREFIX
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
     environment:
       PLATFORM_DOMAIN:
         from_secret: platform_domain
-      SERVICE_PREFIX: ""
+      SERVICE_PREFIX:
+        from_secret: service_prefix
