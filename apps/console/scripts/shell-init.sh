@@ -1,6 +1,6 @@
 #!/bin/sh
 # Shell environment for web terminal sessions
-# Aligned with github.com/trevato/dotfiles
+# Shell environment for dev pod web terminals
 
 # ─── History ───
 HISTSIZE=50000

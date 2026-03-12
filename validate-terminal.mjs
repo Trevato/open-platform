@@ -8,7 +8,7 @@ import { chromium } from "playwright";
 import { writeFileSync, mkdirSync } from "fs";
 import path from "path";
 
-const SCREENSHOTS_DIR = "/Users/trevato/projects/open-platform/test-screenshots";
+const SCREENSHOTS_DIR = new URL("./test-screenshots", import.meta.url).pathname;
 mkdirSync(SCREENSHOTS_DIR, { recursive: true });
 
 const CATPPUCCIN_MOCHA_BG = { r: 30, g: 30, b: 46 }; // #1e1e2e

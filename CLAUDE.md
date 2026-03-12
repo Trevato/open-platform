@@ -324,7 +324,7 @@ Generated from the app template. Namespaces and deployment manifests ready. Not 
 | `postgres-cluster.yaml` | CNPG Cluster resource |
 | `woodpecker-rbac.yaml` | Woodpecker agent + pipeline RBAC |
 | `traefik-tls.yaml` | Default TLSStore for wildcard cert |
-| `oidc-rbac.yaml` | ClusterRoleBinding for OIDC user (`trevato` → `cluster-admin`) |
+| `oidc-rbac.yaml` | ClusterRoleBinding for OIDC admin user → `cluster-admin` (generated) |
 
 ## Secrets Management
 

@@ -29,9 +29,15 @@ open-platform.yaml.*
 !open-platform.yaml.example
 
 # Generated config (deployment-specific)
-# Source of truth: config/templates/
+# Source of truth: config/templates/ → scripts/generate-config.sh
 /platform/
 *-values.yaml
 !host/vcluster-values.yaml
 helmfile.yaml
 manifests/oidc-rbac.yaml
+
+# Generated Flux resources (top-level mirrors of platform/)
+apps/woodpecker.yaml
+apps/headlamp.yaml
+apps/oauth2-proxy.yaml
+infrastructure/configs/minio.yaml
