@@ -1,5 +1,4 @@
 import * as k8s from "@kubernetes/client-node";
-import { isPlatform } from "./mode";
 
 let appsV1: k8s.AppsV1Api | null = null;
 let coreV1: k8s.CoreV1Api | null = null;
@@ -27,11 +26,10 @@ const PLATFORM_SERVICES = [
   { name: "Forgejo", namespace: "forgejo", label: "app.kubernetes.io/name=forgejo", subdomain: "forgejo" },
   { name: "Woodpecker", namespace: "woodpecker", label: "app.kubernetes.io/name=server", subdomain: "ci" },
   { name: "Headlamp", namespace: "headlamp", label: "app.kubernetes.io/name=headlamp", subdomain: "headlamp" },
-  { name: "MinIO", namespace: "minio", label: "app.kubernetes.io/name=minio", subdomain: "minio" },
+  { name: "MinIO", namespace: "minio", label: "app=minio", subdomain: "minio" },
 ];
 
 export async function getServiceStatuses(): Promise<ServiceStatus[]> {
-  if (!isPlatform) return [];
   const { coreV1 } = getClients();
   const domain = process.env.PLATFORM_DOMAIN;
   if (!domain) throw new Error("PLATFORM_DOMAIN not set");
@@ -119,14 +117,13 @@ export interface AppInfo {
 }
 
 export async function getApps(): Promise<AppInfo[]> {
-  if (!isPlatform) return [];
   const { coreV1, appsV1 } = getClients();
   const domain = process.env.PLATFORM_DOMAIN;
   if (!domain) throw new Error("PLATFORM_DOMAIN not set");
   const prefix = process.env.SERVICE_PREFIX || "";
 
   const namespaces = await coreV1!.listNamespace({
-    labelSelector: "open-platform.sh/tier=workload",
+    labelSelector: "open-platform.sh/tier=workload,open-platform.sh/environment=production",
   });
 
   const apps: AppInfo[] = [];

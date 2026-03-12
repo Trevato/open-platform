@@ -2,9 +2,9 @@ import Link from "next/link";
 import { StatusBadge } from "./status-badge";
 
 export const TIER_RESOURCES = {
-  free: { cpu: "500m", memory: "2Gi", storage: "10Gi" },
-  pro: { cpu: "2", memory: "8Gi", storage: "50Gi" },
-  team: { cpu: "4", memory: "16Gi", storage: "100Gi" },
+  free: { cpu: "500m", memory: "2Gi", storage: "10Gi", label: "Free" },
+  pro: { cpu: "2", memory: "8Gi", storage: "50Gi", label: "Pro" },
+  team: { cpu: "4", memory: "16Gi", storage: "100Gi", label: "Team" },
 } as const;
 
 const TIER_COLORS: Record<string, { bg: string; text: string }> = {

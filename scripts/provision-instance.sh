@@ -458,6 +458,9 @@ OIDC_EOF
   helm upgrade "$SLUG" vcluster/vcluster -n "$NAMESPACE" \
     -f "$VCLUSTER_VALUES" \
     -f "$OIDC_OVERRIDE" \
+    --set "controlPlane.statefulSet.resources.limits.cpu=${CPU_LIMIT}" \
+    --set "controlPlane.statefulSet.resources.limits.memory=${MEM_LIMIT}" \
+    --set "controlPlane.statefulSet.persistence.volumeClaim.size=${STORAGE_LIMIT}" \
     --set "controlPlane.proxy.extraSANs[0]=${VCLUSTER_SAN}" \
     --set "controlPlane.proxy.extraSANs[1]=${VCLUSTER_EXTERNAL}" \
     --wait --timeout 300s 2>&1 || log_event "deploy-oidc" "warn" "vCluster OIDC upgrade had issues"
