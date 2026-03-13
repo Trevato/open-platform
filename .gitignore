@@ -18,6 +18,10 @@ bun.lock
 *.png
 auth-validation-screenshots/
 
+# E2E test artifacts
+tests/e2e/.auth/
+tests/e2e/test-results/
+
 # Credentials and tokens
 cf-token
 gh-env
