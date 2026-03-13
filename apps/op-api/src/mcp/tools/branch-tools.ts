@@ -31,6 +31,20 @@ export function registerBranchTools(
   );
 
   server.tool(
+    "delete_branch",
+    "Delete a branch from a repository. Useful for cleaning up after PR merges.",
+    {
+      org: z.string().describe("Organization or owner name"),
+      repo: z.string().describe("Repository name"),
+      name: z.string().describe("Branch name to delete"),
+    },
+    async ({ org, repo, name }) => {
+      await forgejo.deleteBranch(org, repo, name);
+      return text({ deleted: true, name });
+    },
+  );
+
+  server.tool(
     "create_branch",
     "Create a new branch from an existing branch.",
     {

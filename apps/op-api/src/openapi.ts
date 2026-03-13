@@ -416,6 +416,42 @@ export const spec: OpenAPIV3.Document = {
           "500": errorResponse,
         },
       },
+      post: {
+        tags: ["Repos"],
+        summary: "Create repo",
+        parameters: [
+          {
+            name: "org",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["name"],
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  private: { type: "boolean", default: true },
+                  auto_init: { type: "boolean", default: true },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "201": {
+            description: "Created",
+            content: { "application/json": { schema: ref("ForgejoRepo") } },
+          },
+          "500": errorResponse,
+        },
+      },
     },
     "/api/v1/repos/{org}/{repo}": {
       get: {
@@ -441,6 +477,38 @@ export const spec: OpenAPIV3.Document = {
             content: { "application/json": { schema: ref("ForgejoRepo") } },
           },
           "404": errorResponse,
+          "500": errorResponse,
+        },
+      },
+      delete: {
+        tags: ["Repos"],
+        summary: "Delete repo",
+        parameters: [
+          {
+            name: "org",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+          {
+            name: "repo",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { deleted: { type: "boolean" } },
+                },
+              },
+            },
+          },
           "500": errorResponse,
         },
       },
@@ -1080,6 +1148,47 @@ export const spec: OpenAPIV3.Document = {
             description: "Created",
             content: {
               "application/json": { schema: ref("ForgejoBranch") },
+            },
+          },
+          "400": errorResponse,
+          "500": errorResponse,
+        },
+      },
+    },
+    "/api/v1/branches/{org}/{repo}/{name}": {
+      delete: {
+        tags: ["Branches"],
+        summary: "Delete branch",
+        parameters: [
+          {
+            name: "org",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+          {
+            name: "repo",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+          {
+            name: "name",
+            in: "path",
+            required: true,
+            schema: { type: "string" },
+          },
+        ],
+        responses: {
+          "200": {
+            description: "Deleted",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: { deleted: { type: "boolean" } },
+                },
+              },
             },
           },
           "400": errorResponse,

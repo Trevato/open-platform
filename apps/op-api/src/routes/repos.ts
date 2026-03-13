@@ -25,6 +25,38 @@ reposRouter.get("/:org/:repo", async (req, res) => {
   }
 });
 
+reposRouter.post("/:org", async (req, res) => {
+  try {
+    const client = new ForgejoClient(req.user!.token);
+    const { name, description } = req.body;
+    if (!name) {
+      res.status(400).json({ error: "name is required" });
+      return;
+    }
+    const repo = await client.createRepo(req.params.org, {
+      name,
+      description,
+      private: req.body.private,
+      auto_init: req.body.auto_init,
+    });
+    res.status(201).json(repo);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
+reposRouter.delete("/:org/:repo", async (req, res) => {
+  try {
+    const client = new ForgejoClient(req.user!.token);
+    await client.deleteRepo(req.params.org, req.params.repo);
+    res.json({ deleted: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 reposRouter.post("/:org/:repo/generate", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);

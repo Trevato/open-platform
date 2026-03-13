@@ -86,6 +86,18 @@ export class OpClient {
     });
   }
 
+  async createRepo(
+    org: string,
+    name: string,
+    description?: string,
+  ): Promise<Repo> {
+    return this.request("POST", `/api/v1/repos/${enc(org)}`, { name, description });
+  }
+
+  async deleteRepo(org: string, repo: string): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/api/v1/repos/${enc(org)}/${enc(repo)}`);
+  }
+
   // PRs
   async listPRs(org: string, repo: string, state = "open"): Promise<PR[]> {
     return this.request("GET", `/api/v1/prs/${enc(org)}/${enc(repo)}?state=${state}`);
@@ -201,6 +213,10 @@ export class OpClient {
 
   async createBranch(org: string, repo: string, name: string, from = "main"): Promise<Branch> {
     return this.request("POST", `/api/v1/branches/${enc(org)}/${enc(repo)}`, { name, from });
+  }
+
+  async deleteBranch(org: string, repo: string, name: string): Promise<{ deleted: boolean }> {
+    return this.request("DELETE", `/api/v1/branches/${enc(org)}/${enc(repo)}/${enc(name)}`);
   }
 
   // Files

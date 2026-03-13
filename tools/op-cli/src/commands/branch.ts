@@ -45,7 +45,23 @@ const branchCreate = new Command("create")
     }
   });
 
+const branchDelete = new Command("delete")
+  .description("Delete a branch")
+  .argument("<org/repo>", "Repository (e.g. system/social)")
+  .argument("<name>", "Branch name")
+  .action(async (ref: string, name: string) => {
+    try {
+      const { org, repo } = parseOrgRepo(ref);
+      const client = new OpClient(requireConfig());
+      await client.deleteBranch(org, repo, name);
+      process.stdout.write(`Deleted branch "${name}"\n`);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
 export const branchCommand = new Command("branch")
   .description("Manage branches")
   .addCommand(branchList)
-  .addCommand(branchCreate);
+  .addCommand(branchCreate)
+  .addCommand(branchDelete);

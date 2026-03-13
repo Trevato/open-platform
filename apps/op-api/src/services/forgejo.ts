@@ -123,6 +123,34 @@ export class ForgejoClient {
     );
   }
 
+  async createRepo(
+    org: string,
+    opts: { name: string; description?: string; private?: boolean; auto_init?: boolean },
+  ): Promise<ForgejoRepo> {
+    return this.fetchJSON(
+      `/api/v1/orgs/${encodeURIComponent(org)}/repos`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: opts.name,
+          description: opts.description || "",
+          private: opts.private ?? true,
+          auto_init: opts.auto_init ?? true,
+        }),
+      },
+    );
+  }
+
+  async deleteRepo(owner: string, name: string): Promise<void> {
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: this.headers() },
+    );
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`Forgejo delete repo ${res.status}`);
+    }
+  }
+
   // Pull Requests
 
   async listPRs(
@@ -331,6 +359,17 @@ export class ForgejoClient {
     return this.fetchAllPages(
       `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
     );
+  }
+
+  async deleteBranch(owner: string, repo: string, name: string): Promise<void> {
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(name)}`,
+      { method: "DELETE", headers: this.headers() },
+    );
+    if (!res.ok && res.status !== 404) {
+      const body = await res.text();
+      throw new Error(`Forgejo delete branch ${res.status}: ${body}`);
+    }
   }
 
   async createBranch(

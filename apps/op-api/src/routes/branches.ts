@@ -14,6 +14,17 @@ branchesRouter.get("/:org/:repo", async (req, res) => {
   }
 });
 
+branchesRouter.delete("/:org/:repo/:name", async (req, res) => {
+  try {
+    const client = new ForgejoClient(req.user!.token);
+    await client.deleteBranch(req.params.org, req.params.repo, req.params.name);
+    res.json({ deleted: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 branchesRouter.post("/:org/:repo", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);

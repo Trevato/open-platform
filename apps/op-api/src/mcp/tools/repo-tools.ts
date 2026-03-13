@@ -41,6 +41,43 @@ export function registerRepoTools(
   );
 
   server.tool(
+    "create_repo",
+    "Create a new empty repository in an organization.",
+    {
+      org: z.string().describe("Target organization"),
+      name: z
+        .string()
+        .regex(/^[a-z][a-z0-9-]{1,30}[a-z0-9]$/)
+        .describe("Repo name (lowercase, hyphens)"),
+      description: z.string().default("").describe("Repo description"),
+    },
+    async ({ org, name, description }) => {
+      const repo = await forgejo.createRepo(org, {
+        name,
+        description,
+      });
+      return text({
+        created: true,
+        fullName: repo.full_name,
+        url: repo.html_url,
+      });
+    },
+  );
+
+  server.tool(
+    "delete_repo",
+    "Delete a repository. This is destructive and cannot be undone.",
+    {
+      org: z.string().describe("Organization or owner name"),
+      repo: z.string().describe("Repository name"),
+    },
+    async ({ org, repo }) => {
+      await forgejo.deleteRepo(org, repo);
+      return text({ deleted: true });
+    },
+  );
+
+  server.tool(
     "create_repo_from_template",
     "Create a new app from the system template",
     {
