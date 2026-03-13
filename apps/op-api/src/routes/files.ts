@@ -1,7 +1,15 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import { ForgejoClient } from "../services/forgejo.js";
 
 export const filesRouter = Router();
+
+function handleErr(err: unknown, res: Response) {
+  const message = err instanceof Error ? err.message : "Unknown error";
+  // Propagate Forgejo status codes (e.g. "Forgejo API 404: ...")
+  const match = message.match(/Forgejo API (\d+)/);
+  const status = match ? parseInt(match[1]) : 500;
+  res.status(status).json({ error: message });
+}
 
 function extractFilePath(req: Request): string {
   // Route is /:org/:repo/*, extract everything after org/repo
@@ -40,8 +48,7 @@ filesRouter.get("/:org/:repo/*", async (req, res) => {
       content: decoded,
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -67,7 +74,6 @@ filesRouter.put("/:org/:repo/*", async (req, res) => {
     );
     res.status(201).json(result);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

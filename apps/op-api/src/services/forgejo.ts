@@ -376,15 +376,17 @@ export class ForgejoClient {
       sha?: string;
     },
   ): Promise<ForgejoFileResponse> {
+    // Forgejo: POST to create new files, PUT (with sha) to update existing
+    const method = opts.sha ? "PUT" : "POST";
     return this.fetchJSON(
       `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`,
       {
-        method: "PUT",
+        method,
         body: JSON.stringify({
           content: Buffer.from(opts.content).toString("base64"),
           message: opts.message,
           branch: opts.branch,
-          sha: opts.sha,
+          ...(opts.sha ? { sha: opts.sha } : {}),
         }),
       },
     );

@@ -133,6 +133,23 @@ export interface ForgejoFileResponse {
   };
 }
 
+export interface WoodpeckerStep {
+  id: number;
+  pid: number;
+  name: string;
+  state: string;
+  started: number;
+  stopped: number;
+}
+
+export interface WoodpeckerWorkflow {
+  id: number;
+  pid: number;
+  name: string;
+  state: string;
+  children: WoodpeckerStep[];
+}
+
 export interface WoodpeckerPipeline {
   id: number;
   number: number;
@@ -144,6 +161,7 @@ export interface WoodpeckerPipeline {
   started: number;
   finished: number;
   created: number;
+  workflows?: WoodpeckerWorkflow[];
 }
 
 export interface WoodpeckerRepo {

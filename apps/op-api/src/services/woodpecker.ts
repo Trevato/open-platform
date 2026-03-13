@@ -65,14 +65,41 @@ export class WoodpeckerClient {
   async getPipelineLogs(
     repoId: number,
     pipelineNumber: number,
-    stepId: number,
+    stepPosition: number,
   ): Promise<string> {
+    // Resolve step position (pid) to internal step ID
+    const pipeline = await this.getPipeline(repoId, pipelineNumber);
+    let stepId: number | null = null;
+    if (pipeline.workflows) {
+      for (const wf of pipeline.workflows) {
+        for (const step of wf.children || []) {
+          if (step.pid === stepPosition) {
+            stepId = step.id;
+            break;
+          }
+        }
+        if (stepId) break;
+      }
+    }
+    if (!stepId) {
+      throw new Error(`Step ${stepPosition} not found in pipeline ${pipelineNumber}`);
+    }
+
     const res = await fetch(
       `${WOODPECKER_URL}/api/repos/${repoId}/logs/${pipelineNumber}/${stepId}`,
       { headers: this.headers() },
     );
     if (!res.ok) throw new Error(`Woodpecker logs ${res.status}`);
     const lines = (await res.json()) as Array<{ data: string }>;
-    return lines.map((l) => l.data).join("\n");
+    // Log data is base64-encoded
+    return lines
+      .map((l) => {
+        try {
+          return Buffer.from(l.data, "base64").toString("utf-8");
+        } catch {
+          return l.data;
+        }
+      })
+      .join("");
   }
 }
