@@ -109,5 +109,4 @@ steps:
     environment:
       PLATFORM_DOMAIN:
         from_secret: platform_domain
-      SERVICE_PREFIX:
-        from_secret: service_prefix
+      SERVICE_PREFIX: ""

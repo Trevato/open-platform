@@ -20,12 +20,24 @@ export default defineConfig({
       testMatch: /global\.setup\.ts/,
     },
     {
+      // Platform tests (Forgejo, Headlamp, Woodpecker, etc.) — use Forgejo session
       name: "platform",
       testDir: "./platform",
+      testIgnore: /console\.spec\.ts/,
       dependencies: ["setup"],
       use: {
         ...devices["Desktop Chrome"],
         storageState: ".auth/state.json",
+      },
+    },
+    {
+      // Console tests use a separate session (better-auth, not Forgejo session)
+      name: "console",
+      testMatch: /platform\/console\.spec\.ts/,
+      dependencies: ["setup"],
+      use: {
+        ...devices["Desktop Chrome"],
+        storageState: ".auth/console-state.json",
       },
     },
     {

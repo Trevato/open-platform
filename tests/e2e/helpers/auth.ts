@@ -9,7 +9,7 @@ export async function forgejoLogin(page: Page): Promise<void> {
   await page.goto(`${urls.forgejo}/user/login`);
   await page.fill('input[name="user_name"]', admin.username);
   await page.fill('input[name="password"]', admin.password);
-  await page.click('button[type="submit"]');
+  await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL("**/", { timeout: 15_000 });
 }
 

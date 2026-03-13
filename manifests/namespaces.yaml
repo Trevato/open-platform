@@ -111,14 +111,3 @@ metadata:
   labels:
     open-platform.sh/managed: "true"
     open-platform.sh/tier: "dev"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-system-op-api
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "op-api"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"

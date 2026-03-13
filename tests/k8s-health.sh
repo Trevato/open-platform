@@ -66,7 +66,7 @@ for ns in $NAMESPACES; do
   if [ -z "$DEPLOYS" ]; then
     continue
   fi
-  UNREADY=$(echo "$DEPLOYS" | awk '$2 != $4 {print $1 "(" $2 "/" $4 ")"}' | head -5)
+  UNREADY=$(echo "$DEPLOYS" | awk '{split($2,a,"/"); if(a[1]!=a[2]) print $1 "(" $2 ")"}' | head -5)
   if [ -z "$UNREADY" ]; then
     check "$target_ns deploys" "ok"
   else
@@ -79,13 +79,15 @@ echo ""
 echo "Ingresses:"
 if [ -n "$NS_PREFIX" ]; then
   INGRESSES=$(kubectl get ingress -n "$NS_PREFIX" --no-headers 2>/dev/null || echo "")
+  HOST_COL=3
 else
   INGRESSES=$(kubectl get ingress --all-namespaces --no-headers 2>/dev/null | \
     grep -E "forgejo|woodpecker|headlamp|minio|oauth2" || echo "")
+  HOST_COL=4
 fi
 
 if [ -n "$INGRESSES" ]; then
-  NO_HOST=$(echo "$INGRESSES" | awk '$3 == "" || $3 == "*" {print $1}' | head -5)
+  NO_HOST=$(echo "$INGRESSES" | awk -v col="$HOST_COL" '$col == "" || $col == "*" {print $1}' | head -5)
   if [ -z "$NO_HOST" ]; then
     HOST_COUNT=$(echo "$INGRESSES" | wc -l | tr -d ' ')
     check "ingresses (${HOST_COUNT} found)" "ok"
