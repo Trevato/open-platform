@@ -27,7 +27,11 @@ branchesRouter.delete("/:org/:repo/*", async (req: Request, res) => {
       res.status(400).json({ error: "branch name is required" });
       return;
     }
-    await client.deleteBranch(org, repo, branchName);
+    const existed = await client.deleteBranch(org, repo, branchName);
+    if (!existed) {
+      res.status(404).json({ error: "Branch not found" });
+      return;
+    }
     res.json({ deleted: true });
   } catch (err: unknown) {
     handleErr(err, res);
@@ -38,7 +42,7 @@ branchesRouter.post("/:org/:repo", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { name, from } = req.body;
-    if (!name) {
+    if (!name?.trim()) {
       res.status(400).json({ error: "name is required" });
       return;
     }

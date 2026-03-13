@@ -28,7 +28,7 @@ reposRouter.post("/:org", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { name, description } = req.body;
-    if (!name) {
+    if (!name?.trim()) {
       res.status(400).json({ error: "name is required" });
       return;
     }
@@ -47,7 +47,11 @@ reposRouter.post("/:org", async (req, res) => {
 reposRouter.delete("/:org/:repo", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
-    await client.deleteRepo(req.params.org, req.params.repo);
+    const existed = await client.deleteRepo(req.params.org, req.params.repo);
+    if (!existed) {
+      res.status(404).json({ error: "Repository not found" });
+      return;
+    }
     res.json({ deleted: true });
   } catch (err: unknown) {
     handleErr(err, res);
@@ -58,7 +62,7 @@ reposRouter.post("/:org/:repo/generate", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { name, description, owner } = req.body;
-    if (!name) {
+    if (!name?.trim()) {
       res.status(400).json({ error: "name is required" });
       return;
     }

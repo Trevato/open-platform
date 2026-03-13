@@ -19,7 +19,7 @@ prsRouter.post("/:org/:repo", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { title, body, head, base } = req.body;
-    if (!title || !head) {
+    if (!title?.trim() || !head?.trim()) {
       res.status(400).json({ error: "title and head are required" });
       return;
     }
@@ -84,7 +84,7 @@ prsRouter.post("/:org/:repo/:number/comments", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { body } = req.body;
-    if (!body) {
+    if (!body?.trim()) {
       res.status(400).json({ error: "body is required" });
       return;
     }

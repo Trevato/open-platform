@@ -34,21 +34,21 @@ export function registerPipelineTools(
 
   server.tool(
     "get_pipeline_status",
-    "Get pipeline status (latest if no ID)",
+    "Get pipeline status (latest if no number specified)",
     {
       org: z.string().describe("Organization name"),
       repo: z.string().describe("Repository name"),
-      pipeline_id: z
+      pipeline_number: z
         .number()
         .optional()
-        .describe("Pipeline number (latest if omitted)"),
+        .describe("Sequential pipeline number from list (latest if omitted)"),
     },
-    async ({ org, repo, pipeline_id }) => {
+    async ({ org, repo, pipeline_number }) => {
       const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
       if (!wp) return text({ error: "Repo not found" });
 
-      if (pipeline_id) {
-        return text(await woodpecker.getPipeline(wp.id, pipeline_id));
+      if (pipeline_number) {
+        return text(await woodpecker.getPipeline(wp.id, pipeline_number));
       }
       const pipelines = await woodpecker.listPipelines(wp.id);
       return text(pipelines[0] || { status: "none" });
@@ -61,13 +61,13 @@ export function registerPipelineTools(
     {
       org: z.string().describe("Organization name"),
       repo: z.string().describe("Repository name"),
-      pipeline_id: z.number().describe("Pipeline number"),
+      pipeline_number: z.number().describe("Sequential pipeline number from list"),
       step: z.number().describe("Step number"),
     },
-    async ({ org, repo, pipeline_id, step }) => {
+    async ({ org, repo, pipeline_number, step }) => {
       const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
       if (!wp) return text({ error: "Repo not found" });
-      const logs = await woodpecker.getPipelineLogs(wp.id, pipeline_id, step);
+      const logs = await woodpecker.getPipelineLogs(wp.id, pipeline_number, step);
       return text({ logs });
     },
   );

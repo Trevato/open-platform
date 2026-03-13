@@ -25,7 +25,7 @@ issuesRouter.post("/:org/:repo", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { title, body, labels, milestone, assignees } = req.body;
-    if (!title) {
+    if (!title?.trim()) {
       res.status(400).json({ error: "title is required" });
       return;
     }
@@ -62,7 +62,7 @@ issuesRouter.post("/:org/:repo/:number/comments", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { body } = req.body;
-    if (!body) {
+    if (!body?.trim()) {
       res.status(400).json({ error: "body is required" });
       return;
     }
@@ -129,7 +129,7 @@ issuesRouter.post("/:org/:repo/milestones", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
     const { title, description, due_on } = req.body;
-    if (!title) {
+    if (!title?.trim()) {
       res.status(400).json({ error: "title is required" });
       return;
     }

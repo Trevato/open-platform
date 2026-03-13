@@ -7,7 +7,7 @@ const woodpecker = new WoodpeckerClient();
 
 async function getRepoId(org: string, repo: string): Promise<number> {
   const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
-  if (!wp) throw new Error(`Repo ${org}/${repo} not found in Woodpecker`);
+  if (!wp) throw new Error(`Woodpecker repo not found 404: ${org}/${repo}`);
   return wp.id;
 }
 
@@ -32,12 +32,12 @@ pipelinesRouter.post("/:org/:repo", async (req, res) => {
   }
 });
 
-pipelinesRouter.get("/:org/:repo/:id", async (req, res) => {
+pipelinesRouter.get("/:org/:repo/:number", async (req, res) => {
   try {
     const repoId = await getRepoId(req.params.org, req.params.repo);
     const pipeline = await woodpecker.getPipeline(
       repoId,
-      parseInt(req.params.id),
+      parseInt(req.params.number),
     );
     res.json(pipeline);
   } catch (err: unknown) {
@@ -45,13 +45,13 @@ pipelinesRouter.get("/:org/:repo/:id", async (req, res) => {
   }
 });
 
-pipelinesRouter.get("/:org/:repo/:id/logs", async (req, res) => {
+pipelinesRouter.get("/:org/:repo/:number/logs", async (req, res) => {
   try {
     const repoId = await getRepoId(req.params.org, req.params.repo);
     const step = parseInt((req.query.step as string) || "2");
     const logs = await woodpecker.getPipelineLogs(
       repoId,
-      parseInt(req.params.id),
+      parseInt(req.params.number),
       step,
     );
     res.json({ logs });

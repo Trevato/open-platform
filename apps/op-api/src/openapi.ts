@@ -907,7 +907,7 @@ export const spec: OpenAPIV3.Document = {
         },
       },
     },
-    "/api/v1/pipelines/{org}/{repo}/{id}": {
+    "/api/v1/pipelines/{org}/{repo}/{number}": {
       get: {
         tags: ["Pipelines"],
         summary: "Get pipeline",
@@ -925,11 +925,11 @@ export const spec: OpenAPIV3.Document = {
             schema: { type: "string" },
           },
           {
-            name: "id",
+            name: "number",
             in: "path",
             required: true,
             schema: { type: "integer" },
-            description: "Pipeline number",
+            description: "Sequential pipeline number (from the list response)",
           },
         ],
         responses: {
@@ -945,7 +945,7 @@ export const spec: OpenAPIV3.Document = {
         },
       },
     },
-    "/api/v1/pipelines/{org}/{repo}/{id}/logs": {
+    "/api/v1/pipelines/{org}/{repo}/{number}/logs": {
       get: {
         tags: ["Pipelines"],
         summary: "Get pipeline step logs",
@@ -963,11 +963,11 @@ export const spec: OpenAPIV3.Document = {
             schema: { type: "string" },
           },
           {
-            name: "id",
+            name: "number",
             in: "path",
             required: true,
             schema: { type: "integer" },
-            description: "Pipeline number",
+            description: "Sequential pipeline number (from the list response)",
           },
           {
             name: "step",

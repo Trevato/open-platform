@@ -93,7 +93,7 @@ export async function getApps(): Promise<AppInfo[]> {
 
   try {
     const nsList = await coreV1.listNamespace({
-      labelSelector: "open-platform.sh/tier=workload",
+      labelSelector: "open-platform.sh/tier=workload,!open-platform.sh/pr",
     });
 
     for (const ns of nsList.items || []) {

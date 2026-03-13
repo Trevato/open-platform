@@ -75,7 +75,7 @@ export class ForgejoClient {
     });
   }
 
-  async deleteOrg(name: string): Promise<void> {
+  async deleteOrg(name: string): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/orgs/${encodeURIComponent(name)}`,
       {
@@ -83,9 +83,12 @@ export class ForgejoClient {
         headers: this.headers(),
       },
     );
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Forgejo delete org ${res.status}`);
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
     }
+    return true;
   }
 
   // Repos
@@ -141,14 +144,17 @@ export class ForgejoClient {
     );
   }
 
-  async deleteRepo(owner: string, name: string): Promise<void> {
+  async deleteRepo(owner: string, name: string): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
       { method: "DELETE", headers: this.headers() },
     );
-    if (!res.ok && res.status !== 404) {
-      throw new Error(`Forgejo delete repo ${res.status}`);
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
     }
+    return true;
   }
 
   // Pull Requests
@@ -371,15 +377,21 @@ export class ForgejoClient {
     );
   }
 
-  async deleteBranch(owner: string, repo: string, name: string): Promise<void> {
+  async deleteBranch(owner: string, repo: string, name: string): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(name)}`,
       { method: "DELETE", headers: this.headers() },
     );
-    if (!res.ok && res.status !== 404) {
+    if (res.status === 404) return false;
+    if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Forgejo delete branch ${res.status}: ${body}`);
+      // Forgejo returns 500 for "object does not exist" — normalize to 404
+      if (body.includes("object does not exist")) {
+        return false;
+      }
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
     }
+    return true;
   }
 
   async createBranch(

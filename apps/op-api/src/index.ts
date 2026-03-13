@@ -23,9 +23,9 @@ app.use(express.json());
 // Health check (no auth)
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
 
-// Swagger UI at root
-app.use("/", swaggerUi.serve);
-app.get("/", swaggerUi.setup(spec, { customSiteTitle: "Open Platform API" }));
+// Swagger UI at /docs (scoped path avoids intercepting API file routes like package.json)
+app.use("/docs", swaggerUi.serve, swaggerUi.setup(spec, { customSiteTitle: "Open Platform API" }));
+app.get("/", (_req, res) => res.redirect("/docs"));
 app.get("/openapi.json", (_req, res) => res.json(spec));
 
 // REST API routes (all require Bearer token)
@@ -114,6 +114,22 @@ app.delete("/mcp", async (req, res) => {
   }
   res.status(200).end();
 });
+
+// JSON parse error handler — returns JSON instead of Express's default HTML
+app.use(
+  (
+    err: Error & { type?: string },
+    _req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => {
+    if (err.type === "entity.parse.failed") {
+      res.status(400).json({ error: "Invalid JSON in request body" });
+      return;
+    }
+    next(err);
+  },
+);
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 app.listen(PORT, () => {
