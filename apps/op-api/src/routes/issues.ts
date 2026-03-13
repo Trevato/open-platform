@@ -133,10 +133,13 @@ issuesRouter.post("/:org/:repo/milestones", async (req, res) => {
       res.status(400).json({ error: "title is required" });
       return;
     }
+    // Coerce date-only strings to full ISO datetime (Forgejo requires it)
+    const normalizedDueOn =
+      due_on && !due_on.includes("T") ? `${due_on}T00:00:00Z` : due_on;
     const milestone = await client.createMilestone(
       req.params.org,
       req.params.repo,
-      { title, description, due_on },
+      { title, description, due_on: normalizedDueOn },
     );
     res.status(201).json(milestone);
   } catch (err: unknown) {

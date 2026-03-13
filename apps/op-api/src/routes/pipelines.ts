@@ -48,7 +48,7 @@ pipelinesRouter.get("/:org/:repo/:id", async (req, res) => {
 pipelinesRouter.get("/:org/:repo/:id/logs", async (req, res) => {
   try {
     const repoId = await getRepoId(req.params.org, req.params.repo);
-    const step = parseInt((req.query.step as string) || "1");
+    const step = parseInt((req.query.step as string) || "2");
     const logs = await woodpecker.getPipelineLogs(
       repoId,
       parseInt(req.params.id),

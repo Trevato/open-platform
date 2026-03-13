@@ -57,7 +57,7 @@ reposRouter.delete("/:org/:repo", async (req, res) => {
 reposRouter.post("/:org/:repo/generate", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
-    const { name, description } = req.body;
+    const { name, description, owner } = req.body;
     if (!name) {
       res.status(400).json({ error: "name is required" });
       return;
@@ -66,7 +66,7 @@ reposRouter.post("/:org/:repo/generate", async (req, res) => {
       req.params.org,
       req.params.repo,
       {
-        owner: req.params.org,
+        owner: owner || req.params.org,
         name,
         description,
       },

@@ -41,7 +41,7 @@ const pipelineLogs = new Command("logs")
   .description("Show pipeline step logs")
   .argument("<org/repo>", "Repository (e.g. system/social)")
   .argument("<id>", "Pipeline number")
-  .option("--step <n>", "Step number", "1")
+  .option("--step <n>", "Step number (PIDs start at 2)", "2")
   .action(async (ref: string, id: string, opts) => {
     try {
       const { org, repo } = parseOrgRepo(ref);

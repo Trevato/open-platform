@@ -972,8 +972,8 @@ export const spec: OpenAPIV3.Document = {
           {
             name: "step",
             in: "query",
-            schema: { type: "integer", default: 1 },
-            description: "Step number",
+            schema: { type: "integer", default: 2 },
+            description: "Step position (PIDs start at 2; 1 is the workflow container)",
           },
         ],
         responses: {
@@ -1690,7 +1690,8 @@ export const spec: OpenAPIV3.Document = {
                   description: { type: "string" },
                   due_on: {
                     type: "string",
-                    description: "ISO 8601 date",
+                    description:
+                      "Due date (YYYY-MM-DD or full ISO 8601 datetime)",
                   },
                 },
               },

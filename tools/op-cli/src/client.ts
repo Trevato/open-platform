@@ -133,7 +133,7 @@ export class OpClient {
     org: string,
     repo: string,
     id: number,
-    step = 1,
+    step = 2,
   ): Promise<{ logs: string }> {
     return this.request("GET", `/api/v1/pipelines/${enc(org)}/${enc(repo)}/${id}/logs?step=${step}`);
   }

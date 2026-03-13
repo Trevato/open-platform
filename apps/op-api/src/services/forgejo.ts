@@ -280,13 +280,23 @@ export class ForgejoClient {
       assignees?: string[];
     },
   ): Promise<ForgejoIssue> {
-    return this.fetchJSON(
-      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}`,
-      {
-        method: "PATCH",
-        body: JSON.stringify(opts),
-      },
-    );
+    const base = `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}`;
+
+    // Forgejo's PATCH /issues/{n} doesn't reliably replace labels.
+    // Use the dedicated PUT /labels endpoint for atomic label replacement.
+    if (opts.labels !== undefined) {
+      await this.fetchJSON(`${base}/labels`, {
+        method: "PUT",
+        body: JSON.stringify({ labels: opts.labels }),
+      });
+    }
+
+    // PATCH remaining fields (omit labels since we handled them above)
+    const { labels: _labels, ...rest } = opts;
+    return this.fetchJSON(base, {
+      method: "PATCH",
+      body: JSON.stringify(rest),
+    });
   }
 
   async commentOnIssue(
