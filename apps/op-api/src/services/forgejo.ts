@@ -5,6 +5,12 @@ import type {
   ForgejoComment,
   ForgejoUser,
   ForgejoTeam,
+  ForgejoIssue,
+  ForgejoLabel,
+  ForgejoMilestone,
+  ForgejoBranch,
+  ForgejoContent,
+  ForgejoFileResponse,
 } from "./types.js";
 
 const FORGEJO_URL =
@@ -185,6 +191,222 @@ export class ForgejoClient {
   ): Promise<ForgejoComment[]> {
     return this.fetchAllPages(
       `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}/comments`,
+    );
+  }
+
+  // Issues
+
+  async listIssues(
+    owner: string,
+    repo: string,
+    opts?: {
+      state?: string;
+      labels?: string;
+      milestone?: string;
+      assignee?: string;
+      type?: string;
+    },
+  ): Promise<ForgejoIssue[]> {
+    const params = new URLSearchParams();
+    if (opts?.state) params.set("state", opts.state);
+    if (opts?.labels) params.set("labels", opts.labels);
+    if (opts?.milestone) params.set("milestone", opts.milestone);
+    if (opts?.assignee) params.set("assignedBy", opts.assignee);
+    params.set("type", opts?.type || "issues");
+    const qs = params.toString();
+    return this.fetchAllPages(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  async createIssue(
+    owner: string,
+    repo: string,
+    opts: {
+      title: string;
+      body?: string;
+      labels?: number[];
+      milestone?: number;
+      assignees?: string[];
+    },
+  ): Promise<ForgejoIssue> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues`,
+      {
+        method: "POST",
+        body: JSON.stringify(opts),
+      },
+    );
+  }
+
+  async updateIssue(
+    owner: string,
+    repo: string,
+    index: number,
+    opts: {
+      title?: string;
+      body?: string;
+      state?: string;
+      labels?: number[];
+      milestone?: number;
+      assignees?: string[];
+    },
+  ): Promise<ForgejoIssue> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(opts),
+      },
+    );
+  }
+
+  async commentOnIssue(
+    owner: string,
+    repo: string,
+    index: number,
+    body: string,
+  ): Promise<ForgejoComment> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}/comments`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      },
+    );
+  }
+
+  // Labels
+
+  async listLabels(owner: string, repo: string): Promise<ForgejoLabel[]> {
+    return this.fetchAllPages(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels`,
+    );
+  }
+
+  async createLabel(
+    owner: string,
+    repo: string,
+    opts: { name: string; color: string; description?: string },
+  ): Promise<ForgejoLabel> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/labels`,
+      {
+        method: "POST",
+        body: JSON.stringify(opts),
+      },
+    );
+  }
+
+  // Milestones
+
+  async listMilestones(
+    owner: string,
+    repo: string,
+    state?: string,
+  ): Promise<ForgejoMilestone[]> {
+    const qs = state ? `?state=${encodeURIComponent(state)}` : "";
+    return this.fetchAllPages(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones${qs}`,
+    );
+  }
+
+  async createMilestone(
+    owner: string,
+    repo: string,
+    opts: { title: string; description?: string; due_on?: string },
+  ): Promise<ForgejoMilestone> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/milestones`,
+      {
+        method: "POST",
+        body: JSON.stringify(opts),
+      },
+    );
+  }
+
+  // Branches
+
+  async listBranches(owner: string, repo: string): Promise<ForgejoBranch[]> {
+    return this.fetchAllPages(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+    );
+  }
+
+  async createBranch(
+    owner: string,
+    repo: string,
+    name: string,
+    from?: string,
+  ): Promise<ForgejoBranch> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          new_branch_name: name,
+          old_branch_name: from || "main",
+        }),
+      },
+    );
+  }
+
+  // File Contents
+
+  async getFileContent(
+    owner: string,
+    repo: string,
+    path: string,
+    ref?: string,
+  ): Promise<ForgejoContent> {
+    const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}${qs}`,
+    );
+  }
+
+  async createOrUpdateFile(
+    owner: string,
+    repo: string,
+    path: string,
+    opts: {
+      content: string;
+      message: string;
+      branch?: string;
+      sha?: string;
+    },
+  ): Promise<ForgejoFileResponse> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({
+          content: Buffer.from(opts.content).toString("base64"),
+          message: opts.message,
+          branch: opts.branch,
+          sha: opts.sha,
+        }),
+      },
+    );
+  }
+
+  // PR Reviews
+
+  async approvePR(
+    owner: string,
+    repo: string,
+    index: number,
+    body?: string,
+  ): Promise<void> {
+    await this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${index}/reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          event: "APPROVED",
+          body: body || "",
+        }),
+      },
     );
   }
 

@@ -249,4 +249,9 @@ push_content "hub" "${ROOT_DIR}/apps/hub"
 create_repo "console" "Platform console — dashboard, services, apps, users, terminal"
 push_content "console" "${ROOT_DIR}/apps/console"
 
+# ── Create and push op-api ─────────────────────────────────────────────────
+
+create_repo "op-api" "Platform API — REST and MCP interface for repos, pipelines, apps"
+push_content "op-api" "${ROOT_DIR}/apps/op-api"
+
 echo "System org setup complete."

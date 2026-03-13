@@ -53,6 +53,22 @@ prsRouter.post("/:org/:repo/:number/merge", async (req, res) => {
   }
 });
 
+prsRouter.post("/:org/:repo/:number/approve", async (req, res) => {
+  try {
+    const client = new ForgejoClient(req.user!.token);
+    await client.approvePR(
+      req.params.org,
+      req.params.repo,
+      parseInt(req.params.number),
+      req.body.body,
+    );
+    res.json({ approved: true });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({ error: message });
+  }
+});
+
 prsRouter.get("/:org/:repo/:number/comments", async (req, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);

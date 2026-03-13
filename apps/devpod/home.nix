@@ -37,6 +37,9 @@
     zellij
     yazi
 
+    # Browser (for Playwright MCP)
+    chromium
+
     # Formatters (for nixvim conform-nvim)
     prettierd
     stylua

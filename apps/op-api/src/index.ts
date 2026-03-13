@@ -1,5 +1,6 @@
 import express from "express";
 import { randomUUID } from "crypto";
+import swaggerUi from "swagger-ui-express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { authMiddleware, authenticateRequest } from "./auth.js";
@@ -11,12 +12,21 @@ import { pipelinesRouter } from "./routes/pipelines.js";
 import { appsRouter } from "./routes/apps.js";
 import { orgsRouter } from "./routes/orgs.js";
 import { usersRouter } from "./routes/users.js";
+import { issuesRouter } from "./routes/issues.js";
+import { branchesRouter } from "./routes/branches.js";
+import { filesRouter } from "./routes/files.js";
+import { spec } from "./openapi.js";
 
 const app = express();
 app.use(express.json());
 
 // Health check (no auth)
 app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
+
+// Swagger UI at root
+app.use("/", swaggerUi.serve);
+app.get("/", swaggerUi.setup(spec, { customSiteTitle: "Open Platform API" }));
+app.get("/openapi.json", (_req, res) => res.json(spec));
 
 // REST API routes (all require Bearer token)
 app.use("/api/v1", authMiddleware);
@@ -27,6 +37,9 @@ app.use("/api/v1/pipelines", pipelinesRouter);
 app.use("/api/v1/apps", appsRouter);
 app.use("/api/v1/orgs", orgsRouter);
 app.use("/api/v1/users", usersRouter);
+app.use("/api/v1/issues", issuesRouter);
+app.use("/api/v1/branches", branchesRouter);
+app.use("/api/v1/files", filesRouter);
 
 // MCP endpoint — Streamable HTTP with session management
 const transports = new Map<

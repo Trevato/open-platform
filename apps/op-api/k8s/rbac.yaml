@@ -10,17 +10,14 @@ metadata:
   name: op-api
 rules:
   - apiGroups: [""]
-    resources: ["pods", "services", "namespaces", "configmaps"]
-    verbs: ["get", "list", "watch"]
+    resources: ["pods", "namespaces"]
+    verbs: ["get", "list"]
   - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets"]
-    verbs: ["get", "list", "watch"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
-    verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["pods/exec", "pods/log"]
-    verbs: ["create", "get"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

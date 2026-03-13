@@ -62,6 +62,77 @@ export interface ForgejoTeam {
   units: string[];
 }
 
+export interface ForgejoLabel {
+  id: number;
+  name: string;
+  color: string;
+  description: string;
+  url: string;
+}
+
+export interface ForgejoMilestone {
+  id: number;
+  title: string;
+  description: string;
+  state: string;
+  open_issues: number;
+  closed_issues: number;
+  due_on: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForgejoIssue {
+  id: number;
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  user: { login: string; avatar_url: string };
+  labels: ForgejoLabel[];
+  milestone: ForgejoMilestone | null;
+  assignees: { login: string }[];
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ForgejoBranch {
+  name: string;
+  commit: {
+    id: string;
+    message: string;
+    author: { name: string; email: string };
+    timestamp: string;
+  };
+  protected: boolean;
+}
+
+export interface ForgejoContent {
+  name: string;
+  path: string;
+  type: "file" | "dir" | "symlink" | "submodule";
+  size: number;
+  encoding: string;
+  content: string;
+  sha: string;
+  url: string;
+  html_url: string;
+}
+
+export interface ForgejoFileResponse {
+  content: {
+    name: string;
+    path: string;
+    sha: string;
+    html_url: string;
+  };
+  commit: {
+    sha: string;
+    message: string;
+  };
+}
+
 export interface WoodpeckerPipeline {
   id: number;
   number: number;

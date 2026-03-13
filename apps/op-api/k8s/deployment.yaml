@@ -16,6 +16,8 @@ spec:
         app: op-api
     spec:
       serviceAccountName: op-api
+      imagePullSecrets:
+        - name: forgejo-registry
       containers:
         - name: app
           image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
@@ -25,7 +27,7 @@ spec:
             - name: FORGEJO_INTERNAL_URL
               value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
             - name: FORGEJO_URL
-              value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
+              value: "https://__SERVICE_PREFIX__forgejo.__PLATFORM_DOMAIN__"
             - name: WOODPECKER_INTERNAL_URL
               value: "http://woodpecker-server.woodpecker.svc:80"
             - name: WOODPECKER_ADMIN_TOKEN
@@ -34,9 +36,9 @@ spec:
                   name: op-api-secrets
                   key: woodpecker-admin-token
             - name: PLATFORM_DOMAIN
-              value: "PLATFORM_DOMAIN"
+              value: "__PLATFORM_DOMAIN__"
             - name: SERVICE_PREFIX
-              value: "SERVICE_PREFIX"
+              value: "__SERVICE_PREFIX__"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
           volumeMounts:

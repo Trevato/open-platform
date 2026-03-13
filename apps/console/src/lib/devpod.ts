@@ -821,6 +821,10 @@ export async function createInstanceDevPod(
                     name: "DOCKER_CERT_PATH",
                     value: "/certs/client",
                   },
+                  {
+                    name: "OP_API_URL",
+                    value: `http://op-api.op-system-op-api.svc:80`,
+                  },
                 ],
                 volumeMounts: [
                   { name: "home", mountPath: "/home/dev" },

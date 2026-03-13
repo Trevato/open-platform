@@ -324,7 +324,7 @@ else
     ORG_NAME=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
     echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
 
-    for SECRET_NAME in registry_username registry_token platform_domain registry_host service_prefix; do
+    for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix; do
       EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
       if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
         continue
@@ -335,13 +335,14 @@ else
         registry_token) VALUE="${ADMIN_PASS}" ;;
         platform_domain) VALUE="${DOMAIN}" ;;
         registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
+        registry_push_host) VALUE="forgejo-http.forgejo.svc.cluster.local:3000" ;;
         service_prefix) VALUE="${PREFIX}" ;;
       esac
 
-      # Skip secrets with empty values (Woodpecker rejects them)
+      # Woodpecker rejects empty values — use a space for empty secrets
+      # (pipelines trim whitespace before use)
       if [ -z "$VALUE" ]; then
-        echo "  Skipping '${SECRET_NAME}' (empty value)."
-        continue
+        VALUE=" "
       fi
 
       if wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \

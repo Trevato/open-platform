@@ -18,7 +18,7 @@ steps:
     image: woodpeckerci/plugin-kaniko
     settings:
       registry:
-        from_secret: registry_host
+        from_secret: registry_push_host
       repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}
       tags:
         - "pr-${CI_COMMIT_PULL_REQUEST}"

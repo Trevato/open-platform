@@ -126,6 +126,108 @@ export class OpClient {
     return this.request("GET", `/api/v1/pipelines/${enc(org)}/${enc(repo)}/${id}/logs?step=${step}`);
   }
 
+  // Issues
+  async listIssues(
+    org: string,
+    repo: string,
+    opts?: { state?: string; labels?: string; milestone?: string; assignee?: string },
+  ): Promise<Issue[]> {
+    const params = new URLSearchParams();
+    if (opts?.state) params.set("state", opts.state);
+    if (opts?.labels) params.set("labels", opts.labels);
+    if (opts?.milestone) params.set("milestone", opts.milestone);
+    if (opts?.assignee) params.set("assignee", opts.assignee);
+    const qs = params.toString();
+    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}${qs ? `?${qs}` : ""}`);
+  }
+
+  async createIssue(
+    org: string,
+    repo: string,
+    opts: { title: string; body?: string; labels?: number[]; milestone?: number; assignees?: string[] },
+  ): Promise<Issue> {
+    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}`, opts);
+  }
+
+  async updateIssue(
+    org: string,
+    repo: string,
+    number: number,
+    opts: { title?: string; body?: string; state?: string; labels?: number[]; milestone?: number; assignees?: string[] },
+  ): Promise<Issue> {
+    return this.request("PATCH", `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}`, opts);
+  }
+
+  async commentOnIssue(
+    org: string,
+    repo: string,
+    number: number,
+    body: string,
+  ): Promise<{ id: number; body: string }> {
+    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}/comments`, { body });
+  }
+
+  // Labels
+  async listLabels(org: string, repo: string): Promise<Label[]> {
+    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`);
+  }
+
+  async createLabel(
+    org: string,
+    repo: string,
+    opts: { name: string; color: string; description?: string },
+  ): Promise<Label> {
+    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`, opts);
+  }
+
+  // Milestones
+  async listMilestones(org: string, repo: string, state?: string): Promise<Milestone[]> {
+    const qs = state ? `?state=${enc(state)}` : "";
+    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones${qs}`);
+  }
+
+  async createMilestone(
+    org: string,
+    repo: string,
+    opts: { title: string; description?: string; due_on?: string },
+  ): Promise<Milestone> {
+    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones`, opts);
+  }
+
+  // Branches
+  async listBranches(org: string, repo: string): Promise<Branch[]> {
+    return this.request("GET", `/api/v1/branches/${enc(org)}/${enc(repo)}`);
+  }
+
+  async createBranch(org: string, repo: string, name: string, from = "main"): Promise<Branch> {
+    return this.request("POST", `/api/v1/branches/${enc(org)}/${enc(repo)}`, { name, from });
+  }
+
+  // Files
+  async getFileContent(
+    org: string,
+    repo: string,
+    path: string,
+    ref?: string,
+  ): Promise<FileContent> {
+    const qs = ref ? `?ref=${enc(ref)}` : "";
+    return this.request("GET", `/api/v1/files/${enc(org)}/${enc(repo)}/${path}${qs}`);
+  }
+
+  async createOrUpdateFile(
+    org: string,
+    repo: string,
+    path: string,
+    opts: { content: string; message: string; branch?: string; sha?: string },
+  ): Promise<FileCommitResult> {
+    return this.request("PUT", `/api/v1/files/${enc(org)}/${enc(repo)}/${path}`, opts);
+  }
+
+  // PR Reviews
+  async approvePR(org: string, repo: string, number: number, body?: string): Promise<{ approved: boolean }> {
+    return this.request("POST", `/api/v1/prs/${enc(org)}/${enc(repo)}/${number}/approve`, { body: body || "" });
+  }
+
   // Apps
   async listApps(): Promise<App[]> {
     return this.request("GET", "/api/v1/apps");
@@ -220,6 +322,62 @@ export interface Pipeline {
   started: number;
   finished: number;
   created: number;
+}
+
+export interface Label {
+  id: number;
+  name: string;
+  color: string;
+  description: string;
+}
+
+export interface Milestone {
+  id: number;
+  title: string;
+  description: string;
+  state: string;
+  open_issues: number;
+  closed_issues: number;
+  due_on: string | null;
+}
+
+export interface Issue {
+  id: number;
+  number: number;
+  title: string;
+  body: string;
+  state: string;
+  user: { login: string; avatar_url: string };
+  labels: Label[];
+  milestone: Milestone | null;
+  assignees: { login: string }[];
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Branch {
+  name: string;
+  commit: {
+    id: string;
+    message: string;
+    author: { name: string; email: string };
+    timestamp: string;
+  };
+  protected: boolean;
+}
+
+export interface FileContent {
+  name: string;
+  path: string;
+  sha: string;
+  size: number;
+  content: string;
+}
+
+export interface FileCommitResult {
+  content: { path: string; sha: string };
+  commit: { sha: string; message: string };
 }
 
 export interface App {

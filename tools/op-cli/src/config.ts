@@ -16,18 +16,25 @@ export function getConfigPath(): string {
 }
 
 export function getConfig(): OpConfig | null {
-  if (!existsSync(CONFIG_PATH)) return null;
-
-  try {
-    const raw = readFileSync(CONFIG_PATH, "utf-8");
-    const parsed = yaml.load(raw) as Record<string, unknown>;
-    if (!parsed || typeof parsed.url !== "string" || typeof parsed.token !== "string") {
-      return null;
+  if (existsSync(CONFIG_PATH)) {
+    try {
+      const raw = readFileSync(CONFIG_PATH, "utf-8");
+      const parsed = yaml.load(raw) as Record<string, unknown>;
+      if (parsed && typeof parsed.url === "string" && typeof parsed.token === "string") {
+        return { url: parsed.url, token: parsed.token };
+      }
+    } catch {
+      // fall through to env vars
     }
-    return { url: parsed.url, token: parsed.token };
-  } catch {
-    return null;
   }
+
+  const url = process.env.OP_API_URL;
+  const token = process.env.FORGEJO_TOKEN;
+  if (url && token) {
+    return { url, token };
+  }
+
+  return null;
 }
 
 export function requireConfig(): OpConfig {

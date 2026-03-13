@@ -72,8 +72,25 @@ const prMerge = new Command("merge")
     }
   });
 
+const prApprove = new Command("approve")
+  .description("Approve a pull request")
+  .argument("<org/repo>", "Repository (e.g. system/social)")
+  .argument("<number>", "PR number")
+  .option("--body <body>", "Review comment", "")
+  .action(async (ref: string, number: string, opts) => {
+    try {
+      const { org, repo } = parseOrgRepo(ref);
+      const client = new OpClient(requireConfig());
+      await client.approvePR(org, repo, parseInt(number, 10), opts.body);
+      process.stdout.write(`Approved PR #${number}\n`);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
 export const prCommand = new Command("pr")
   .description("Manage pull requests")
   .addCommand(prList)
   .addCommand(prCreate)
-  .addCommand(prMerge);
+  .addCommand(prMerge)
+  .addCommand(prApprove);

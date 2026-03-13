@@ -3,6 +3,19 @@
 # Nix + home-manager + nixvim developer environment for containers
 # =============================================================================
 
+# =============================================================================
+# op-cli build stage
+# =============================================================================
+
+FROM oven/bun:1 AS op-cli
+COPY tools/op-cli /build
+WORKDIR /build
+RUN bun install --frozen-lockfile && bun build --compile src/index.ts --outfile dist/op
+
+# =============================================================================
+# DevPod image
+# =============================================================================
+
 FROM ubuntu:24.04 AS base
 
 # Prevent interactive prompts during package installation
@@ -85,6 +98,12 @@ ENV PATH="/opt/npm-global/bin:${PATH}"
 
 # Install claude-code globally
 RUN npm install -g @anthropic-ai/claude-code
+
+# =============================================================================
+# op-cli
+# =============================================================================
+
+COPY --from=op-cli /build/dist/op /usr/local/bin/op
 
 # =============================================================================
 # Final setup

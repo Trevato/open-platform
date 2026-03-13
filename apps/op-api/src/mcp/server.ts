@@ -8,6 +8,9 @@ import { registerPrTools } from "./tools/pr-tools.js";
 import { registerPipelineTools } from "./tools/pipeline-tools.js";
 import { registerAppTools } from "./tools/app-tools.js";
 import { registerUserTools } from "./tools/user-tools.js";
+import { registerIssueTools } from "./tools/issue-tools.js";
+import { registerBranchTools } from "./tools/branch-tools.js";
+import { registerFileTools } from "./tools/file-tools.js";
 
 export function createMcpServer(user: AuthenticatedUser): McpServer {
   const server = new McpServer({
@@ -21,6 +24,9 @@ export function createMcpServer(user: AuthenticatedUser): McpServer {
   registerOrgTools(server, forgejo, user);
   registerRepoTools(server, forgejo);
   registerPrTools(server, forgejo);
+  registerIssueTools(server, forgejo);
+  registerBranchTools(server, forgejo);
+  registerFileTools(server, forgejo);
   registerPipelineTools(server, woodpecker);
   registerAppTools(server);
   registerUserTools(server, user);

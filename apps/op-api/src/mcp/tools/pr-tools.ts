@@ -85,4 +85,19 @@ export function registerPrTools(server: McpServer, forgejo: ForgejoClient) {
       return text({ commented: true, id: comment.id });
     },
   );
+
+  server.tool(
+    "approve_pr",
+    "Approve a pull request with an optional review comment.",
+    {
+      org: z.string().describe("Organization or owner name"),
+      repo: z.string().describe("Repository name"),
+      number: z.number().describe("PR number"),
+      body: z.string().default("").describe("Optional review comment"),
+    },
+    async ({ org, repo, number, body }) => {
+      await forgejo.approvePR(org, repo, number, body);
+      return text({ approved: true, number });
+    },
+  );
 }

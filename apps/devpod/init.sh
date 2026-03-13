@@ -100,9 +100,13 @@ if [ ! -f "$HOME/.devpod-initialized" ]; then
     echo "[init] Phase 3: WARNING — FORGEJO_TOKEN or FORGEJO_URL not set, skipping repo clone"
   fi
 
-  # MCP config for Claude Code (platform API)
+  # MCP config for Claude Code (platform API + Playwright)
   if [ -n "$OP_API_URL" ]; then
     mkdir -p "$HOME/.claude"
+
+    # Find Chromium binary from Nix store
+    CHROMIUM_BIN=$(which chromium 2>/dev/null || find /nix/store -maxdepth 3 -name chromium -path '*/bin/chromium' -type f 2>/dev/null | sort | tail -1)
+
     cat > "$HOME/.claude/.mcp.json" << MCPEOF
 {
   "mcpServers": {
@@ -112,10 +116,19 @@ if [ ! -f "$HOME/.devpod-initialized" ]; then
       "headers": {
         "Authorization": "Bearer ${FORGEJO_TOKEN}"
       }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["@playwright/mcp@latest", "--headless"]
     }
   }
 }
 MCPEOF
+
+    # Set Playwright to use Nix-provided Chromium
+    if [ -n "$CHROMIUM_BIN" ]; then
+      echo "export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$CHROMIUM_BIN\"" >> "$HOME/.zshenv"
+    fi
   fi
 
   touch "$HOME/.devpod-initialized"

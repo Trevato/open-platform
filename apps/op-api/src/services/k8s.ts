@@ -6,52 +6,59 @@ kc.loadFromDefault();
 
 const coreV1 = kc.makeApiClient(k8s.CoreV1Api);
 const appsV1 = kc.makeApiClient(k8s.AppsV1Api);
-
-const PLATFORM_DOMAIN = process.env.PLATFORM_DOMAIN || "";
-const SERVICE_PREFIX = process.env.SERVICE_PREFIX || "";
+const networkingV1 = kc.makeApiClient(k8s.NetworkingV1Api);
 
 const PLATFORM_SERVICES = [
   {
     name: "forgejo",
     namespace: "forgejo",
     labelSelector: "app.kubernetes.io/name=forgejo",
-    url: `https://${SERVICE_PREFIX}forgejo.${PLATFORM_DOMAIN}`,
   },
   {
     name: "woodpecker",
     namespace: "woodpecker",
     labelSelector: "app.kubernetes.io/name=server",
-    url: `https://${SERVICE_PREFIX}ci.${PLATFORM_DOMAIN}`,
   },
   {
     name: "headlamp",
     namespace: "headlamp",
     labelSelector: "app.kubernetes.io/name=headlamp",
-    url: `https://${SERVICE_PREFIX}headlamp.${PLATFORM_DOMAIN}`,
   },
   {
     name: "minio",
     namespace: "minio",
     labelSelector: "app=minio",
-    url: `https://${SERVICE_PREFIX}minio.${PLATFORM_DOMAIN}`,
   },
   {
     name: "postgres",
     namespace: "postgres",
     labelSelector: "cnpg.io/cluster=postgres",
-    url: "",
   },
 ];
+
+/** Read the first ingress host in a namespace, or empty string. */
+async function getIngressUrl(namespace: string): Promise<string> {
+  try {
+    const ingList = await networkingV1.listNamespacedIngress({ namespace });
+    const host = ingList.items?.[0]?.spec?.rules?.[0]?.host;
+    return host ? `https://${host}` : "";
+  } catch {
+    return "";
+  }
+}
 
 export async function getServiceStatuses(): Promise<ServiceStatus[]> {
   const statuses: ServiceStatus[] = [];
 
   for (const svc of PLATFORM_SERVICES) {
     try {
-      const podList = await coreV1.listNamespacedPod({
-        namespace: svc.namespace,
-        labelSelector: svc.labelSelector,
-      });
+      const [podList, url] = await Promise.all([
+        coreV1.listNamespacedPod({
+          namespace: svc.namespace,
+          labelSelector: svc.labelSelector,
+        }),
+        getIngressUrl(svc.namespace),
+      ]);
       const pods = podList.items || [];
       const ready = pods.filter((p: k8s.V1Pod) =>
         p.status?.conditions?.some(
@@ -65,7 +72,7 @@ export async function getServiceStatuses(): Promise<ServiceStatus[]> {
         namespace: svc.namespace,
         ready: ready > 0,
         replicas: { ready, total: pods.length },
-        url: svc.url,
+        url,
       });
     } catch {
       statuses.push({
@@ -73,7 +80,7 @@ export async function getServiceStatuses(): Promise<ServiceStatus[]> {
         namespace: svc.namespace,
         ready: false,
         replicas: { ready: 0, total: 0 },
-        url: svc.url,
+        url: "",
       });
     }
   }
@@ -95,9 +102,10 @@ export async function getApps(): Promise<AppInfo[]> {
       const namespace = ns.metadata?.name || "";
 
       try {
-        const depList = await appsV1.listNamespacedDeployment({
-          namespace,
-        });
+        const [depList, url] = await Promise.all([
+          appsV1.listNamespacedDeployment({ namespace }),
+          getIngressUrl(namespace),
+        ]);
         const dep = depList.items?.[0];
         const ready = dep?.status?.readyReplicas || 0;
         const desired = dep?.spec?.replicas || 0;
@@ -113,7 +121,7 @@ export async function getApps(): Promise<AppInfo[]> {
                 ? "degraded"
                 : "stopped",
           replicas: { ready, desired },
-          url: `https://${SERVICE_PREFIX}${repo}.${PLATFORM_DOMAIN}`,
+          url,
         });
       } catch {
         apps.push({
@@ -122,7 +130,7 @@ export async function getApps(): Promise<AppInfo[]> {
           namespace,
           status: "stopped",
           replicas: { ready: 0, desired: 0 },
-          url: `https://${SERVICE_PREFIX}${repo}.${PLATFORM_DOMAIN}`,
+          url: "",
         });
       }
     }
@@ -139,9 +147,10 @@ export async function getAppStatus(
 ): Promise<AppInfo | null> {
   const namespace = `op-${org}-${repo}`;
   try {
-    const depList = await appsV1.listNamespacedDeployment({
-      namespace,
-    });
+    const [depList, url] = await Promise.all([
+      appsV1.listNamespacedDeployment({ namespace }),
+      getIngressUrl(namespace),
+    ]);
     const dep = depList.items?.[0];
     if (!dep) return null;
 
@@ -159,7 +168,7 @@ export async function getAppStatus(
             ? "degraded"
             : "stopped",
       replicas: { ready, desired },
-      url: `https://${SERVICE_PREFIX}${repo}.${PLATFORM_DOMAIN}`,
+      url,
     };
   } catch {
     return null;
