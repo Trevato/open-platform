@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ForgejoClient } from "../services/forgejo.js";
+import { handleErr } from "./error.js";
 
 export const prsRouter = Router();
 
@@ -10,8 +11,7 @@ prsRouter.get("/:org/:repo", async (req, res) => {
     const prs = await client.listPRs(req.params.org, req.params.repo, state);
     res.json(prs);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -31,8 +31,7 @@ prsRouter.post("/:org/:repo", async (req, res) => {
     });
     res.status(201).json(pr);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -48,8 +47,7 @@ prsRouter.post("/:org/:repo/:number/merge", async (req, res) => {
     );
     res.json({ merged: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -64,8 +62,7 @@ prsRouter.post("/:org/:repo/:number/approve", async (req, res) => {
     );
     res.json({ approved: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -79,8 +76,7 @@ prsRouter.get("/:org/:repo/:number/comments", async (req, res) => {
     );
     res.json(comments);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -100,7 +96,6 @@ prsRouter.post("/:org/:repo/:number/comments", async (req, res) => {
     );
     res.status(201).json(comment);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

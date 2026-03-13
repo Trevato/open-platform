@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getApps, getAppStatus } from "../services/k8s.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
+import { handleErr } from "./error.js";
 
 export const appsRouter = Router();
 const woodpecker = new WoodpeckerClient();
@@ -10,8 +11,7 @@ appsRouter.get("/", async (_req, res) => {
     const apps = await getApps();
     res.json(apps);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -24,8 +24,7 @@ appsRouter.get("/:org/:repo", async (req, res) => {
     }
     res.json(app);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -42,7 +41,6 @@ appsRouter.post("/:org/:repo", async (req, res) => {
     const pipeline = await woodpecker.triggerPipeline(wp.id, branch);
     res.status(201).json(pipeline);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

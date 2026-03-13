@@ -1,5 +1,6 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { ForgejoClient } from "../services/forgejo.js";
+import { handleErr } from "./error.js";
 
 export const branchesRouter = Router();
 
@@ -9,19 +10,27 @@ branchesRouter.get("/:org/:repo", async (req, res) => {
     const branches = await client.listBranches(req.params.org, req.params.repo);
     res.json(branches);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
-branchesRouter.delete("/:org/:repo/:name", async (req, res) => {
+// Wildcard route to support branch names with slashes (e.g. feat/my-feature)
+branchesRouter.delete("/:org/:repo/*", async (req: Request, res) => {
   try {
     const client = new ForgejoClient(req.user!.token);
-    await client.deleteBranch(req.params.org, req.params.repo, req.params.name);
+    const parts = req.path.split("/").filter(Boolean);
+    // parts[0] = org, parts[1] = repo, rest = branch name
+    const org = parts[0];
+    const repo = parts[1];
+    const branchName = parts.slice(2).join("/");
+    if (!branchName) {
+      res.status(400).json({ error: "branch name is required" });
+      return;
+    }
+    await client.deleteBranch(org, repo, branchName);
     res.json({ deleted: true });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -41,7 +50,6 @@ branchesRouter.post("/:org/:repo", async (req, res) => {
     );
     res.status(201).json(branch);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

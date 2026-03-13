@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { WoodpeckerClient } from "../services/woodpecker.js";
+import { handleErr } from "./error.js";
 
 export const pipelinesRouter = Router();
 const woodpecker = new WoodpeckerClient();
@@ -16,8 +17,7 @@ pipelinesRouter.get("/:org/:repo", async (req, res) => {
     const pipelines = await woodpecker.listPipelines(repoId);
     res.json(pipelines);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -28,8 +28,7 @@ pipelinesRouter.post("/:org/:repo", async (req, res) => {
     const pipeline = await woodpecker.triggerPipeline(repoId, branch);
     res.status(201).json(pipeline);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -42,8 +41,7 @@ pipelinesRouter.get("/:org/:repo/:id", async (req, res) => {
     );
     res.json(pipeline);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -58,7 +56,6 @@ pipelinesRouter.get("/:org/:repo/:id/logs", async (req, res) => {
     );
     res.json({ logs });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ForgejoClient } from "../services/forgejo.js";
+import { handleErr } from "./error.js";
 
 export const orgsRouter = Router();
 
@@ -9,8 +10,7 @@ orgsRouter.get("/", async (req, res) => {
     const orgs = await client.listOrgs();
     res.json(orgs);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -29,7 +29,6 @@ orgsRouter.post("/", async (req, res) => {
     const org = await client.createOrg(name, { description });
     res.status(201).json(org);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });

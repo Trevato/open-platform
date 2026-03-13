@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ForgejoClient } from "../services/forgejo.js";
+import { handleErr } from "./error.js";
 
 export const issuesRouter = Router();
 
@@ -16,8 +17,7 @@ issuesRouter.get("/:org/:repo", async (req, res) => {
     });
     res.json(issues);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -38,8 +38,7 @@ issuesRouter.post("/:org/:repo", async (req, res) => {
     });
     res.status(201).json(issue);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -55,8 +54,7 @@ issuesRouter.patch("/:org/:repo/:number", async (req, res) => {
     );
     res.json(issue);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -76,8 +74,7 @@ issuesRouter.post("/:org/:repo/:number/comments", async (req, res) => {
     );
     res.status(201).json(comment);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -89,8 +86,7 @@ issuesRouter.get("/:org/:repo/labels", async (req, res) => {
     const labels = await client.listLabels(req.params.org, req.params.repo);
     res.json(labels);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -109,8 +105,7 @@ issuesRouter.post("/:org/:repo/labels", async (req, res) => {
     });
     res.status(201).json(label);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -126,8 +121,7 @@ issuesRouter.get("/:org/:repo/milestones", async (req, res) => {
     );
     res.json(milestones);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
 
@@ -146,7 +140,6 @@ issuesRouter.post("/:org/:repo/milestones", async (req, res) => {
     );
     res.status(201).json(milestone);
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    res.status(500).json({ error: message });
+    handleErr(err, res);
   }
 });
