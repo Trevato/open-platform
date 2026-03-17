@@ -446,37 +446,6 @@ export async function getDevPodStatus(username: string): Promise<DevPodStatus> {
   }
 }
 
-export async function getDevPodPodName(
-  username: string,
-): Promise<string | null> {
-  const { coreV1 } = getHostClients();
-
-  try {
-    const pods = await coreV1.listNamespacedPod({
-      namespace: NAMESPACE,
-      labelSelector: `app=devpod-${username}`,
-    });
-
-    for (const pod of pods.items) {
-      const ready = pod.status?.conditions?.some(
-        (c) => c.type === "Ready" && c.status === "True",
-      );
-      if (ready && pod.metadata?.name) return pod.metadata.name;
-    }
-
-    // Fall back to any running pod
-    for (const pod of pods.items) {
-      if (pod.status?.phase === "Running" && pod.metadata?.name) {
-        return pod.metadata.name;
-      }
-    }
-  } catch {
-    // listing failed
-  }
-
-  return null;
-}
-
 export async function ensureHostInfrastructure(): Promise<void> {
   const { coreV1, rbacV1 } = getHostClients();
   await ensureNamespace(coreV1, NAMESPACE);
@@ -528,7 +497,7 @@ async function getInstanceForgejoCredentials(
   coreV1: k8s.CoreV1Api,
   slug: string,
 ): Promise<{ username: string; url: string } | null> {
-  const domain = process.env.PLATFORM_DOMAIN || "open-platform.sh";
+  const domain = process.env.PLATFORM_DOMAIN || "";
   try {
     const secret = await coreV1.readNamespacedSecret({
       name: "forgejo-admin-credentials",
@@ -829,35 +798,4 @@ export async function getInstanceDevPodStatus(
   } catch {
     return { exists: false, replicas: 0, readyReplicas: 0 };
   }
-}
-
-export async function getInstanceDevPodPodName(
-  slug: string,
-  username: string,
-): Promise<string | null> {
-  const { coreV1 } = await getInstanceClients(slug);
-
-  try {
-    const pods = await coreV1.listNamespacedPod({
-      namespace: NAMESPACE,
-      labelSelector: `app=devpod-${username}`,
-    });
-
-    for (const pod of pods.items) {
-      const ready = pod.status?.conditions?.some(
-        (c) => c.type === "Ready" && c.status === "True",
-      );
-      if (ready && pod.metadata?.name) return pod.metadata.name;
-    }
-
-    for (const pod of pods.items) {
-      if (pod.status?.phase === "Running" && pod.metadata?.name) {
-        return pod.metadata.name;
-      }
-    }
-  } catch {
-    // listing failed
-  }
-
-  return null;
 }

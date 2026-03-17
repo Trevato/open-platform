@@ -108,6 +108,11 @@ const app = new Elysia()
     }
   })
 
+  // Root → Swagger docs
+  .get("/", ({ redirect }) => redirect("/swagger"), {
+    detail: { hide: true },
+  })
+
   // Health check (no auth)
   .get("/healthz", () => ({ status: "ok" }), {
     detail: { tags: ["Health"], security: [] },

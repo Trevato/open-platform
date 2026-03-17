@@ -85,11 +85,13 @@ export function TerminalView({
         fitAddon.fit();
         // Always send current dimensions — fit() only triggers onResize
         // if dimensions changed, but the PTY needs them on first connect.
-        ws.send(JSON.stringify({
-          type: "resize",
-          cols: term.cols,
-          rows: term.rows,
-        }));
+        ws.send(
+          JSON.stringify({
+            type: "resize",
+            cols: term.cols,
+            rows: term.rows,
+          }),
+        );
       };
 
       // Start observing container resize after fonts are ready
@@ -183,8 +185,7 @@ export function TerminalView({
           ws.send(JSON.stringify({ type: "resize", cols, rows }));
         }
       });
-    } catch (err) {
-      console.error("Terminal init error:", err);
+    } catch {
       setStatus("error");
       setErrorMessage("Failed to initialize terminal.");
     }
@@ -227,8 +228,14 @@ export function TerminalView({
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {status === "connected" && (
             <span className="text-sm text-muted" style={{ opacity: 0.6 }}>
-              {navigator?.platform?.includes("Mac") ? "\u2318C" : "Ctrl+Shift+C"} copy{" "}
-              {navigator?.platform?.includes("Mac") ? "\u2318V" : "Ctrl+Shift+V"} paste
+              {navigator?.platform?.includes("Mac")
+                ? "\u2318C"
+                : "Ctrl+Shift+C"}{" "}
+              copy{" "}
+              {navigator?.platform?.includes("Mac")
+                ? "\u2318V"
+                : "Ctrl+Shift+V"}{" "}
+              paste
             </span>
           )}
           {(status === "disconnected" || status === "error") && (
