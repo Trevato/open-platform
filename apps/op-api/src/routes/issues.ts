@@ -42,8 +42,12 @@ export const issuesPlugin = new Elysia({ prefix: "/issues" })
   .get(
     "/:org/:repo/:number",
     async ({ params: { org, repo, number }, user, set }) => {
+      if (!/^\d+$/.test(number)) {
+        set.status = 400;
+        return { error: "Invalid issue number" };
+      }
       const index = parseInt(number);
-      if (isNaN(index) || index < 1) {
+      if (index < 1) {
         set.status = 400;
         return { error: "Invalid issue number" };
       }
@@ -83,7 +87,11 @@ export const issuesPlugin = new Elysia({ prefix: "/issues" })
   )
   .patch(
     "/:org/:repo/:number",
-    async ({ params: { org, repo, number }, body, user }) => {
+    async ({ params: { org, repo, number }, body, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid issue number" };
+      }
       const client = new ForgejoClient(user.token);
       return client.updateIssue(org, repo, parseInt(number), {
         title: body.title,
@@ -110,6 +118,10 @@ export const issuesPlugin = new Elysia({ prefix: "/issues" })
   .post(
     "/:org/:repo/:number/comments",
     async ({ params: { org, repo, number }, body, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid issue number" };
+      }
       const client = new ForgejoClient(user.token);
       const comment = await client.commentOnIssue(
         org,

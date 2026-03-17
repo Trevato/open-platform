@@ -12,7 +12,7 @@ const pipelineParams = t.Object({
 
 async function getRepoId(org: string, repo: string): Promise<number> {
   const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
-  if (!wp) throw new Error(`Woodpecker repo not found 404: ${org}/${repo}`);
+  if (!wp) throw new Error(`CI repository not found: ${org}/${repo}`);
   return wp.id;
 }
 
@@ -21,8 +21,12 @@ function parsePipelineNumber(
   number: string,
   set: { status?: number | string },
 ): number | { error: string } {
+  if (!/^\d+$/.test(number)) {
+    set.status = 400;
+    return { error: `Invalid pipeline number: ${number}` };
+  }
   const parsed = parseInt(number);
-  if (isNaN(parsed) || parsed < 1) {
+  if (parsed < 1) {
     set.status = 400;
     return { error: `Invalid pipeline number: ${number}` };
   }
@@ -94,8 +98,12 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
       // Validate step query param
       let step = 2;
       if (query.step) {
+        if (!/^\d+$/.test(query.step)) {
+          set.status = 400;
+          return { error: `Invalid step number: ${query.step}` };
+        }
         step = parseInt(query.step);
-        if (isNaN(step) || step < 1) {
+        if (step < 1) {
           set.status = 400;
           return { error: `Invalid step number: ${query.step}` };
         }

@@ -31,8 +31,12 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   .get(
     "/:org/:repo/:number",
     async ({ params: { org, repo, number }, user, set }) => {
+      if (!/^\d+$/.test(number)) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
       const index = parseInt(number);
-      if (isNaN(index) || index < 1) {
+      if (index < 1) {
         set.status = 400;
         return { error: "Invalid PR number" };
       }
@@ -71,6 +75,10 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   .post(
     "/:org/:repo/:number/merge",
     async ({ params: { org, repo, number }, body, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
       const method = body.method || "merge";
       const validMethods = [
         "merge",
@@ -116,7 +124,11 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   )
   .post(
     "/:org/:repo/:number/approve",
-    async ({ params: { org, repo, number }, body, user }) => {
+    async ({ params: { org, repo, number }, body, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
       const client = new ForgejoClient(user.token);
       await client.approvePR(org, repo, parseInt(number), body.body);
       return { approved: true };
@@ -131,7 +143,11 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   )
   .get(
     "/:org/:repo/:number/comments",
-    async ({ params: { org, repo, number }, user }) => {
+    async ({ params: { org, repo, number }, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
       const client = new ForgejoClient(user.token);
       return client.listPRComments(org, repo, parseInt(number));
     },
@@ -143,6 +159,10 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   .post(
     "/:org/:repo/:number/comments",
     async ({ params: { org, repo, number }, body, user, set }) => {
+      if (!/^\d+$/.test(number) || parseInt(number) < 1) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
       const client = new ForgejoClient(user.token);
       const comment = await client.commentOnPR(
         org,

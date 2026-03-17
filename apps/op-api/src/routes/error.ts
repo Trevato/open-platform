@@ -126,11 +126,23 @@ export const errorPlugin = new Elysia({ name: "error-handler" })
       let detail = "Validation failed";
       try {
         const parsed = JSON.parse(error.message);
-        const parts: string[] = [];
-        if (parsed.property) parts.push(parsed.property);
-        if (parsed.summary) parts.push(parsed.summary);
-        if (parts.length > 0)
+        // Elysia validation errors include an `errors` array with all failures
+        if (Array.isArray(parsed.errors) && parsed.errors.length > 0) {
+          const items = parsed.errors.map(
+            (e: { path?: string; summary?: string; message?: string }) => {
+              const field = e.path || "";
+              const desc = e.summary || e.message || "";
+              return field ? `${field}: ${desc}` : desc;
+            },
+          );
+          detail = `Validation failed: ${items.join("; ")}`;
+        } else if (parsed.property || parsed.summary) {
+          // Fallback to top-level fields (single error)
+          const parts: string[] = [];
+          if (parsed.property) parts.push(parsed.property);
+          if (parsed.summary) parts.push(parsed.summary);
           detail = `Validation failed: ${parts.join(" — ")}`;
+        }
       } catch {
         if (error.message) detail = `Validation failed: ${error.message}`;
       }
