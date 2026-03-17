@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getInstanceAccess } from "@/lib/instance-access";
+import { opApiGet } from "@/lib/op-api";
 import { DevPodList } from "@/app/components/dev-pod-list";
 
 export default async function InstanceDevPodsPage({
@@ -8,8 +8,12 @@ export default async function InstanceDevPodsPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const access = await getInstanceAccess(slug);
-  if (!access) notFound();
+
+  try {
+    await opApiGet(`/api/v1/instances/${encodeURIComponent(slug)}`);
+  } catch {
+    notFound();
+  }
 
   return (
     <div className="container">

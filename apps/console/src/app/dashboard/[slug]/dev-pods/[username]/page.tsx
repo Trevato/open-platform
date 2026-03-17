@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { getInstanceAccess } from "@/lib/instance-access";
-import pool from "@/lib/db";
+import { opApiGet } from "@/lib/op-api";
 import { TerminalView } from "@/app/dashboard/[slug]/terminal/terminal-view";
 
 export default async function InstanceDevPodTerminalPage({
@@ -10,16 +9,23 @@ export default async function InstanceDevPodTerminalPage({
   params: Promise<{ slug: string; username: string }>;
 }) {
   const { slug, username } = await params;
-  const access = await getInstanceAccess(slug);
-  if (!access) notFound();
 
-  const result = await pool.query(
-    `SELECT status FROM dev_pods WHERE forgejo_username = $1 AND instance_slug = $2`,
-    [username, slug]
-  );
+  try {
+    await opApiGet(`/api/v1/instances/${encodeURIComponent(slug)}`);
+  } catch {
+    notFound();
+  }
 
-  if (result.rows.length === 0) notFound();
-  if (result.rows[0].status !== "running") redirect(`/dashboard/${slug}/dev-pods`);
+  let pod;
+  try {
+    pod = await opApiGet(
+      `/api/v1/instances/${encodeURIComponent(slug)}/dev-pods/${encodeURIComponent(username)}`
+    );
+  } catch {
+    notFound();
+  }
+
+  if (pod.status !== "running") redirect(`/dashboard/${slug}/dev-pods`);
 
   return (
     <div className="terminal-page">

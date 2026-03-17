@@ -5,6 +5,18 @@ import { usePathname } from "next/navigation";
 
 const navItems = [
   {
+    href: "/dashboard",
+    label: "Instances",
+    icon: (
+      <>
+        <rect x="2" y="2" width="20" height="8" rx="2" />
+        <rect x="2" y="14" width="20" height="8" rx="2" />
+        <circle cx="7" cy="6" r="1" fill="currentColor" />
+        <circle cx="7" cy="18" r="1" fill="currentColor" />
+      </>
+    ),
+  },
+  {
     href: "/dashboard/apps",
     label: "Apps",
     icon: (
@@ -83,7 +95,10 @@ export function PlatformNav() {
     <aside className="sidebar">
       <nav className="sidebar-nav">
         {navItems.map((item) => {
-          const active = pathname.startsWith(item.href);
+          const active =
+            item.href === "/dashboard"
+              ? pathname === "/dashboard"
+              : pathname.startsWith(item.href);
 
           return (
             <Link

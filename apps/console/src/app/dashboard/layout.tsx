@@ -39,13 +39,15 @@ export default async function DashboardLayout({
           <ClusterSelector isAdmin={isAdmin} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Link
-            href="/dashboard/new"
-            className="btn btn-accent btn-sm"
-            style={{ fontSize: 13 }}
-          >
-            New Instance
-          </Link>
+          {process.env.NEXT_PUBLIC_PROVISIONER_ENABLED === "true" && (
+            <Link
+              href="/dashboard/new"
+              className="btn btn-accent btn-sm"
+              style={{ fontSize: 13 }}
+            >
+              New Instance
+            </Link>
+          )}
           <UserMenu />
         </div>
       </nav>

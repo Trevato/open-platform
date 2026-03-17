@@ -197,9 +197,9 @@ steps:
                       value: "https://$REGISTRY_HOST"
                     - name: AUTH_FORGEJO_INTERNAL_URL
                       value: "https://$REGISTRY_HOST"
-                    - name: MANAGED_DOMAIN
+                    - name: PLATFORM_DOMAIN
                       value: "$PLATFORM_DOMAIN"
-                    - name: NEXT_PUBLIC_MANAGED_DOMAIN
+                    - name: NEXT_PUBLIC_PLATFORM_DOMAIN
                       value: "$PLATFORM_DOMAIN"
                     - name: NODE_EXTRA_CA_CERTS
                       value: "/etc/ssl/custom/ca.crt"

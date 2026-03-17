@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInstanceAccess } from "@/lib/instance-access";
+import { opApiGet } from "@/lib/op-api";
 
 export const dynamic = "force-dynamic";
 
@@ -8,27 +8,17 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const access = await getInstanceAccess(slug);
-
-  if (!access) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const { instance } = access;
-
-  if (instance.status !== "ready") {
-    return NextResponse.json(
-      { error: "Instance must be ready to download kubeconfig" },
-      { status: 400 }
+  try {
+    const data = await opApiGet(
+      `/api/v1/instances/${encodeURIComponent(slug)}/kubeconfig`
     );
+    return NextResponse.json(data);
+  } catch (e: any) {
+    if (e.message === "Not authenticated") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const match = e.message?.match(/op-api (\d{3}):/);
+    const status = match ? parseInt(match[1]) : 500;
+    return NextResponse.json({ error: e.message }, { status });
   }
-
-  if (!instance.kubeconfig) {
-    return NextResponse.json(
-      { error: "Kubeconfig not yet available" },
-      { status: 404 }
-    );
-  }
-
-  return NextResponse.json({ kubeconfig: instance.kubeconfig });
 }

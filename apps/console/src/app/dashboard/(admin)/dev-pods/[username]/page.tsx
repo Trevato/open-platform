@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { headers } from "next/headers";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
-import pool from "@/lib/db";
+import { opApiGet } from "@/lib/op-api";
 import { TerminalView } from "@/app/dashboard/[slug]/terminal/terminal-view";
 
 export default async function DevPodTerminalPage({
@@ -10,21 +10,19 @@ export default async function DevPodTerminalPage({
 }: {
   params: Promise<{ username: string }>;
 }) {
-
   const { username } = await params;
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect("/");
 
-  const result = await pool.query(
-    `SELECT status, forgejo_username FROM dev_pods WHERE forgejo_username = $1 AND instance_slug IS NULL`,
-    [username]
-  );
-
-  if (result.rows.length === 0) {
+  let pod;
+  try {
+    const data = await opApiGet(
+      `/api/v1/dev-pods/${encodeURIComponent(username)}`
+    );
+    pod = data;
+  } catch {
     notFound();
   }
-
-  const pod = result.rows[0];
 
   if (pod.status !== "running") {
     redirect("/dashboard/dev-pods");

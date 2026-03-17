@@ -1,8 +1,9 @@
 import Link from "next/link";
-import pool from "@/lib/db";
+import { redirect } from "next/navigation";
+import { opApiGet } from "@/lib/op-api";
 import { InstanceList } from "@/app/components/instance-list";
 import { type Instance } from "@/app/components/instance-card";
-import { PlatformDashboard } from "@/app/components/platform-dashboard";
+import { PlatformNav } from "@/app/components/platform-nav";
 import { getSessionWithRole } from "@/lib/session-role";
 
 function PlusIcon() {
@@ -46,37 +47,19 @@ function EmptyIcon() {
 
 export default async function DashboardPage() {
   const result = await getSessionWithRole();
-  if (!result) return null;
-  const { session, role } = result;
+  if (!result) redirect("/");
+  const { role } = result;
   const isAdmin = role === "admin";
 
   let instances: Instance[] = [];
 
-  if (isAdmin) {
-    // Admin sees all instances with owner info
-    const allInstances = await pool.query(
-      `SELECT i.id, i.slug, i.display_name, i.status, i.tier, i.created_at,
-              c.name as owner_name
-       FROM instances i
-       JOIN customers c ON c.id = i.customer_id
-       ORDER BY i.created_at DESC`
+  try {
+    const data = await opApiGet(
+      `/api/v1/instances${isAdmin ? "?all=true" : ""}`
     );
-    instances = allInstances.rows;
-  } else {
-    const customerResult = await pool.query(
-      `SELECT * FROM customers WHERE user_id = $1`,
-      [session.user.id]
-    );
-    if (customerResult.rows.length > 0) {
-      const instancesResult = await pool.query(
-        `SELECT id, slug, display_name, status, tier, created_at
-         FROM instances
-         WHERE customer_id = $1
-         ORDER BY created_at DESC`,
-        [customerResult.rows[0].id]
-      );
-      instances = instancesResult.rows;
-    }
+    instances = data.instances;
+  } catch {
+    // If op-api is unreachable, show empty state
   }
 
   if (instances.length === 0 && !isAdmin) {
@@ -91,23 +74,27 @@ export default async function DashboardPage() {
             Deploy a fully managed developer platform with Git, CI/CD,
             dashboards, and object storage.
           </p>
-          <Link href="/dashboard/new" className="btn btn-accent">
-            <PlusIcon />
-            New Instance
-          </Link>
+          {process.env.NEXT_PUBLIC_PROVISIONER_ENABLED === "true" && (
+            <Link href="/dashboard/new" className="btn btn-accent">
+              <PlusIcon />
+              New Instance
+            </Link>
+          )}
         </div>
       </div>
     );
   }
 
-  return (
+  const content = (
     <div className="container">
       <div className="dashboard-header">
         <h1>Instances</h1>
-        <Link href="/dashboard/new" className="btn btn-accent btn-sm">
-          <PlusIcon />
-          New Instance
-        </Link>
+        {process.env.NEXT_PUBLIC_PROVISIONER_ENABLED === "true" && (
+          <Link href="/dashboard/new" className="btn btn-accent btn-sm">
+            <PlusIcon />
+            New Instance
+          </Link>
+        )}
       </div>
 
       {instances.length === 0 ? (
@@ -117,15 +104,17 @@ export default async function DashboardPage() {
       ) : (
         <InstanceList initialInstances={instances} isAdmin={isAdmin} />
       )}
-
-      {isAdmin && (
-        <div style={{ marginTop: 40 }}>
-          <div className="dashboard-header" style={{ marginBottom: 16 }}>
-            <h2 style={{ fontSize: 18, fontWeight: 600 }}>Platform Health</h2>
-          </div>
-          <PlatformDashboard />
-        </div>
-      )}
     </div>
   );
+
+  if (isAdmin) {
+    return (
+      <div className="dashboard-body">
+        <PlatformNav />
+        <main className="dashboard-main">{content}</main>
+      </div>
+    );
+  }
+
+  return content;
 }

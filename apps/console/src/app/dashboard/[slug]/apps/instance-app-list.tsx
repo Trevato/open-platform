@@ -8,8 +8,7 @@ interface AppInfo {
   org: string;
   repo: string;
   ready: boolean;
-  replicas: number;
-  readyReplicas: number;
+  replicas: { ready: number; total: number };
   url: string;
   createdAt: string | null;
 }
@@ -69,8 +68,8 @@ function AppCard({ app }: { app: AppInfo }) {
           }}
         >
           <span className="text-xs text-muted">
-            {app.readyReplicas}/{app.replicas} replica
-            {app.replicas !== 1 ? "s" : ""}
+            {app.replicas.ready}/{app.replicas.total} replica
+            {app.replicas.total !== 1 ? "s" : ""}
           </span>
           <a
             href={app.url}

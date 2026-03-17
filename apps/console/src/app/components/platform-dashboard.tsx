@@ -7,8 +7,7 @@ interface ServiceStatus {
   name: string;
   namespace: string;
   ready: boolean;
-  replicas: number;
-  readyReplicas: number;
+  replicas: { ready: number; total: number };
   url: string;
 }
 
@@ -18,8 +17,7 @@ interface AppInfo {
   org: string;
   repo: string;
   ready: boolean;
-  replicas: number;
-  readyReplicas: number;
+  replicas: { ready: number; total: number };
   url: string;
   createdAt: string | null;
 }
@@ -236,8 +234,8 @@ export function PlatformDashboard() {
                     </span>
                   )}
                   <span className="text-xs text-muted">
-                    {service.readyReplicas}/{service.replicas} replica
-                    {service.replicas !== 1 ? "s" : ""}
+                    {service.replicas.ready}/{service.replicas.total} replica
+                    {service.replicas.total !== 1 ? "s" : ""}
                   </span>
                 </CardTag>
               );

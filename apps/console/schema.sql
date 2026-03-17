@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS platform (
 
 CREATE TABLE IF NOT EXISTS customers (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  user_id TEXT REFERENCES "user"(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
   name TEXT NOT NULL,
   github_username TEXT,

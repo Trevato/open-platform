@@ -157,7 +157,7 @@ export default function NewInstancePage() {
             />
             <p className="form-hint">
               {slug
-                ? `Your services at ${slug}-forgejo.${process.env.NEXT_PUBLIC_MANAGED_DOMAIN || "open-platform.sh"}, etc.`
+                ? `Your services at ${slug}-forgejo.${process.env.NEXT_PUBLIC_PLATFORM_DOMAIN || "open-platform.sh"}, etc.`
                 : "Used in URLs and resource names"}
             </p>
             {fieldErrors.slug && (

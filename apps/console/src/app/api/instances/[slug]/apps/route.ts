@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getInstanceAccess } from "@/lib/instance-access";
-import { getInstanceApps } from "@/lib/k8s";
+import { opApiGet } from "@/lib/op-api";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +8,17 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const access = await getInstanceAccess(slug);
-  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (access.instance.status !== "ready") return NextResponse.json({ apps: [] });
-  const apps = await getInstanceApps(slug);
-  return NextResponse.json({ apps });
+  try {
+    const data = await opApiGet(
+      `/api/v1/instances/${encodeURIComponent(slug)}/apps`
+    );
+    return NextResponse.json(data);
+  } catch (e: any) {
+    if (e.message === "Not authenticated") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const match = e.message?.match(/op-api (\d{3}):/);
+    const status = match ? parseInt(match[1]) : 500;
+    return NextResponse.json({ error: e.message }, { status });
+  }
 }

@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { getInstanceAccess } from "@/lib/instance-access";
+import { opApiGet } from "@/lib/op-api";
 import { TerminalView } from "./terminal-view";
 
 export default async function TerminalPage({
@@ -8,13 +8,15 @@ export default async function TerminalPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const access = await getInstanceAccess(slug);
 
-  if (!access) {
+  let data;
+  try {
+    data = await opApiGet(`/api/v1/instances/${encodeURIComponent(slug)}`);
+  } catch {
     notFound();
   }
 
-  if (access.instance.status !== "ready") {
+  if (data.instance.status !== "ready") {
     redirect(`/dashboard/${slug}`);
   }
 

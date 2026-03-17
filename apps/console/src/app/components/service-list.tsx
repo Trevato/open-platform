@@ -6,8 +6,7 @@ interface ServiceStatus {
   name: string;
   namespace: string;
   ready: boolean;
-  replicas: number;
-  readyReplicas: number;
+  replicas: { ready: number; total: number };
   url: string;
 }
 
@@ -51,7 +50,7 @@ function ServiceCard({ service }: { service: ServiceStatus }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span className="text-sm text-muted">
-            {service.readyReplicas}/{service.replicas} ready
+            {service.replicas.ready}/{service.replicas.total} ready
           </span>
           {isExternal ? (
             <a

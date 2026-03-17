@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import pool from "@/lib/db";
-import { getInstanceAccess } from "@/lib/instance-access";
+import { opApiGet } from "@/lib/op-api";
 import { StatusBadge } from "@/app/components/status-badge";
 import { TIER_RESOURCES } from "@/app/components/instance-card";
 import { ProvisionTerminal } from "./components/provision-terminal";
@@ -179,29 +178,22 @@ export default async function InstanceDetailPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const access = await getInstanceAccess(slug);
-  if (!access) {
+
+  let data;
+  try {
+    data = await opApiGet(`/api/v1/instances/${encodeURIComponent(slug)}`);
+  } catch {
     notFound();
   }
 
-  const instance: Instance = access.instance;
+  const instance: Instance = data.instance;
+  const events: ProvisionEvent[] = data.events || [];
   const tier = instance.tier || "free";
   const resources =
     TIER_RESOURCES[tier as keyof typeof TIER_RESOURCES] || TIER_RESOURCES.free;
   const tierColor = TIER_COLORS[tier] || TIER_COLORS.free;
 
-  const eventsResult = await pool.query(
-    `SELECT phase, status, message, created_at
-     FROM provision_events
-     WHERE instance_id = $1
-     ORDER BY created_at DESC
-     LIMIT 50`,
-    [instance.id]
-  );
-
-  const events: ProvisionEvent[] = eventsResult.rows;
-
-  const domain = process.env.MANAGED_DOMAIN || "open-platform.sh";
+  const domain = process.env.PLATFORM_DOMAIN || "open-platform.sh";
 
   const isProvisioning =
     instance.status === "pending" || instance.status === "provisioning";

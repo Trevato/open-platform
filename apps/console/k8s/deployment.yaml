@@ -54,6 +54,8 @@ spec:
               value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
             - name: AUTH_FORGEJO_INTERNAL_URL
               value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
+            - name: OP_API_URL
+              value: "http://op-api.op-system-op-api.svc:80"
             - name: FORGEJO_ADMIN_USER
               valueFrom:
                 secretKeyRef:
@@ -66,10 +68,12 @@ spec:
                   name: forgejo-admin-credentials
                   key: password
                   optional: true
-            - name: MANAGED_DOMAIN
+            - name: PLATFORM_DOMAIN
               value: "PLATFORM_DOMAIN"
-            - name: NEXT_PUBLIC_MANAGED_DOMAIN
+            - name: NEXT_PUBLIC_PLATFORM_DOMAIN
               value: "PLATFORM_DOMAIN"
+            - name: NEXT_PUBLIC_PROVISIONER_ENABLED
+              value: "true"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
             - name: NODE_TLS_REJECT_UNAUTHORIZED
