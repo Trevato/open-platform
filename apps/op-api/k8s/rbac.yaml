@@ -9,15 +9,50 @@ kind: ClusterRole
 metadata:
   name: op-api
 rules:
+  # Platform status reads
   - apiGroups: [""]
-    resources: ["pods", "namespaces"]
-    verbs: ["get", "list"]
+    resources:
+      [
+        "pods",
+        "services",
+        "configmaps",
+        "secrets",
+        "persistentvolumeclaims",
+        "serviceaccounts",
+      ]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "patch"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
-    verbs: ["get", "list"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+  # DevPod management
+  - apiGroups: [""]
+    resources:
+      [
+        "persistentvolumeclaims",
+        "secrets",
+        "serviceaccounts",
+        "configmaps",
+        "services",
+      ]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create", "get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -31,3 +66,39 @@ subjects:
   - kind: ServiceAccount
     name: op-api
     namespace: APP_NAMESPACE
+---
+# Dev Pod shared RBAC — pre-created at deploy time to avoid RBAC escalation issues.
+# The op-api SA cannot create ClusterRoles with wildcard apiGroups at runtime.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: devpod-explorer
+rules:
+  # Read everything — k9s queries many resource types on startup
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+  # Manage workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets"]
+    verbs: ["create", "update", "patch", "delete"]
+  # Exec + port-forward + logs
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/portforward", "pods/log"]
+    verbs: ["create", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: devpod-sa-explorer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: devpod-explorer
+subjects:
+  - kind: ServiceAccount
+    name: devpod-sa
+    namespace: op-dev-pods

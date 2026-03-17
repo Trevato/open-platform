@@ -9,11 +9,12 @@ clone:
       skip_verify: true
 
 steps:
-  - name: typecheck
-    image: node:20-alpine
+  - name: typecheck-and-test
+    image: oven/bun:1-alpine
     commands:
-      - npm install
-      - npm run typecheck
+      - bun install
+      - bun run typecheck
+      - bun test
 
   - name: build
     image: woodpeckerci/plugin-kaniko
@@ -38,6 +39,8 @@ steps:
         serviceAccountName: woodpecker-pipeline
     commands:
       - APP_NS="op-$CI_REPO_OWNER-$CI_REPO_NAME"
+      - DB_NAME="op_system_console"
+      - DB_USER="op_system_console"
       - kubectl create namespace $APP_NS --dry-run=client -o yaml | kubectl apply -f -
       - kubectl label namespace $APP_NS open-platform.sh/managed=true open-platform.sh/org=$CI_REPO_OWNER open-platform.sh/repo=$CI_REPO_NAME open-platform.sh/tier=workload open-platform.sh/environment=production --overwrite
       - |
@@ -51,6 +54,28 @@ steps:
           --docker-username=$${REGISTRY_USER} \
           --docker-password=$${REGISTRY_TOKEN} \
           -n $APP_NS --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+          "SELECT 1 FROM pg_database WHERE datname = '$DB_NAME'" | grep -q 1 || {
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE $DB_NAME"
+        }
+      - |
+        kubectl exec -n postgres postgres-1 -- psql -U postgres -tc \
+          "SELECT 1 FROM pg_roles WHERE rolname = '$DB_USER'" | grep -q 1 || {
+          kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE USER $DB_USER WITH PASSWORD '$DB_USER'"
+        }
+      - kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER" || true
+      - kubectl exec -n postgres postgres-1 -- psql -U postgres -d $DB_NAME -c "GRANT ALL ON SCHEMA public TO $DB_USER" || true
+      - kubectl exec -n postgres postgres-1 -- psql -U postgres -d $DB_NAME -c "ALTER TABLE customers ALTER COLUMN user_id DROP NOT NULL" 2>/dev/null || true
+      - |
+        kubectl create secret generic console-db \
+          --from-literal=database-url="postgresql://$DB_USER:$DB_USER@postgres-rw.postgres.svc.cluster.local:5432/$DB_NAME" \
+          -n $APP_NS --dry-run=client -o yaml | kubectl apply -f -
+      - |
+        kubectl get secret forgejo-admin-credentials -n forgejo -o json | \
+          sed '/"resourceVersion"/d; /"uid"/d; /"creationTimestamp"/d' | \
+          sed 's/"namespace": *"forgejo"/"namespace": "'$APP_NS'"/' | \
+          kubectl apply -f - || true
       - WP_TOKEN=$(kubectl get secret woodpecker-api-token -n woodpecker -o jsonpath='{.data.token}' | base64 -d 2>/dev/null || echo "")
       - |
         if [ -n "$WP_TOKEN" ]; then

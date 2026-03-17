@@ -18,6 +18,20 @@ spec:
       serviceAccountName: op-api
       imagePullSecrets:
         - name: forgejo-registry
+      initContainers:
+        - name: merge-ca
+          image: oven/bun:1-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              cat /etc/ssl/custom/ca.crt /var/run/secrets/kubernetes.io/serviceaccount/ca.crt > /merged-ca/ca-bundle.crt 2>/dev/null || \
+              cp /var/run/secrets/kubernetes.io/serviceaccount/ca.crt /merged-ca/ca-bundle.crt
+          volumeMounts:
+            - name: platform-ca
+              mountPath: /etc/ssl/custom
+              readOnly: true
+            - name: merged-ca
+              mountPath: /merged-ca
       containers:
         - name: app
           image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
@@ -39,11 +53,29 @@ spec:
               value: "__PLATFORM_DOMAIN__"
             - name: SERVICE_PREFIX
               value: "__SERVICE_PREFIX__"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: console-db
+                  key: database-url
+            - name: FORGEJO_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-credentials
+                  key: username
+            - name: FORGEJO_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: forgejo-admin-credentials
+                  key: password
             - name: NODE_EXTRA_CA_CERTS
-              value: "/etc/ssl/custom/ca.crt"
+              value: "/etc/ssl/certs/ca-bundle.crt"
           volumeMounts:
             - name: platform-ca
               mountPath: /etc/ssl/custom
+              readOnly: true
+            - name: merged-ca
+              mountPath: /etc/ssl/certs
               readOnly: true
           resources:
             requests:
@@ -69,3 +101,5 @@ spec:
           configMap:
             name: platform-ca
             optional: true
+        - name: merged-ca
+          emptyDir: {}
