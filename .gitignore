@@ -45,3 +45,9 @@ apps/woodpecker.yaml
 apps/headlamp.yaml
 apps/oauth2-proxy.yaml
 infrastructure/configs/minio.yaml
+
+# CLI build output
+tools/op-cli/dist/
+
+# Test scripts
+test-console-ui.mjs
