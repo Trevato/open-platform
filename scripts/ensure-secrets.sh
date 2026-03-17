@@ -101,6 +101,26 @@ else
   echo "Skipping Cloudflare tunnel credentials (not configured in .env)."
 fi
 
+# Provisioner secrets (conditional — only if provisioner namespace exists)
+if kubectl get ns provisioner &>/dev/null; then
+  echo "Creating provisioner secrets..."
+
+  # provisioner-db: console database credentials for reading instances table
+  apply_secret provisioner-db -n provisioner \
+    --from-literal=host="postgres-rw.postgres.svc.cluster.local" \
+    --from-literal=port="5432" \
+    --from-literal=username="op_system_console" \
+    --from-literal=password="op_system_console" \
+    --from-literal=database="op_system_console"
+
+  # provisioner-forgejo: admin credentials for cloning repos into vCluster
+  apply_secret provisioner-forgejo -n provisioner \
+    --from-literal=username="${FORGEJO_ADMIN_USER}" \
+    --from-literal=password="${FORGEJO_ADMIN_PASSWORD}"
+else
+  echo "Skipping provisioner secrets (namespace not found)."
+fi
+
 # Platform CA configmap — apps mount this for TLS to Forgejo
 CA_CERT="$ROOT_DIR/certs/ca.crt"
 if [ -f "$CA_CERT" ]; then

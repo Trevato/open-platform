@@ -24,3 +24,7 @@ tls:
 #   account_tag: ""
 #   tunnel_id: ""
 #   tunnel_secret: ""
+
+# Instance provisioning (optional — enables child platform creation via vCluster)
+# provisioner:
+#   enabled: true

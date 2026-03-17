@@ -1,0 +1,5 @@
+apiVersion: v2
+name: provisioner
+description: Instance provisioner — creates and manages child vCluster instances
+version: 0.1.0
+type: application

@@ -120,10 +120,41 @@ create_repo() {
   echo "Created repo 'system/${REPO_NAME}'."
 }
 
-# ── Push open-platform config ────────────────────────────────────────────────
+# ── Push open-platform deployment content ────────────────────────────────────
+# Includes platform config (Flux), scripts, config templates, manifests, charts.
+# The provisioner init container clones this repo at runtime.
 
-create_repo "open-platform" "Platform configuration (Flux-managed)"
-push_content "open-platform" "${ROOT_DIR}/platform"
+create_repo "open-platform" "Platform configuration and deployment content"
+
+# Custom push: selective directories (not the whole monorepo)
+_push_open_platform() {
+  local COMMIT_COUNT
+  COMMIT_COUNT=$(api "${API_URL}/repos/system/open-platform/commits?limit=1&sha=main" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+  if [ "$COMMIT_COUNT" != "0" ]; then
+    echo "Repo 'system/open-platform' already has content — skipping push."
+    return 0
+  fi
+  echo "Pushing deployment content to 'system/open-platform'..."
+  local TMP_DIR
+  TMP_DIR=$(mktemp -d)
+  trap "rm -rf ${TMP_DIR}" RETURN
+  for dir in platform scripts config manifests charts host templates; do
+    [ -d "${ROOT_DIR}/${dir}" ] && cp -r "${ROOT_DIR}/${dir}" "${TMP_DIR}/"
+  done
+  for file in Makefile open-platform.yaml.example; do
+    [ -f "${ROOT_DIR}/${file}" ] && cp "${ROOT_DIR}/${file}" "${TMP_DIR}/"
+  done
+  rm -rf "${TMP_DIR}/.git"
+  cd "${TMP_DIR}"
+  git init -q
+  git checkout -b main
+  git add .
+  git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" commit -q -m "Initial commit"
+  git_push "open-platform" main
+  cd "${ROOT_DIR}"
+  echo "Pushed deployment content to 'system/open-platform'."
+}
+_push_open_platform
 
 # ── Push app template ────────────────────────────────────────────────────────
 

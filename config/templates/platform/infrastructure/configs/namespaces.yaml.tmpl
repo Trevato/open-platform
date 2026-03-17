@@ -108,3 +108,13 @@ metadata:
     open-platform.sh/repo: "console"
     open-platform.sh/tier: "workload"
     open-platform.sh/environment: "production"
+---
+# BEGIN provisioner
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: provisioner
+  labels:
+    open-platform.sh/managed: "true"
+    open-platform.sh/tier: "platform"
+# END provisioner

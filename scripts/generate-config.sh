@@ -121,11 +121,17 @@ CF_ACCOUNT_TAG=$(yaml_get "$CONFIG_FILE" "cloudflare.account_tag" 2>/dev/null) |
 CF_TUNNEL_ID=$(yaml_get "$CONFIG_FILE" "cloudflare.tunnel_id" 2>/dev/null) || CF_TUNNEL_ID=""
 CF_TUNNEL_SECRET=$(yaml_get "$CONFIG_FILE" "cloudflare.tunnel_secret" 2>/dev/null) || CF_TUNNEL_SECRET=""
 
+# Provisioner (optional)
+PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
+
 echo "Generating config for: ${DOMAIN}"
 echo "  Admin: ${ADMIN_USER} <${ADMIN_EMAIL}>"
 echo "  TLS:   ${TLS_MODE}"
 if [ -n "$SERVICE_PREFIX" ]; then
   echo "  Prefix: ${SERVICE_PREFIX}"
+fi
+if [ "$PROVISIONER_ENABLED" = "true" ]; then
+  echo "  Provisioner: enabled"
 fi
 
 # ── Generate / Load Secrets ─────────────────────────────────────────────────
@@ -215,6 +221,13 @@ echo "  forgejo-values.yaml"
 echo "  woodpecker-values.yaml"
 echo "  headlamp-values.yaml"
 echo "  minio-values.yaml"
+
+if [ "$PROVISIONER_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/provisioner-values.yaml.tmpl" "$ROOT_DIR/provisioner-values.yaml"
+  echo "  provisioner-values.yaml"
+else
+  rm -f "$ROOT_DIR/provisioner-values.yaml"
+fi
 
 # ── Template: Flux Platform Directory ────────────────────────────────────────
 
@@ -332,6 +345,16 @@ if [ "$TLS_MODE" != "letsencrypt" ]; then
   echo "  helmfile.yaml (cert-manager excluded — tls.mode=${TLS_MODE})"
 else
   echo "  helmfile.yaml (cert-manager included)"
+fi
+
+# Conditional: remove provisioner block if not enabled
+if [ "$PROVISIONER_ENABLED" != "true" ]; then
+  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  echo "  provisioner excluded"
+else
+  echo "  provisioner included"
 fi
 
 # ── Generate .env (backward compatibility) ──────────────────────────────────

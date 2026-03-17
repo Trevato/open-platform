@@ -190,3 +190,18 @@ releases:
       - events: ["postsync"]
         showlogs: true
         command: "./scripts/setup-flux.sh"
+
+  # ─── Layer 5: Provisioner ────────────────────────────────────────────
+
+  # BEGIN provisioner
+  - name: provisioner
+    namespace: provisioner
+    chart: ./charts/provisioner
+    needs:
+      - forgejo/forgejo
+      - flux-system/flux
+    labels:
+      tier: provisioner
+    values:
+      - provisioner-values.yaml
+  # END provisioner
