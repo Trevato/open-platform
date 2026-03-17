@@ -191,16 +191,19 @@ describe("schema validation", () => {
 // Verify that the errorPlugin passes through validation errors (doesn't eat them)
 
 describe("schema validation with error plugin", () => {
-  test("POST /orgs with empty body -> 422 (not 500)", async () => {
+  test("POST /orgs with empty body -> 422 with {error} format", async () => {
     const res = await app.handle(req("POST", "/api/v1/orgs", {}));
     expect(res.status).toBe(422);
     const body = await res.json();
-    expect(body.type).toBe("validation");
+    expect(typeof body.error).toBe("string");
+    expect(body.error).toContain("Validation failed");
   });
 
   test("POST /repos/:org with empty body -> 422 (not 500)", async () => {
     const res = await app.handle(req("POST", "/api/v1/repos/system", {}));
     expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(typeof body.error).toBe("string");
   });
 
   test("POST /prs/:org/:repo with empty body -> 422 (not 500)", async () => {
@@ -208,6 +211,8 @@ describe("schema validation with error plugin", () => {
       req("POST", "/api/v1/prs/system/template", {}),
     );
     expect(res.status).toBe(422);
+    const body = await res.json();
+    expect(typeof body.error).toBe("string");
   });
 });
 

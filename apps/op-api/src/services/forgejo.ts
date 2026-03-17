@@ -94,9 +94,7 @@ export class ForgejoClient {
   // Repos
 
   async listRepos(org: string): Promise<ForgejoRepo[]> {
-    return this.fetchAllPages(
-      `/api/v1/orgs/${encodeURIComponent(org)}/repos`,
-    );
+    return this.fetchAllPages(`/api/v1/orgs/${encodeURIComponent(org)}/repos`);
   }
 
   async getRepo(owner: string, name: string): Promise<ForgejoRepo> {
@@ -128,20 +126,22 @@ export class ForgejoClient {
 
   async createRepo(
     org: string,
-    opts: { name: string; description?: string; private?: boolean; auto_init?: boolean },
+    opts: {
+      name: string;
+      description?: string;
+      private?: boolean;
+      auto_init?: boolean;
+    },
   ): Promise<ForgejoRepo> {
-    return this.fetchJSON(
-      `/api/v1/orgs/${encodeURIComponent(org)}/repos`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          name: opts.name,
-          description: opts.description || "",
-          private: opts.private ?? true,
-          auto_init: opts.auto_init ?? true,
-        }),
-      },
-    );
+    return this.fetchJSON(`/api/v1/orgs/${encodeURIComponent(org)}/repos`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: opts.name,
+        description: opts.description || "",
+        private: opts.private ?? true,
+        auto_init: opts.auto_init ?? true,
+      }),
+    });
   }
 
   async deleteRepo(owner: string, name: string): Promise<boolean> {
@@ -158,6 +158,12 @@ export class ForgejoClient {
   }
 
   // Pull Requests
+
+  async getPR(owner: string, repo: string, index: number): Promise<ForgejoPR> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${index}`,
+    );
+  }
 
   async listPRs(
     owner: string,
@@ -229,6 +235,16 @@ export class ForgejoClient {
   }
 
   // Issues
+
+  async getIssue(
+    owner: string,
+    repo: string,
+    index: number,
+  ): Promise<ForgejoIssue> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${index}`,
+    );
+  }
 
   async listIssues(
     owner: string,
@@ -377,7 +393,11 @@ export class ForgejoClient {
     );
   }
 
-  async deleteBranch(owner: string, repo: string, name: string): Promise<boolean> {
+  async deleteBranch(
+    owner: string,
+    repo: string,
+    name: string,
+  ): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(name)}`,
       { method: "DELETE", headers: this.headers() },
@@ -476,9 +496,7 @@ export class ForgejoClient {
   // Teams
 
   async listOrgTeams(org: string): Promise<ForgejoTeam[]> {
-    return this.fetchAllPages(
-      `/api/v1/orgs/${encodeURIComponent(org)}/teams`,
-    );
+    return this.fetchAllPages(`/api/v1/orgs/${encodeURIComponent(org)}/teams`);
   }
 
   async listTeamMembers(teamId: number): Promise<ForgejoUser[]> {

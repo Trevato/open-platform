@@ -28,6 +28,22 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
       detail: { tags: ["PRs"], summary: "List pull requests" },
     },
   )
+  .get(
+    "/:org/:repo/:number",
+    async ({ params: { org, repo, number }, user, set }) => {
+      const index = parseInt(number);
+      if (isNaN(index) || index < 1) {
+        set.status = 400;
+        return { error: "Invalid PR number" };
+      }
+      const client = new ForgejoClient(user.token);
+      return client.getPR(org, repo, index);
+    },
+    {
+      params: t.Object(orgRepoNumberParams),
+      detail: { tags: ["PRs"], summary: "Get a pull request" },
+    },
+  )
   .post(
     "/:org/:repo",
     async ({ params: { org, repo }, body, user, set }) => {
@@ -54,10 +70,41 @@ export const prsPlugin = new Elysia({ prefix: "/prs" })
   )
   .post(
     "/:org/:repo/:number/merge",
-    async ({ params: { org, repo, number }, body, user }) => {
+    async ({ params: { org, repo, number }, body, user, set }) => {
+      const method = body.method || "merge";
+      const validMethods = [
+        "merge",
+        "rebase",
+        "rebase-merge",
+        "squash",
+        "manually-merged",
+      ];
+      if (!validMethods.includes(method)) {
+        set.status = 422;
+        return {
+          error: `Invalid merge method: "${method}". Valid methods: ${validMethods.join(", ")}`,
+        };
+      }
       const client = new ForgejoClient(user.token);
-      await client.mergePR(org, repo, parseInt(number), body.method || "merge");
-      return { merged: true };
+      try {
+        await client.mergePR(org, repo, parseInt(number), method);
+        return { merged: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "";
+        // Already merged — Forgejo returns 405 with empty body
+        if (message.includes("405")) {
+          set.status = 405;
+          return {
+            error: "Pull request is already merged or cannot be merged",
+          };
+        }
+        // 409 conflict — head has changed or merge conflict
+        if (message.includes("409")) {
+          set.status = 409;
+          return { error: "Merge conflict or pull request head has changed" };
+        }
+        throw err;
+      }
     },
     {
       params: t.Object(orgRepoNumberParams),

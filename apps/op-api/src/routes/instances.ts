@@ -319,6 +319,11 @@ export const instancesPlugin = new Elysia({ prefix: "/instances" })
         return { error: "Not found" };
       }
 
+      if (access.instance.status !== "ready") {
+        set.status = 400;
+        return { error: "Instance is not ready" };
+      }
+
       const username = user.login;
 
       // Resolve better-auth user ID

@@ -278,10 +278,16 @@ export async function createInstance(
       return { error: "This name is already taken", status: 409 };
     }
 
-    // Create instance
-    const tier = ["free", "pro", "team"].includes(requestedTier || "")
-      ? requestedTier
-      : "free";
+    // Validate tier
+    const validTiers = ["free", "pro", "team"];
+    const tier = requestedTier || "free";
+    if (!validTiers.includes(tier)) {
+      await client.query("ROLLBACK");
+      return {
+        error: `Invalid tier: "${requestedTier}". Valid tiers: ${validTiers.join(", ")}`,
+        status: 400,
+      };
+    }
 
     const instance = await client.query(
       `INSERT INTO instances (customer_id, slug, display_name, tier, admin_email, admin_username)

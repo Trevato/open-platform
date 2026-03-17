@@ -51,7 +51,9 @@ export const branchesPlugin = new Elysia({ prefix: "/branches" })
       );
       if (!existed) {
         set.status = 404;
-        return { error: "Branch not found" };
+        return {
+          error: `Branch "${branchName}" not found in ${params.org}/${params.repo}`,
+        };
       }
       return { deleted: true };
     },

@@ -61,7 +61,8 @@ export const filesPlugin = new Elysia({ prefix: "/files" })
           sha: body.sha,
         },
       );
-      set.status = 201;
+      // 201 for create (no sha), 200 for update (sha provided)
+      set.status = body.sha ? 200 : 201;
       return result;
     },
     {

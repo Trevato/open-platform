@@ -39,6 +39,22 @@ export const issuesPlugin = new Elysia({ prefix: "/issues" })
       detail: { tags: ["Issues"], summary: "List issues" },
     },
   )
+  .get(
+    "/:org/:repo/:number",
+    async ({ params: { org, repo, number }, user, set }) => {
+      const index = parseInt(number);
+      if (isNaN(index) || index < 1) {
+        set.status = 400;
+        return { error: "Invalid issue number" };
+      }
+      const client = new ForgejoClient(user.token);
+      return client.getIssue(org, repo, index);
+    },
+    {
+      params: t.Object(orgRepoNumberParams),
+      detail: { tags: ["Issues"], summary: "Get an issue" },
+    },
+  )
   .post(
     "/:org/:repo",
     async ({ params: { org, repo }, body, user, set }) => {
@@ -168,11 +184,21 @@ export const issuesPlugin = new Elysia({ prefix: "/issues" })
   .post(
     "/:org/:repo/milestones",
     async ({ params: { org, repo }, body, user, set }) => {
-      // Coerce date-only strings to full ISO datetime (Forgejo requires it)
-      const normalizedDueOn =
-        body.due_on && !body.due_on.includes("T")
-          ? `${body.due_on}T00:00:00Z`
-          : body.due_on;
+      // Validate and coerce date-only strings to full ISO datetime (Forgejo requires it)
+      let normalizedDueOn = body.due_on;
+      if (normalizedDueOn) {
+        if (!normalizedDueOn.includes("T")) {
+          normalizedDueOn = `${normalizedDueOn}T00:00:00Z`;
+        }
+        // Validate the date is actually parseable
+        const parsed = new Date(normalizedDueOn);
+        if (isNaN(parsed.getTime())) {
+          set.status = 400;
+          return {
+            error: `Invalid date format for due_on: "${body.due_on}". Use YYYY-MM-DD or ISO 8601.`,
+          };
+        }
+      }
       const client = new ForgejoClient(user.token);
       const milestone = await client.createMilestone(org, repo, {
         title: body.title,

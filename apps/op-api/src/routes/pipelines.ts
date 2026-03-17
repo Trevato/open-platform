@@ -16,6 +16,19 @@ async function getRepoId(org: string, repo: string): Promise<number> {
   return wp.id;
 }
 
+/** Parse and validate a pipeline number param. Returns the integer or a 400 error response. */
+function parsePipelineNumber(
+  number: string,
+  set: { status?: number | string },
+): number | { error: string } {
+  const parsed = parseInt(number);
+  if (isNaN(parsed) || parsed < 1) {
+    set.status = 400;
+    return { error: `Invalid pipeline number: ${number}` };
+  }
+  return parsed;
+}
+
 export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   .use(authPlugin)
   .get(
@@ -33,12 +46,23 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
     "/:org/:repo",
     async ({ params: { org, repo }, body, set }) => {
       const repoId = await getRepoId(org, repo);
-      const pipeline = await woodpecker.triggerPipeline(
-        repoId,
-        body.branch || "main",
-      );
-      set.status = 201;
-      return pipeline;
+      const branch = body.branch || "main";
+      try {
+        const pipeline = await woodpecker.triggerPipeline(repoId, branch);
+        set.status = 201;
+        return pipeline;
+      } catch (err) {
+        // Woodpecker returns 500 for nonexistent branches — surface as 422
+        const message =
+          err instanceof Error ? err.message : "Pipeline trigger failed";
+        if (message.includes("500")) {
+          set.status = 422;
+          return {
+            error: `Failed to trigger pipeline: branch "${branch}" may not exist`,
+          };
+        }
+        throw err;
+      }
     },
     {
       params: repoParams,
@@ -50,9 +74,11 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   )
   .get(
     "/:org/:repo/:number",
-    async ({ params: { org, repo, number } }) => {
+    async ({ params: { org, repo, number }, set }) => {
+      const parsed = parsePipelineNumber(number, set);
+      if (typeof parsed !== "number") return parsed;
       const repoId = await getRepoId(org, repo);
-      return woodpecker.getPipeline(repoId, parseInt(number));
+      return woodpecker.getPipeline(repoId, parsed);
     },
     {
       params: pipelineParams,
@@ -61,15 +87,39 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   )
   .get(
     "/:org/:repo/:number/logs",
-    async ({ params: { org, repo, number }, query }) => {
+    async ({ params: { org, repo, number }, query, set }) => {
+      const parsedNumber = parsePipelineNumber(number, set);
+      if (typeof parsedNumber !== "number") return parsedNumber;
+
+      // Validate step query param
+      let step = 2;
+      if (query.step) {
+        step = parseInt(query.step);
+        if (isNaN(step) || step < 1) {
+          set.status = 400;
+          return { error: `Invalid step number: ${query.step}` };
+        }
+      }
+
       const repoId = await getRepoId(org, repo);
-      const step = query.step ? parseInt(query.step) : 2;
-      const logs = await woodpecker.getPipelineLogs(
-        repoId,
-        parseInt(number),
-        step,
-      );
-      return { logs };
+      try {
+        const logs = await woodpecker.getPipelineLogs(
+          repoId,
+          parsedNumber,
+          step,
+        );
+        return { logs };
+      } catch (err) {
+        // Step not found in pipeline — return 404 not 500
+        const message = err instanceof Error ? err.message : "";
+        if (message.includes("not found in pipeline")) {
+          set.status = 404;
+          return {
+            error: `Step ${step} not found in pipeline ${parsedNumber}`,
+          };
+        }
+        throw err;
+      }
     },
     {
       params: pipelineParams,
