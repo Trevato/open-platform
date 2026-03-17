@@ -1,50 +1,31 @@
-import express from "express";
+import { Elysia } from "elysia";
+import { swagger } from "@elysiajs/swagger";
 import { randomUUID } from "crypto";
-import swaggerUi from "swagger-ui-express";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
-import { authMiddleware, authenticateRequest } from "./auth.js";
+import { authenticateRequest } from "./auth.js";
+import { errorPlugin } from "./routes/error.js";
 import { createMcpServer } from "./mcp/server.js";
-import { statusRouter } from "./routes/status.js";
-import { reposRouter } from "./routes/repos.js";
-import { prsRouter } from "./routes/prs.js";
-import { pipelinesRouter } from "./routes/pipelines.js";
-import { appsRouter } from "./routes/apps.js";
-import { orgsRouter } from "./routes/orgs.js";
-import { usersRouter } from "./routes/users.js";
-import { issuesRouter } from "./routes/issues.js";
-import { branchesRouter } from "./routes/branches.js";
-import { filesRouter } from "./routes/files.js";
-import { spec } from "./openapi.js";
+import { statusPlugin } from "./routes/status.js";
+import { reposPlugin } from "./routes/repos.js";
+import { prsPlugin } from "./routes/prs.js";
+import { pipelinesPlugin } from "./routes/pipelines.js";
+import { appsPlugin } from "./routes/apps.js";
+import { orgsPlugin } from "./routes/orgs.js";
+import { usersPlugin } from "./routes/users.js";
+import { issuesPlugin } from "./routes/issues.js";
+import { branchesPlugin } from "./routes/branches.js";
+import { filesPlugin } from "./routes/files.js";
+import { platformPlugin } from "./routes/platform.js";
+import { instancesPlugin } from "./routes/instances.js";
+import { devPodsPlugin } from "./routes/dev-pods.js";
+import { models } from "./models.js";
+import { logger } from "./logger.js";
 
-const app = express();
-app.use(express.json());
-
-// Health check (no auth)
-app.get("/healthz", (_req, res) => res.json({ status: "ok" }));
-
-// Swagger UI at /docs (scoped path avoids intercepting API file routes like package.json)
-app.use("/docs", swaggerUi.serve, swaggerUi.setup(spec, { customSiteTitle: "Open Platform API" }));
-app.get("/", (_req, res) => res.redirect("/docs"));
-app.get("/openapi.json", (_req, res) => res.json(spec));
-
-// REST API routes (all require Bearer token)
-app.use("/api/v1", authMiddleware);
-app.use("/api/v1/status", statusRouter);
-app.use("/api/v1/repos", reposRouter);
-app.use("/api/v1/prs", prsRouter);
-app.use("/api/v1/pipelines", pipelinesRouter);
-app.use("/api/v1/apps", appsRouter);
-app.use("/api/v1/orgs", orgsRouter);
-app.use("/api/v1/users", usersRouter);
-app.use("/api/v1/issues", issuesRouter);
-app.use("/api/v1/branches", branchesRouter);
-app.use("/api/v1/files", filesRouter);
-
-// MCP endpoint — Streamable HTTP with session management
+// MCP session management
 const transports = new Map<
   string,
-  { transport: StreamableHTTPServerTransport; createdAt: number }
+  { transport: WebStandardStreamableHTTPServerTransport; createdAt: number }
 >();
 
 // Clean up stale sessions every 5 minutes
@@ -61,79 +42,176 @@ setInterval(
   5 * 60 * 1000,
 );
 
-app.post("/mcp", async (req, res) => {
-  const user = await authenticateRequest(req);
-  if (!user) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
+const app = new Elysia()
+  .use(errorPlugin)
+  .model(models)
+  // @ts-ignore — duplicate elysia types from monorepo hoisting (same version, different paths)
+  .use(
+    swagger({
+      path: "/swagger",
+      documentation: {
+        info: {
+          title: "Open Platform API",
+          version: "1.0.0",
+          description: "REST and MCP interface for the Open Platform.",
+        },
+        tags: [
+          { name: "Status", description: "Platform health" },
+          { name: "Users", description: "User profile" },
+          { name: "Orgs", description: "Organizations" },
+          { name: "Repos", description: "Git repositories" },
+          { name: "PRs", description: "Pull requests" },
+          { name: "Branches", description: "Git branches" },
+          { name: "Files", description: "File content" },
+          { name: "Issues", description: "Issues, labels, milestones" },
+          { name: "Pipelines", description: "CI/CD pipelines" },
+          { name: "Apps", description: "Deployed applications" },
+          { name: "Platform", description: "Admin-only platform management" },
+          { name: "Instances", description: "vCluster instances" },
+          { name: "Dev Pods", description: "Development environments" },
+        ],
+        components: {
+          securitySchemes: {
+            bearer: {
+              type: "http",
+              scheme: "bearer",
+              description: "Forgejo personal access token",
+            },
+          },
+        },
+        security: [{ bearer: [] }],
+      },
+      exclude: ["/mcp", "/swagger", "/swagger/json"],
+    }),
+  )
 
-  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  // Request logging
+  .onAfterResponse(({ request, set }) => {
+    if (!request.url) return;
+    try {
+      const url = new URL(request.url);
+      if (url.pathname === "/healthz") return;
+      logger.info(
+        { method: request.method, path: url.pathname, status: set.status },
+        `${request.method} ${url.pathname}`,
+      );
+    } catch {
+      // Ignore unparseable URLs
+    }
+  })
 
-  if (sessionId && transports.has(sessionId)) {
-    const { transport } = transports.get(sessionId)!;
-    await transport.handleRequest(req, res, req.body);
-    return;
-  }
+  // Reject null bytes in URL to prevent PostgreSQL injection
+  .onBeforeHandle(({ request, set }) => {
+    if (request.url.includes("%00") || request.url.includes("\0")) {
+      set.status = 400;
+      return { error: "Invalid characters in request" };
+    }
+  })
 
-  if (!sessionId && isInitializeRequest(req.body)) {
+  // Health check (no auth)
+  .get("/healthz", () => ({ status: "ok" }), {
+    detail: { tags: ["Health"], security: [] },
+  })
+
+  // REST API routes (all require Bearer token)
+  .group("/api/v1", (app) =>
+    app
+      .use(statusPlugin)
+      .use(reposPlugin)
+      .use(prsPlugin)
+      .use(pipelinesPlugin)
+      .use(appsPlugin)
+      .use(orgsPlugin)
+      .use(usersPlugin)
+      .use(issuesPlugin)
+      .use(branchesPlugin)
+      .use(filesPlugin)
+      .use(platformPlugin)
+      .use(instancesPlugin)
+      .use(devPodsPlugin),
+  )
+
+  // MCP endpoint — Streamable HTTP with session management
+  .all("/mcp", async ({ request }) => {
+    const method = request.method;
+
+    // DELETE — close session
+    if (method === "DELETE") {
+      const sessionId = request.headers.get("mcp-session-id");
+      if (sessionId) {
+        const entry = transports.get(sessionId);
+        if (entry) {
+          entry.transport.close();
+          transports.delete(sessionId);
+        }
+      }
+      return new Response(null, { status: 200 });
+    }
+
+    // GET — SSE stream for existing session
+    if (method === "GET") {
+      const user = await authenticateRequest(request);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const sessionId = request.headers.get("mcp-session-id");
+      const entry = sessionId ? transports.get(sessionId) : undefined;
+      if (!entry) {
+        return new Response(JSON.stringify({ error: "Session not found" }), {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return entry.transport.handleRequest(request);
+    }
+
+    // POST — authenticate and handle
+    const user = await authenticateRequest(request);
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const sessionId = request.headers.get("mcp-session-id");
+
+    // Existing session
+    if (sessionId && transports.has(sessionId)) {
+      const { transport } = transports.get(sessionId)!;
+      return transport.handleRequest(request);
+    }
+
+    // New session — must be initialize request
+    const body = await request.json();
+    if (!isInitializeRequest(body)) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Invalid request. Send an initialize request without session ID to start.",
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     const newSessionId = randomUUID();
-    const transport = new StreamableHTTPServerTransport({
+    const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
     });
     transports.set(newSessionId, { transport, createdAt: Date.now() });
 
     const server = createMcpServer(user);
     await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
-    return;
-  }
+    return transport.handleRequest(request, { parsedBody: body });
+  })
 
-  res.status(400).json({
-    error:
-      "Invalid request. Send an initialize request without session ID to start.",
-  });
-});
+  .listen(parseInt(process.env.PORT || "3000", 10));
 
-app.get("/mcp", async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string;
-  const entry = transports.get(sessionId);
-  if (!entry) {
-    res.status(404).json({ error: "Session not found" });
-    return;
-  }
-  await entry.transport.handleRequest(req, res);
-});
+logger.info(`listening on :${app.server?.port}`);
+logger.info(`REST: http://localhost:${app.server?.port}/api/v1`);
+logger.info(`MCP:  http://localhost:${app.server?.port}/mcp`);
 
-app.delete("/mcp", async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string;
-  const entry = transports.get(sessionId);
-  if (entry) {
-    entry.transport.close();
-    transports.delete(sessionId);
-  }
-  res.status(200).end();
-});
-
-// JSON parse error handler — returns JSON instead of Express's default HTML
-app.use(
-  (
-    err: Error & { type?: string },
-    _req: express.Request,
-    res: express.Response,
-    next: express.NextFunction,
-  ) => {
-    if (err.type === "entity.parse.failed") {
-      res.status(400).json({ error: "Invalid JSON in request body" });
-      return;
-    }
-    next(err);
-  },
-);
-
-const PORT = parseInt(process.env.PORT || "3000", 10);
-app.listen(PORT, () => {
-  console.log(`[op-api] listening on :${PORT}`);
-  console.log(`[op-api] REST: http://localhost:${PORT}/api/v1`);
-  console.log(`[op-api] MCP:  http://localhost:${PORT}/mcp`);
-});
+export type App = typeof app;

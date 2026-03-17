@@ -177,14 +177,34 @@ export interface AppInfo {
   org: string;
   repo: string;
   namespace: string;
+  ready: boolean;
   status: "running" | "degraded" | "stopped";
-  replicas: { ready: number; desired: number };
+  replicas: { ready: number; desired: number; total: number };
   url: string;
 }
 
 export interface ServiceStatus {
   name: string;
   namespace: string;
+  ready: boolean;
+  replicas: { ready: number; total: number };
+  url: string;
+  subdomain: string;
+}
+
+export interface InstanceServiceStatus {
+  name: string;
+  namespace: string;
+  ready: boolean;
+  replicas: { ready: number; total: number };
+  url: string;
+}
+
+export interface InstanceAppInfo {
+  name: string;
+  namespace: string;
+  org: string;
+  repo: string;
   ready: boolean;
   replicas: { ready: number; total: number };
   url: string;

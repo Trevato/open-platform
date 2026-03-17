@@ -1,40 +1,66 @@
-import type { Response } from "express";
+import { Elysia } from "elysia";
 
 /**
- * Propagate upstream HTTP status codes and sanitize error messages.
- * Extracts user-facing details from Forgejo/Woodpecker JSON error bodies
- * while stripping internal function names and swagger URLs.
+ * Parse upstream error messages to extract HTTP status codes and user-facing details.
+ * Handles Forgejo/Woodpecker JSON error bodies while stripping internal URLs.
  */
-export function handleErr(err: unknown, res: Response) {
+function parseUpstreamError(err: unknown): { status: number; message: string } {
   const raw = err instanceof Error ? err.message : "Unknown error";
 
-  // Extract status code from structured error messages
-  const match = raw.match(/(?:Forgejo|Woodpecker)\s+.+?(\d{3})/);
+  // Extract status code from structured error messages like:
+  //   "Forgejo API 404: ..."
+  //   "Forgejo merge PR 422: ..."
+  //   "Woodpecker API 500: ..."
+  const match = raw.match(/(?:Forgejo|Woodpecker)\s+\S+(?:\s+\S+)*?\s+(\d{3})/);
   const status = match ? parseInt(match[1]) : 500;
 
   // Try to extract meaningful details from JSON error body
-  // Forgejo format: { errors: [...], message: "...", url: "swagger..." }
   const jsonMatch = raw.match(/\{[\s\S]*\}\s*$/);
   if (jsonMatch) {
     try {
       const body = JSON.parse(jsonMatch[0]);
       const errors = body.errors;
-      // Prefer non-empty errors array (most specific)
       if (Array.isArray(errors) && errors.length > 0) {
-        res.status(status).json({ error: errors.join("; ") });
-        return;
+        return { status, message: errors.join("; ") };
       }
-      // Fall back to message field (drop swagger url)
       if (body.message) {
-        res.status(status).json({ error: body.message });
-        return;
+        return { status, message: body.message };
       }
     } catch {
-      // Not valid JSON, fall through to raw message
+      // Not valid JSON, fall through
     }
   }
 
-  // Strip any remaining JSON artifacts from the prefix
   const prefix = raw.replace(/\s*\{[\s\S]*\}\s*$/, "").trim();
-  res.status(status).json({ error: prefix || raw });
+  return { status, message: prefix || raw || "Internal server error" };
 }
+
+export const errorPlugin = new Elysia({ name: "error-handler" })
+  .onError(({ error, code }) => {
+    // Let Elysia's built-in validation errors pass through with native 422 format
+    if (code === "VALIDATION") return;
+
+    // Handle Elysia's built-in error codes with proper JSON responses
+    if (code === "PARSE") {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON in request body" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+    if (code === "NOT_FOUND") {
+      return new Response(JSON.stringify({ error: "Not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const { status, message } = parseUpstreamError(error);
+    return new Response(JSON.stringify({ error: message }), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  })
+  .as("global");
