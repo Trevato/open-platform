@@ -8,7 +8,9 @@ type Params = { params: Promise<{ username: string }> };
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
     const { username } = await params;
-    const data = await opApiGet(`/api/v1/dev-pods/${username}`);
+    const data = await opApiGet(
+      `/api/v1/dev-pods/${encodeURIComponent(username)}`,
+    );
     return NextResponse.json(data);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
@@ -25,7 +27,10 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   try {
     const { username } = await params;
     const body = await request.json();
-    const data = await opApiPatch(`/api/v1/dev-pods/${username}`, body);
+    const data = await opApiPatch(
+      `/api/v1/dev-pods/${encodeURIComponent(username)}`,
+      body,
+    );
     return NextResponse.json(data);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";
@@ -41,7 +46,9 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
     const { username } = await params;
-    const data = await opApiDelete(`/api/v1/dev-pods/${username}`);
+    const data = await opApiDelete(
+      `/api/v1/dev-pods/${encodeURIComponent(username)}`,
+    );
     return NextResponse.json(data);
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Unknown error";

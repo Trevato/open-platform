@@ -1,11 +1,10 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { getSessionWithRole } from "@/lib/session-role";
 import { DevPodList } from "@/app/components/dev-pod-list";
 
 export default async function DevPodsPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/");
+  const result = await getSessionWithRole();
+  if (!result || result.role !== "admin") redirect("/dashboard");
 
   return (
     <div className="container">

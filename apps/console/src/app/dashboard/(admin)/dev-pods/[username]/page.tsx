@@ -1,6 +1,5 @@
-import { auth } from "@/auth";
-import { headers } from "next/headers";
 import { redirect, notFound } from "next/navigation";
+import { getSessionWithRole } from "@/lib/session-role";
 import Link from "next/link";
 import { opApiGet } from "@/lib/op-api";
 import { TerminalView } from "@/app/dashboard/[slug]/terminal/terminal-view";
@@ -11,15 +10,15 @@ export default async function DevPodTerminalPage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) redirect("/");
+  const result = await getSessionWithRole();
+  if (!result || result.role !== "admin") redirect("/dashboard");
 
   let pod;
   try {
     const data = await opApiGet(
-      `/api/v1/dev-pods/${encodeURIComponent(username)}`
+      `/api/v1/dev-pods/${encodeURIComponent(username)}`,
     );
-    pod = data;
+    pod = data.pod;
   } catch {
     notFound();
   }

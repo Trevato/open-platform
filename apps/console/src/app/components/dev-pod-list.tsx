@@ -48,13 +48,7 @@ function statusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-function PodAvatar({
-  name,
-  image,
-}: {
-  name: string;
-  image: string | null;
-}) {
+function PodAvatar({ name, image }: { name: string; image: string | null }) {
   const initial = (name || "?").charAt(0).toUpperCase();
 
   if (image) {
@@ -121,7 +115,10 @@ function PodRow({
         borderBottom: "1px solid var(--border)",
       }}
     >
-      <PodAvatar name={pod.user_name || pod.forgejo_username} image={pod.user_image} />
+      <PodAvatar
+        name={pod.user_name || pod.forgejo_username}
+        image={pod.user_image}
+      />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 600 }}>
@@ -144,16 +141,21 @@ function PodRow({
           {pod.cpu_limit} CPU, {pod.memory_limit} RAM, {pod.storage_size} disk
           {pod.error_message && (
             <span style={{ color: "var(--status-failed)" }}>
-              {" "}&mdash; {pod.error_message}
+              {" "}
+              &mdash; {pod.error_message}
             </span>
           )}
         </p>
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
+      >
         {pod.status === "running" && (
           <button
             className="btn btn-accent btn-sm"
-            onClick={() => router.push(`${terminalBase}/${pod.forgejo_username}`)}
+            onClick={() =>
+              router.push(`${terminalBase}/${pod.forgejo_username}`)
+            }
             style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
           >
             <svg
@@ -226,7 +228,7 @@ export function DevPodList({ slug }: { slug?: string } = {}) {
       const res = await fetch(apiBase);
       if (!res.ok) return;
       const data = await res.json();
-      setPods(data.pods);
+      setPods(data.pods || []);
     } catch {
       // silent
     } finally {
@@ -313,14 +315,19 @@ export function DevPodList({ slug }: { slug?: string } = {}) {
           }}
         >
           <div className="card-body">
-            <p style={{ fontSize: 14, color: "var(--status-failed)" }}>{error}</p>
+            <p style={{ fontSize: 14, color: "var(--status-failed)" }}>
+              {error}
+            </p>
           </div>
         </div>
       )}
       {pods.length === 0 ? (
         <div className="empty-state">
           <h2>No dev pods</h2>
-          <p>Create a dev pod to get a full development environment with Claude Code, Neovim, and all the tools you need.</p>
+          <p>
+            Create a dev pod to get a full development environment with Claude
+            Code, Neovim, and all the tools you need.
+          </p>
           <button
             className="btn btn-accent"
             onClick={handleCreate}
@@ -331,7 +338,13 @@ export function DevPodList({ slug }: { slug?: string } = {}) {
         </div>
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              marginBottom: 12,
+            }}
+          >
             <button
               className="btn btn-accent btn-sm"
               onClick={handleCreate}

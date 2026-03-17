@@ -11,14 +11,14 @@ async function getForgejoToken(): Promise<string | null> {
 
   const result = await pool.query(
     `SELECT "accessToken" FROM account WHERE "userId" = $1 AND "providerId" = 'forgejo' ORDER BY "createdAt" DESC LIMIT 1`,
-    [session.user.id]
+    [session.user.id],
   );
   return result.rows[0]?.accessToken || null;
 }
 
 export async function opApiFetch(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
 ): Promise<Response> {
   const token = await getForgejoToken();
   if (!token) throw new Error("Not authenticated");
@@ -72,6 +72,7 @@ export async function opApiDelete(path: string) {
     const errBody = await res.text();
     throw new Error(`op-api ${res.status}: ${errBody}`);
   }
+  if (res.status === 204) return { deleted: true };
   return res.json();
 }
 
