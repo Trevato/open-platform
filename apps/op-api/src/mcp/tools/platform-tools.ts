@@ -14,9 +14,7 @@ const text = (data: unknown) => ({
 });
 
 async function checkAdmin(user: AuthenticatedUser): Promise<boolean> {
-  return (
-    user.isAdmin || (await isSystemOrgMember(user.token, user.login))
-  );
+  return user.isAdmin || (await isSystemOrgMember(user.token, user.login));
 }
 
 export function registerPlatformTools(
@@ -39,14 +37,30 @@ export function registerPlatformTools(
 
   server.tool(
     "list_platform_users",
-    "List all Forgejo users (admin only)",
-    {},
-    async () => {
+    "List all Forgejo users (admin only). Paginated: use page/limit to navigate.",
+    {
+      page: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe("Page number (default: 1)"),
+      limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(50)
+        .optional()
+        .describe("Results per page, max 50 (default: 50)"),
+    },
+    async ({ page, limit }) => {
       if (!(await checkAdmin(user))) {
         return text({ error: "Admin access required" });
       }
+      const p = page ?? 1;
+      const l = limit ?? 50;
       const resp = await fetch(
-        `${FORGEJO_URL}/api/v1/admin/users?limit=50`,
+        `${FORGEJO_URL}/api/v1/admin/users?page=${p}&limit=${l}`,
         {
           headers: {
             Authorization: `token ${user.token}`,

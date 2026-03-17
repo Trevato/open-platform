@@ -88,6 +88,14 @@ export function registerInstanceTools(
     },
     async ({ slug }) => {
       const result = await instanceService.deleteInstance(slug, user);
+      if ("instance" in result) {
+        return text({
+          ...result,
+          instance: sanitize(
+            result.instance as unknown as Record<string, unknown>,
+          ),
+        });
+      }
       return text(result);
     },
   );

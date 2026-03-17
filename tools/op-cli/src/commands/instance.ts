@@ -179,7 +179,9 @@ const credentialsShow = new Command("show")
       const creds = await client.getInstanceCredentials(slug);
 
       process.stdout.write(`Username: ${creds.username}\n`);
-      process.stdout.write(`Password: ${creds.password}\n`);
+      process.stdout.write(
+        `Password: ${creds.password ?? "(not available)"}\n`,
+      );
     } catch (err) {
       handleError(err);
     }

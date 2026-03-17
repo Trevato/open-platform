@@ -57,10 +57,7 @@ export function registerDevPodTools(
     "create_dev_pod",
     "Create a dev pod for the current user",
     {
-      cpu_limit: z
-        .string()
-        .optional()
-        .describe("CPU limit (default: 2000m)"),
+      cpu_limit: z.string().optional().describe("CPU limit (default: 2000m)"),
       memory_limit: z
         .string()
         .optional()
@@ -72,9 +69,9 @@ export function registerDevPodTools(
     },
     async (args) => {
       const body: Record<string, string> = {};
-      if (args.cpu_limit) body.cpu_limit = args.cpu_limit;
-      if (args.memory_limit) body.memory_limit = args.memory_limit;
-      if (args.storage_size) body.storage_size = args.storage_size;
+      if (args.cpu_limit) body.cpuLimit = args.cpu_limit;
+      if (args.memory_limit) body.memoryLimit = args.memory_limit;
+      if (args.storage_size) body.storageSize = args.storage_size;
       const result = await api(user, "POST", "/api/v1/dev-pods", body);
       return text(result);
     },
@@ -153,10 +150,7 @@ export function registerDevPodTools(
     "Create a dev pod in an instance",
     {
       slug: z.string().describe("Instance slug"),
-      cpu_limit: z
-        .string()
-        .optional()
-        .describe("CPU limit (default: 2000m)"),
+      cpu_limit: z.string().optional().describe("CPU limit (default: 2000m)"),
       memory_limit: z
         .string()
         .optional()
@@ -168,9 +162,9 @@ export function registerDevPodTools(
     },
     async (args) => {
       const body: Record<string, string> = {};
-      if (args.cpu_limit) body.cpu_limit = args.cpu_limit;
-      if (args.memory_limit) body.memory_limit = args.memory_limit;
-      if (args.storage_size) body.storage_size = args.storage_size;
+      if (args.cpu_limit) body.cpuLimit = args.cpu_limit;
+      if (args.memory_limit) body.memoryLimit = args.memory_limit;
+      if (args.storage_size) body.storageSize = args.storage_size;
       const result = await api(
         user,
         "POST",

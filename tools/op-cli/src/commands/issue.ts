@@ -1,7 +1,13 @@
 import { Command } from "commander";
 import { requireConfig } from "../config.js";
 import { OpClient } from "../client.js";
-import { formatTable, statusDot, handleError, parseOrgRepo, timeAgo } from "../format.js";
+import {
+  formatTable,
+  statusDot,
+  handleError,
+  parseOrgRepo,
+  timeAgo,
+} from "../format.js";
 
 // ── Issues ──────────────────────────────────────────────────────────
 
@@ -32,11 +38,13 @@ const issueList = new Command("list")
         statusDot(i.state === "open" ? "running" : "stopped"),
         `#${i.number}`,
         i.title,
-        i.labels.map((l) => l.name).join(", ") || "-",
-        i.assignees.map((a) => a.login).join(", ") || "-",
+        (i.labels ?? []).map((l) => l.name).join(", ") || "-",
+        (i.assignees ?? []).map((a) => a.login).join(", ") || "-",
         timeAgo(i.updated_at),
       ]);
-      process.stdout.write(formatTable(["", "#", "TITLE", "LABELS", "ASSIGNEES", "UPDATED"], rows));
+      process.stdout.write(
+        formatTable(["", "#", "TITLE", "LABELS", "ASSIGNEES", "UPDATED"], rows),
+      );
     } catch (err) {
       handleError(err);
     }
@@ -89,8 +97,15 @@ const issueUpdate = new Command("update")
       if (opts.labels) update.labels = opts.labels.split(",").map(Number);
       if (opts.milestone) update.milestone = parseInt(opts.milestone, 10);
       if (opts.assignees) update.assignees = opts.assignees.split(",");
-      const issue = await client.updateIssue(org, repo, parseInt(number, 10), update);
-      process.stdout.write(`Updated issue #${issue.number}: ${issue.title} [${issue.state}]\n`);
+      const issue = await client.updateIssue(
+        org,
+        repo,
+        parseInt(number, 10),
+        update,
+      );
+      process.stdout.write(
+        `Updated issue #${issue.number}: ${issue.title} [${issue.state}]\n`,
+      );
     } catch (err) {
       handleError(err);
     }
@@ -134,7 +149,9 @@ const labelList = new Command("list")
         l.color,
         l.description || "-",
       ]);
-      process.stdout.write(formatTable(["ID", "NAME", "COLOR", "DESCRIPTION"], rows));
+      process.stdout.write(
+        formatTable(["ID", "NAME", "COLOR", "DESCRIPTION"], rows),
+      );
     } catch (err) {
       handleError(err);
     }
@@ -191,7 +208,9 @@ const milestoneList = new Command("list")
         `${m.open_issues} open / ${m.closed_issues} closed`,
         m.due_on ? new Date(m.due_on).toLocaleDateString() : "-",
       ]);
-      process.stdout.write(formatTable(["ID", "TITLE", "STATE", "ISSUES", "DUE"], rows));
+      process.stdout.write(
+        formatTable(["ID", "TITLE", "STATE", "ISSUES", "DUE"], rows),
+      );
     } catch (err) {
       handleError(err);
     }
