@@ -6,6 +6,7 @@ import yaml from "js-yaml";
 export interface OpConfig {
   url: string;
   token: string;
+  insecure?: boolean;
 }
 
 const CONFIG_DIR = join(homedir(), ".op");
@@ -20,8 +21,16 @@ export function getConfig(): OpConfig | null {
     try {
       const raw = readFileSync(CONFIG_PATH, "utf-8");
       const parsed = yaml.load(raw) as Record<string, unknown>;
-      if (parsed && typeof parsed.url === "string" && typeof parsed.token === "string") {
-        return { url: parsed.url, token: parsed.token };
+      if (
+        parsed &&
+        typeof parsed.url === "string" &&
+        typeof parsed.token === "string"
+      ) {
+        return {
+          url: parsed.url,
+          token: parsed.token,
+          insecure: !!parsed.insecure,
+        };
       }
     } catch {
       // fall through to env vars
@@ -40,9 +49,7 @@ export function getConfig(): OpConfig | null {
 export function requireConfig(): OpConfig {
   const config = getConfig();
   if (!config) {
-    process.stderr.write(
-      "Not logged in. Run `op login <url>` first.\n",
-    );
+    process.stderr.write("Not logged in. Run `op login <url>` first.\n");
     process.exit(1);
   }
   return config;

@@ -5,10 +5,13 @@ import { saveConfig, getConfigPath } from "../config.js";
 export const loginCommand = new Command("login")
   .description("Authenticate with an Open Platform instance")
   .argument("<url>", "Platform API URL (e.g. https://api.open-platform.sh)")
-  .action(async (url: string) => {
+  .option("-t, --token <token>", "Forgejo personal access token (skip prompt)")
+  .option("-k, --insecure", "Skip TLS certificate verification")
+  .action(async (url: string, opts: { token?: string; insecure?: boolean }) => {
     const normalized = url.replace(/\/+$/, "");
+    const insecure = opts.insecure ?? false;
 
-    const token = await promptToken();
+    const token = opts.token || (await promptToken());
     if (!token) {
       process.stderr.write("No token provided.\n");
       process.exit(1);
@@ -16,20 +19,28 @@ export const loginCommand = new Command("login")
 
     // Validate the token against the API
     try {
-      const res = await fetch(`${normalized}/api/v1/users/me`, {
+      const fetchOpts: RequestInit & Record<string, unknown> = {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
         },
-      });
+      };
+
+      if (insecure) {
+        fetchOpts.tls = { rejectUnauthorized: false };
+      }
+
+      const res = await fetch(`${normalized}/api/v1/users/me`, fetchOpts);
 
       if (!res.ok) {
-        process.stderr.write("Authentication failed. Check your token and URL.\n");
+        process.stderr.write(
+          "Authentication failed. Check your token and URL.\n",
+        );
         process.exit(1);
       }
 
       const user = (await res.json()) as { login: string };
-      saveConfig({ url: normalized, token });
+      saveConfig({ url: normalized, token, insecure });
 
       process.stdout.write(`Logged in as ${user.login}\n`);
       process.stdout.write(`Config saved to ${getConfigPath()}\n`);

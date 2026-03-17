@@ -13,13 +13,19 @@ export class OpClientError extends Error {
 export class OpClient {
   private readonly baseUrl: string;
   private readonly token: string;
+  private readonly insecure: boolean;
 
   constructor(config: OpConfig) {
     this.baseUrl = config.url.replace(/\/+$/, "");
     this.token = config.token;
+    this.insecure = config.insecure ?? false;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
@@ -30,11 +36,20 @@ export class OpClient {
       headers["Content-Type"] = "application/json";
     }
 
-    const res = await fetch(url, {
+    const fetchOpts: RequestInit & { tls?: { rejectUnauthorized: boolean } } = {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    };
+
+    if (this.insecure) {
+      // Bun supports tls option; Node uses NODE_TLS_REJECT_UNAUTHORIZED
+      (fetchOpts as Record<string, unknown>).tls = {
+        rejectUnauthorized: false,
+      };
+    }
+
+    const res = await fetch(url, fetchOpts);
 
     if (!res.ok) {
       let message: string;
@@ -80,10 +95,14 @@ export class OpClient {
     name: string,
     description?: string,
   ): Promise<Repo> {
-    return this.request("POST", `/api/v1/repos/${enc(org)}/${enc(template)}/generate`, {
-      name,
-      description,
-    });
+    return this.request(
+      "POST",
+      `/api/v1/repos/${enc(org)}/${enc(template)}/generate`,
+      {
+        name,
+        description,
+      },
+    );
   }
 
   async createRepo(
@@ -91,7 +110,10 @@ export class OpClient {
     name: string,
     description?: string,
   ): Promise<Repo> {
-    return this.request("POST", `/api/v1/repos/${enc(org)}`, { name, description });
+    return this.request("POST", `/api/v1/repos/${enc(org)}`, {
+      name,
+      description,
+    });
   }
 
   async deleteRepo(org: string, repo: string): Promise<{ deleted: boolean }> {
@@ -100,7 +122,10 @@ export class OpClient {
 
   // PRs
   async listPRs(org: string, repo: string, state = "open"): Promise<PR[]> {
-    return this.request("GET", `/api/v1/prs/${enc(org)}/${enc(repo)}?state=${state}`);
+    return this.request(
+      "GET",
+      `/api/v1/prs/${enc(org)}/${enc(repo)}?state=${state}`,
+    );
   }
 
   async createPR(
@@ -116,8 +141,17 @@ export class OpClient {
     });
   }
 
-  async mergePR(org: string, repo: string, number: number, method = "merge"): Promise<{ merged: boolean }> {
-    return this.request("POST", `/api/v1/prs/${enc(org)}/${enc(repo)}/${number}/merge`, { method });
+  async mergePR(
+    org: string,
+    repo: string,
+    number: number,
+    method = "merge",
+  ): Promise<{ merged: boolean }> {
+    return this.request(
+      "POST",
+      `/api/v1/prs/${enc(org)}/${enc(repo)}/${number}/merge`,
+      { method },
+    );
   }
 
   // Pipelines
@@ -125,8 +159,14 @@ export class OpClient {
     return this.request("GET", `/api/v1/pipelines/${enc(org)}/${enc(repo)}`);
   }
 
-  async triggerPipeline(org: string, repo: string, branch = "main"): Promise<Pipeline> {
-    return this.request("POST", `/api/v1/pipelines/${enc(org)}/${enc(repo)}`, { branch });
+  async triggerPipeline(
+    org: string,
+    repo: string,
+    branch = "main",
+  ): Promise<Pipeline> {
+    return this.request("POST", `/api/v1/pipelines/${enc(org)}/${enc(repo)}`, {
+      branch,
+    });
   }
 
   async getPipelineLogs(
@@ -135,14 +175,22 @@ export class OpClient {
     id: number,
     step = 2,
   ): Promise<{ logs: string }> {
-    return this.request("GET", `/api/v1/pipelines/${enc(org)}/${enc(repo)}/${id}/logs?step=${step}`);
+    return this.request(
+      "GET",
+      `/api/v1/pipelines/${enc(org)}/${enc(repo)}/${id}/logs?step=${step}`,
+    );
   }
 
   // Issues
   async listIssues(
     org: string,
     repo: string,
-    opts?: { state?: string; labels?: string; milestone?: string; assignee?: string },
+    opts?: {
+      state?: string;
+      labels?: string;
+      milestone?: string;
+      assignee?: string;
+    },
   ): Promise<Issue[]> {
     const params = new URLSearchParams();
     if (opts?.state) params.set("state", opts.state);
@@ -150,24 +198,48 @@ export class OpClient {
     if (opts?.milestone) params.set("milestone", opts.milestone);
     if (opts?.assignee) params.set("assignee", opts.assignee);
     const qs = params.toString();
-    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}${qs ? `?${qs}` : ""}`);
+    return this.request(
+      "GET",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}${qs ? `?${qs}` : ""}`,
+    );
   }
 
   async createIssue(
     org: string,
     repo: string,
-    opts: { title: string; body?: string; labels?: number[]; milestone?: number; assignees?: string[] },
+    opts: {
+      title: string;
+      body?: string;
+      labels?: number[];
+      milestone?: number;
+      assignees?: string[];
+    },
   ): Promise<Issue> {
-    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}`, opts);
+    return this.request(
+      "POST",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}`,
+      opts,
+    );
   }
 
   async updateIssue(
     org: string,
     repo: string,
     number: number,
-    opts: { title?: string; body?: string; state?: string; labels?: number[]; milestone?: number; assignees?: string[] },
+    opts: {
+      title?: string;
+      body?: string;
+      state?: string;
+      labels?: number[];
+      milestone?: number;
+      assignees?: string[];
+    },
   ): Promise<Issue> {
-    return this.request("PATCH", `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}`, opts);
+    return this.request(
+      "PATCH",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}`,
+      opts,
+    );
   }
 
   async commentOnIssue(
@@ -176,12 +248,19 @@ export class OpClient {
     number: number,
     body: string,
   ): Promise<{ id: number; body: string }> {
-    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}/comments`, { body });
+    return this.request(
+      "POST",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/${number}/comments`,
+      { body },
+    );
   }
 
   // Labels
   async listLabels(org: string, repo: string): Promise<Label[]> {
-    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`);
+    return this.request(
+      "GET",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`,
+    );
   }
 
   async createLabel(
@@ -189,13 +268,24 @@ export class OpClient {
     repo: string,
     opts: { name: string; color: string; description?: string },
   ): Promise<Label> {
-    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`, opts);
+    return this.request(
+      "POST",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/labels`,
+      opts,
+    );
   }
 
   // Milestones
-  async listMilestones(org: string, repo: string, state?: string): Promise<Milestone[]> {
+  async listMilestones(
+    org: string,
+    repo: string,
+    state?: string,
+  ): Promise<Milestone[]> {
     const qs = state ? `?state=${enc(state)}` : "";
-    return this.request("GET", `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones${qs}`);
+    return this.request(
+      "GET",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones${qs}`,
+    );
   }
 
   async createMilestone(
@@ -203,7 +293,11 @@ export class OpClient {
     repo: string,
     opts: { title: string; description?: string; due_on?: string },
   ): Promise<Milestone> {
-    return this.request("POST", `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones`, opts);
+    return this.request(
+      "POST",
+      `/api/v1/issues/${enc(org)}/${enc(repo)}/milestones`,
+      opts,
+    );
   }
 
   // Branches
@@ -211,12 +305,27 @@ export class OpClient {
     return this.request("GET", `/api/v1/branches/${enc(org)}/${enc(repo)}`);
   }
 
-  async createBranch(org: string, repo: string, name: string, from = "main"): Promise<Branch> {
-    return this.request("POST", `/api/v1/branches/${enc(org)}/${enc(repo)}`, { name, from });
+  async createBranch(
+    org: string,
+    repo: string,
+    name: string,
+    from = "main",
+  ): Promise<Branch> {
+    return this.request("POST", `/api/v1/branches/${enc(org)}/${enc(repo)}`, {
+      name,
+      from,
+    });
   }
 
-  async deleteBranch(org: string, repo: string, name: string): Promise<{ deleted: boolean }> {
-    return this.request("DELETE", `/api/v1/branches/${enc(org)}/${enc(repo)}/${enc(name)}`);
+  async deleteBranch(
+    org: string,
+    repo: string,
+    name: string,
+  ): Promise<{ deleted: boolean }> {
+    return this.request(
+      "DELETE",
+      `/api/v1/branches/${enc(org)}/${enc(repo)}/${enc(name)}`,
+    );
   }
 
   // Files
@@ -227,7 +336,10 @@ export class OpClient {
     ref?: string,
   ): Promise<FileContent> {
     const qs = ref ? `?ref=${enc(ref)}` : "";
-    return this.request("GET", `/api/v1/files/${enc(org)}/${enc(repo)}/${path}${qs}`);
+    return this.request(
+      "GET",
+      `/api/v1/files/${enc(org)}/${enc(repo)}/${path}${qs}`,
+    );
   }
 
   async createOrUpdateFile(
@@ -236,12 +348,25 @@ export class OpClient {
     path: string,
     opts: { content: string; message: string; branch?: string; sha?: string },
   ): Promise<FileCommitResult> {
-    return this.request("PUT", `/api/v1/files/${enc(org)}/${enc(repo)}/${path}`, opts);
+    return this.request(
+      "PUT",
+      `/api/v1/files/${enc(org)}/${enc(repo)}/${path}`,
+      opts,
+    );
   }
 
   // PR Reviews
-  async approvePR(org: string, repo: string, number: number, body?: string): Promise<{ approved: boolean }> {
-    return this.request("POST", `/api/v1/prs/${enc(org)}/${enc(repo)}/${number}/approve`, { body: body || "" });
+  async approvePR(
+    org: string,
+    repo: string,
+    number: number,
+    body?: string,
+  ): Promise<{ approved: boolean }> {
+    return this.request(
+      "POST",
+      `/api/v1/prs/${enc(org)}/${enc(repo)}/${number}/approve`,
+      { body: body || "" },
+    );
   }
 
   // Apps
@@ -253,8 +378,179 @@ export class OpClient {
     return this.request("GET", `/api/v1/apps/${enc(org)}/${enc(repo)}`);
   }
 
-  async deployApp(org: string, repo: string, branch = "main"): Promise<Pipeline> {
-    return this.request("POST", `/api/v1/pipelines/${enc(org)}/${enc(repo)}`, { branch });
+  async deployApp(
+    org: string,
+    repo: string,
+    branch = "main",
+  ): Promise<Pipeline> {
+    return this.request("POST", `/api/v1/pipelines/${enc(org)}/${enc(repo)}`, {
+      branch,
+    });
+  }
+
+  // Platform services (admin)
+  async listServices(): Promise<{ services: ServiceStatus[] }> {
+    return this.request("GET", "/api/v1/platform/services");
+  }
+
+  // Platform users (admin)
+  async listUsers(): Promise<{ users: ForgejoUser[] }> {
+    return this.request("GET", "/api/v1/platform/users");
+  }
+
+  async createUser(
+    username: string,
+    email: string,
+  ): Promise<{ user: ForgejoUser; initialPassword: string }> {
+    return this.request("POST", "/api/v1/platform/users", { username, email });
+  }
+
+  // Platform apps (admin)
+  async listPlatformApps(): Promise<{ apps: App[]; orgs: Org[] }> {
+    return this.request("GET", "/api/v1/platform/apps");
+  }
+
+  async createApp(
+    org: string,
+    name: string,
+    description?: string,
+  ): Promise<{ repo: Repo }> {
+    return this.request("POST", "/api/v1/platform/apps", {
+      org,
+      name,
+      description,
+    });
+  }
+
+  // Instances
+  async listInstances(all = false): Promise<{ instances: Instance[] }> {
+    return this.request("GET", `/api/v1/instances${all ? "?all=true" : ""}`);
+  }
+
+  async createInstance(data: {
+    slug: string;
+    display_name: string;
+    admin_email: string;
+    tier?: string;
+  }): Promise<{ instance: Instance }> {
+    return this.request("POST", "/api/v1/instances", data);
+  }
+
+  async getInstance(slug: string): Promise<{
+    instance: Instance;
+    events: InstanceEvent[];
+    services: Record<string, string> | null;
+  }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}`);
+  }
+
+  async deleteInstance(slug: string): Promise<{ instance: Instance }> {
+    return this.request("DELETE", `/api/v1/instances/${enc(slug)}`);
+  }
+
+  async getInstanceCredentials(
+    slug: string,
+  ): Promise<{ username: string; password: string }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}/credentials`);
+  }
+
+  async resetInstanceCredentials(
+    slug: string,
+  ): Promise<{ username: string; password: string }> {
+    return this.request("POST", `/api/v1/instances/${enc(slug)}/credentials`);
+  }
+
+  async getInstanceKubeconfig(slug: string): Promise<{ kubeconfig: string }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}/kubeconfig`);
+  }
+
+  async listInstanceServices(
+    slug: string,
+  ): Promise<{ services: InstanceServiceStatus[] }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}/services`);
+  }
+
+  async listInstanceApps(slug: string): Promise<{ apps: InstanceApp[] }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}/apps`);
+  }
+
+  // Dev Pods (host-level)
+  async listDevPods(): Promise<{ pods: DevPod[] }> {
+    return this.request("GET", "/api/v1/dev-pods");
+  }
+
+  async createDevPod(opts?: {
+    cpu_limit?: string;
+    memory_limit?: string;
+    storage_size?: string;
+  }): Promise<{ pod: DevPod }> {
+    return this.request("POST", "/api/v1/dev-pods", opts || {});
+  }
+
+  async getDevPod(username: string): Promise<{ pod: DevPod }> {
+    return this.request("GET", `/api/v1/dev-pods/${enc(username)}`);
+  }
+
+  async controlDevPod(
+    username: string,
+    action: "start" | "stop",
+  ): Promise<{ pod: DevPod }> {
+    return this.request("PATCH", `/api/v1/dev-pods/${enc(username)}`, {
+      action,
+    });
+  }
+
+  async deleteDevPod(username: string): Promise<void> {
+    return this.request("DELETE", `/api/v1/dev-pods/${enc(username)}`);
+  }
+
+  // Dev Pods (instance-scoped)
+  async listInstanceDevPods(slug: string): Promise<{ pods: DevPod[] }> {
+    return this.request("GET", `/api/v1/instances/${enc(slug)}/dev-pods`);
+  }
+
+  async createInstanceDevPod(
+    slug: string,
+    opts?: {
+      cpu_limit?: string;
+      memory_limit?: string;
+      storage_size?: string;
+    },
+  ): Promise<{ pod: DevPod }> {
+    return this.request(
+      "POST",
+      `/api/v1/instances/${enc(slug)}/dev-pods`,
+      opts || {},
+    );
+  }
+
+  async getInstanceDevPod(
+    slug: string,
+    username: string,
+  ): Promise<{ pod: DevPod }> {
+    return this.request(
+      "GET",
+      `/api/v1/instances/${enc(slug)}/dev-pods/${enc(username)}`,
+    );
+  }
+
+  async controlInstanceDevPod(
+    slug: string,
+    username: string,
+    action: "start" | "stop",
+  ): Promise<{ pod: DevPod }> {
+    return this.request(
+      "PATCH",
+      `/api/v1/instances/${enc(slug)}/dev-pods/${enc(username)}`,
+      { action },
+    );
+  }
+
+  async deleteInstanceDevPod(slug: string, username: string): Promise<void> {
+    return this.request(
+      "DELETE",
+      `/api/v1/instances/${enc(slug)}/dev-pods/${enc(username)}`,
+    );
   }
 }
 
@@ -276,6 +572,16 @@ export interface ServiceStatus {
   ready: boolean;
   replicas: { ready: number; total: number };
   url: string;
+  subdomain: string;
+}
+
+export interface ForgejoUser {
+  id: number;
+  login: string;
+  email: string;
+  full_name: string;
+  is_admin: boolean;
+  avatar_url: string;
 }
 
 export interface User {
@@ -403,4 +709,59 @@ export interface App {
   status: "running" | "degraded" | "stopped";
   replicas: { ready: number; desired: number };
   url: string;
+}
+
+export interface Instance {
+  id: number;
+  slug: string;
+  display_name: string;
+  tier: string;
+  status: string;
+  admin_username: string;
+  admin_email: string;
+  created_at: string;
+  updated_at: string;
+  provisioned_at: string | null;
+  owner_name?: string;
+  owner_email?: string;
+}
+
+export interface InstanceEvent {
+  phase: string;
+  status: string;
+  message: string;
+  created_at: string;
+}
+
+export interface InstanceServiceStatus {
+  name: string;
+  namespace: string;
+  ready: boolean;
+  replicas: { ready: number; total: number };
+  url: string;
+}
+
+export interface InstanceApp {
+  name: string;
+  namespace: string;
+  org: string;
+  repo: string;
+  ready: boolean;
+  replicas: { ready: number; total: number };
+  url: string;
+}
+
+export interface DevPod {
+  id: string;
+  forgejo_username: string;
+  instance_slug: string | null;
+  status: string;
+  pod_name: string;
+  pvc_name: string;
+  cpu_limit: string;
+  memory_limit: string;
+  storage_size: string;
+  error_message: string | null;
+  created_at: string;
+  live_status?: string;
 }
