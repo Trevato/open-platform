@@ -1,9 +1,14 @@
-import { Router } from "express";
+import { Elysia, t } from "elysia";
+import { authPlugin } from "../auth.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
-import { handleErr } from "./error.js";
 
-export const pipelinesRouter = Router();
 const woodpecker = new WoodpeckerClient();
+const repoParams = t.Object({ org: t.String(), repo: t.String() });
+const pipelineParams = t.Object({
+  org: t.String(),
+  repo: t.String(),
+  number: t.String(),
+});
 
 async function getRepoId(org: string, repo: string): Promise<number> {
   const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
@@ -11,51 +16,66 @@ async function getRepoId(org: string, repo: string): Promise<number> {
   return wp.id;
 }
 
-pipelinesRouter.get("/:org/:repo", async (req, res) => {
-  try {
-    const repoId = await getRepoId(req.params.org, req.params.repo);
-    const pipelines = await woodpecker.listPipelines(repoId);
-    res.json(pipelines);
-  } catch (err: unknown) {
-    handleErr(err, res);
-  }
-});
-
-pipelinesRouter.post("/:org/:repo", async (req, res) => {
-  try {
-    const repoId = await getRepoId(req.params.org, req.params.repo);
-    const branch = req.body.branch || "main";
-    const pipeline = await woodpecker.triggerPipeline(repoId, branch);
-    res.status(201).json(pipeline);
-  } catch (err: unknown) {
-    handleErr(err, res);
-  }
-});
-
-pipelinesRouter.get("/:org/:repo/:number", async (req, res) => {
-  try {
-    const repoId = await getRepoId(req.params.org, req.params.repo);
-    const pipeline = await woodpecker.getPipeline(
-      repoId,
-      parseInt(req.params.number),
-    );
-    res.json(pipeline);
-  } catch (err: unknown) {
-    handleErr(err, res);
-  }
-});
-
-pipelinesRouter.get("/:org/:repo/:number/logs", async (req, res) => {
-  try {
-    const repoId = await getRepoId(req.params.org, req.params.repo);
-    const step = parseInt((req.query.step as string) || "2");
-    const logs = await woodpecker.getPipelineLogs(
-      repoId,
-      parseInt(req.params.number),
-      step,
-    );
-    res.json({ logs });
-  } catch (err: unknown) {
-    handleErr(err, res);
-  }
-});
+export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
+  .use(authPlugin)
+  .get(
+    "/:org/:repo",
+    async ({ params: { org, repo } }) => {
+      const repoId = await getRepoId(org, repo);
+      return woodpecker.listPipelines(repoId);
+    },
+    {
+      params: repoParams,
+      detail: { tags: ["Pipelines"], summary: "List pipelines" },
+    },
+  )
+  .post(
+    "/:org/:repo",
+    async ({ params: { org, repo }, body, set }) => {
+      const repoId = await getRepoId(org, repo);
+      const pipeline = await woodpecker.triggerPipeline(
+        repoId,
+        body.branch || "main",
+      );
+      set.status = 201;
+      return pipeline;
+    },
+    {
+      params: repoParams,
+      body: t.Object({
+        branch: t.Optional(t.String()),
+      }),
+      detail: { tags: ["Pipelines"], summary: "Trigger pipeline" },
+    },
+  )
+  .get(
+    "/:org/:repo/:number",
+    async ({ params: { org, repo, number } }) => {
+      const repoId = await getRepoId(org, repo);
+      return woodpecker.getPipeline(repoId, parseInt(number));
+    },
+    {
+      params: pipelineParams,
+      detail: { tags: ["Pipelines"], summary: "Get pipeline" },
+    },
+  )
+  .get(
+    "/:org/:repo/:number/logs",
+    async ({ params: { org, repo, number }, query }) => {
+      const repoId = await getRepoId(org, repo);
+      const step = query.step ? parseInt(query.step) : 2;
+      const logs = await woodpecker.getPipelineLogs(
+        repoId,
+        parseInt(number),
+        step,
+      );
+      return { logs };
+    },
+    {
+      params: pipelineParams,
+      query: t.Object({
+        step: t.Optional(t.String()),
+      }),
+      detail: { tags: ["Pipelines"], summary: "Get pipeline logs" },
+    },
+  );
