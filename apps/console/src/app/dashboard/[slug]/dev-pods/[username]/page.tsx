@@ -18,9 +18,10 @@ export default async function InstanceDevPodTerminalPage({
 
   let pod;
   try {
-    pod = await opApiGet(
-      `/api/v1/instances/${encodeURIComponent(slug)}/dev-pods/${encodeURIComponent(username)}`
+    const data = await opApiGet(
+      `/api/v1/instances/${encodeURIComponent(slug)}/dev-pods/${encodeURIComponent(username)}`,
     );
+    pod = data.pod;
   } catch {
     notFound();
   }

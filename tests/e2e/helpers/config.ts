@@ -2,7 +2,7 @@
  * URL builders and config for E2E tests.
  *
  * Env vars:
- *   PLATFORM_DOMAIN   - e.g. "open-platform.sh" or "product-garden.com"
+ *   PLATFORM_DOMAIN   - e.g. "open-platform.sh"
  *   SERVICE_PREFIX     - e.g. "buster-" (includes trailing dash) or "" for host
  *   FORGEJO_ADMIN_USER - admin username (default: opadmin)
  *   FORGEJO_ADMIN_PASSWORD - admin password

@@ -4,13 +4,18 @@ metadata:
   name: console
   namespace: APP_NAMESPACE
 ---
-# Console communicates exclusively through op-api — no direct K8s access needed.
-# Minimal ClusterRole with no permissions, retained for ServiceAccount mounting.
+# Console ws-server needs direct K8s access for dev pod terminal exec.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: console
-rules: []
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

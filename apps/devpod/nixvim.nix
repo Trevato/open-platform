@@ -12,6 +12,20 @@
       settings = {
         flavour = "mocha";
         transparent_background = true;
+        custom_highlights.__raw = ''
+          function(colors)
+            return {
+              LineNr = { fg = colors.overlay1 },
+              CursorLineNr = { fg = colors.text },
+              SnacksDashboardHeader = { fg = colors.mauve },
+              SnacksDashboardIcon = { fg = colors.blue },
+              SnacksDashboardKey = { fg = colors.green },
+              SnacksDashboardDesc = { fg = colors.text },
+              SnacksDashboardTitle = { fg = colors.yellow, bold = true },
+              SnacksDashboardFooter = { fg = colors.overlay0 },
+            }
+          end
+        '';
       };
     };
 
@@ -289,7 +303,7 @@
               ];
             };
             sections = [
-              # -- Left pane --
+              # ── Left pane ──
               {
                 section = "header";
                 pane = 1;
@@ -359,7 +373,7 @@
                 indent = 2;
                 padding = 1;
               }
-              # -- Right pane: Git (3 views) --
+              # ── Right pane: Git (3 views) ──
               {
                 section = "terminal";
                 cmd = "git log --oneline --decorate -8 2>/dev/null";
@@ -398,7 +412,7 @@
                 ttl = 300;
                 enabled.__raw = "function() return _G.dash.git == 3 and Snacks.git.get_root() ~= nil end";
               }
-              # -- Right pane: Docker (2 views) --
+              # ── Right pane: Docker (2 views) ──
               {
                 section = "terminal";
                 cmd = "docker ps --format 'table {{.Names}}\\t{{.Status}}' 2>/dev/null | head -8";
@@ -425,7 +439,7 @@
                 ttl = 120;
                 enabled.__raw = "function() return _G.dash.docker == 2 and vim.fn.executable('docker') == 1 end";
               }
-              # -- Right pane: Kubernetes (2 views) --
+              # ── Right pane: Kubernetes (2 views) ──
               {
                 section = "terminal";
                 cmd = "ctx=$(kubectl config current-context 2>/dev/null || echo 'none'); ns=$(kubectl config view --minify -o jsonpath='{.contexts[0].context.namespace}' 2>/dev/null || echo 'default'); echo \"$ctx · $ns\"";
@@ -1155,34 +1169,9 @@
       cursorline = true;
       splitbelow = true;
       splitright = true;
+      title = true;
+      titlestring = "%{expand('%:~:.')} — %{fnamemodify(getcwd(), ':~')}";
     };
 
-    highlightOverride = {
-      LineNr = {
-        fg = "#7f849c";
-      }; # overlay1 - visible on transparent
-      CursorLineNr = {
-        fg = "#cdd6f4";
-      }; # text - bright for current line
-      SnacksDashboardHeader = {
-        fg = "#cba6f7";
-      }; # mauve
-      SnacksDashboardIcon = {
-        fg = "#89b4fa";
-      }; # blue
-      SnacksDashboardKey = {
-        fg = "#a6e3a1";
-      }; # green
-      SnacksDashboardDesc = {
-        fg = "#cdd6f4";
-      }; # text
-      SnacksDashboardTitle = {
-        fg = "#f9e2af";
-        bold = true;
-      }; # yellow
-      SnacksDashboardFooter = {
-        fg = "#6c7086";
-      }; # overlay0
-    };
   };
 }

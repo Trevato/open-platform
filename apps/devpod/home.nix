@@ -44,6 +44,10 @@
     prettierd
     stylua
     nixfmt-rfc-style
+
+    # Fonts (Nerd Font glyphs for terminal icons)
+    nerd-fonts.fira-code
+    nerd-fonts.symbols-only
   ];
 
   # --- Shell (zsh) ---------------------------------------------------------
@@ -79,6 +83,7 @@
       # Docker
       d = "docker";
       dc = "docker compose";
+      dps = "docker ps";
       lzd = "lazydocker";
 
       # Kubernetes
@@ -87,6 +92,7 @@
       kgs = "kubectl get svc";
       kga = "kubectl get all";
       kns = "kubectl config set-context --current --namespace";
+      h = "helm";
       lzk = "k9s";
 
       # Quick
@@ -97,8 +103,7 @@
       "..." = "cd ../..";
     };
 
-    initExtra = ''
-      # Key bindings
+    initContent = ''
       bindkey '^[[A' history-search-backward
       bindkey '^[[B' history-search-forward
     '';
@@ -156,6 +161,22 @@
       navigate = true;
       side-by-side = true;
       line-numbers = true;
+      features = "catppuccin-mocha";
+
+      catppuccin-mocha = {
+        dark = true;
+        syntax-theme = "Catppuccin Mocha";
+        minus-style = "syntax #493447";
+        minus-emph-style = "bold syntax #694559";
+        plus-style = "syntax #394545";
+        plus-emph-style = "bold syntax #4e6356";
+        line-numbers-minus-style = "bold #f38ba8";
+        line-numbers-plus-style = "bold #a6e3a1";
+        line-numbers-zero-style = "#6c7086";
+        line-numbers-left-style = "#6c7086";
+        line-numbers-right-style = "#6c7086";
+        blame-palette = "#1e1e2e #181825 #11111b #313244 #45475a";
+      };
     };
   };
 
@@ -182,16 +203,46 @@
   programs.lazygit = {
     enable = true;
     settings = {
+      gui = {
+        nerdFontsVersion = "3";
+        theme = {
+          activeBorderColor = [
+            "blue"
+            "bold"
+          ];
+          inactiveBorderColor = [ "white" ];
+          optionsTextColor = [ "blue" ];
+          selectedLineBgColor = [ "default" ];
+          cherryPickedCommitBgColor = [ "default" ];
+          cherryPickedCommitFgColor = [ "blue" ];
+          unstagedChangesColor = [ "red" ];
+          defaultFgColor = [ "default" ];
+          searchingActiveBorderColor = [ "yellow" ];
+        };
+        authorColors."*" = "blue";
+      };
       git.pagers = [
         {
-          command = "diff";
-          pager = "delta --dark --paging=never";
-        }
-        {
-          command = "show";
-          pager = "delta --dark --paging=never";
+          pager = "delta --paging=never";
+          colorArg = "always";
         }
       ];
+    };
+  };
+
+  # --- yazi ----------------------------------------------------------------
+  programs.yazi = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
+  # --- zellij --------------------------------------------------------------
+  programs.zellij = {
+    enable = true;
+    settings = {
+      theme = "catppuccin-mocha";
+      default_layout = "compact";
+      pane_frames = false;
     };
   };
 
@@ -243,5 +294,6 @@
     };
   };
 
-  home.file.".config/k9s/skins/catppuccin-mocha-transparent.yaml".source = ./config/k9s/skins/catppuccin-mocha-transparent.yaml;
+  home.file.".config/k9s/skins/catppuccin-mocha-transparent.yaml".source =
+    ./config/k9s/skins/catppuccin-mocha-transparent.yaml;
 }

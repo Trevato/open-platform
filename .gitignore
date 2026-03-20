@@ -51,3 +51,4 @@ tools/op-cli/dist/
 
 # Test scripts
 test-console-ui.mjs
+validate-terminal.mjs
