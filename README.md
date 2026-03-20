@@ -1,81 +1,303 @@
 # Open Platform
 
-Self-hosted developer platform on Kubernetes. Git hosting, CI/CD, object storage, dashboards, and cluster management — all authenticated through a single identity provider.
+Self-hosted developer platform on Kubernetes. One command gives you Git hosting, CI/CD, a Kubernetes dashboard, object storage, a management console, and PostgreSQL -- all authenticated through a single identity provider and served on one wildcard domain.
 
-## What You Get
+```
+*.yourdomain.com
+  forgejo.   -- Git, packages, container registry, SSO
+  ci.        -- CI/CD pipelines
+  headlamp.  -- Kubernetes dashboard
+  minio.     -- Object storage console
+  s3.        -- S3-compatible API
+  console.   -- Management dashboard
+  api.       -- REST API + MCP server for AI agents
+  {app}.     -- Your apps (push-to-deploy from template)
+```
 
-- **Forgejo** — Git, packages, container registry, SSO
-- **Woodpecker CI** — CI/CD pipelines
-- **Headlamp** — Kubernetes dashboard
-- **MinIO** — S3-compatible storage
-- **Console** — Platform management dashboard
-- **Flux** — GitOps (self-managing after bootstrap)
-- **PostgreSQL** — CNPG operator
+## Why
 
-All services use a single domain (`*.yourdomain.com`) and authenticate through Forgejo as the central identity provider.
+Setting up a modern dev environment means stitching together a dozen SaaS products, managing separate auth for each, and hoping they integrate. Open Platform replaces all of that with a single deploy that just works -- self-hosted, self-managing, and designed for teams that want to own their infrastructure.
+
+After bootstrap, Flux GitOps takes over. Push to the platform repo on Forgejo and changes reconcile automatically. No manual Helm commands in steady state.
+
+## Features
+
+**One-command deploy.** `make deploy` bootstraps everything from a single `open-platform.yaml` config file -- generates secrets, installs services, configures OAuth2 between them, and hands off to Flux.
+
+**App template.** Create a new repo from the built-in template and get a production-ready Next.js 15 app with PostgreSQL, S3 storage, Forgejo OAuth2, and four CI workflows. Push to main and it deploys. Open a PR and it gets its own isolated preview environment.
+
+**PR preview environments.** Every pull request gets a dedicated namespace, database, and S3 bucket. Seed data is applied automatically. OAuth2-Proxy requires Forgejo login to access. Closing the PR cleans up everything.
+
+**Dev Pods.** Cloud development environments running in your cluster. Ubuntu + Nix + nixvim + Claude Code + Docker-in-Docker. Pre-configured with your Forgejo credentials, the `op` CLI, and MCP. Create one with `op devpod create` or from the Console UI.
+
+**Multi-tenant hosting.** Provision fully isolated platform instances via vCluster. Each tenant gets their own Forgejo, CI, storage, and database at `{slug}-forgejo.{domain}`, `{slug}-ci.{domain}`, etc. Managed through the Console or CLI.
+
+**AI-native.** REST API with 14 route plugins and Swagger docs. MCP server with 40+ tools across 12 categories. Built for Claude Code and other AI agents to manage repos, pipelines, issues, PRs, instances, and dev pods programmatically.
+
+**CLI.** The `op` command handles everything: apps, PRs, issues, pipelines, users, instances, dev pods. Authenticates via Forgejo personal access token.
+
+## Architecture
+
+```
+Browser --> Traefik (ingress, wildcard DNS)
+              |-- forgejo    --> Forgejo (git, packages, OIDC provider)
+              |-- ci         --> Woodpecker (CI/CD, K8s-native backend)
+              |-- headlamp   --> Headlamp (K8s dashboard, OIDC auth)
+              |-- minio / s3 --> MinIO (S3-compatible object storage)
+              |-- console    --> Console (management dashboard)
+              |-- api        --> Platform API (REST + MCP, 40+ AI tools)
+              |-- {apps}     --> Apps (from template, push-to-deploy)
+
+Flux (GitOps) --> system/open-platform on Forgejo --> reconciles all services
+Woodpecker CI --> builds and deploys apps per push
+PostgreSQL    --> CNPG-managed cluster (shared infrastructure)
+```
+
+All services authenticate through Forgejo as the single OIDC/OAuth2 identity provider. Sign in once, access everything.
+
+## Services
+
+| Service      | Domain                           | Role                                            |
+| ------------ | -------------------------------- | ----------------------------------------------- |
+| Forgejo      | `forgejo.{domain}`               | Git, packages, container registry, SSO provider |
+| Woodpecker   | `ci.{domain}`                    | CI/CD with K8s-native pipeline backend          |
+| Headlamp     | `headlamp.{domain}`              | Kubernetes dashboard with OIDC                  |
+| MinIO        | `minio.{domain}` / `s3.{domain}` | S3-compatible object storage                    |
+| Console      | `console.{domain}`               | Instance and dev pod management                 |
+| Platform API | `api.{domain}`                   | REST API + MCP server for AI agents             |
+| PostgreSQL   | internal                         | CNPG-managed database cluster                   |
+| Flux         | internal                         | GitOps -- self-managing after bootstrap         |
 
 ## Quick Start
 
+### Prerequisites
+
+- Kubernetes cluster (k3s recommended, any distribution works)
+- [Helm](https://helm.sh/) and [Helmfile](https://github.com/helmfile/helmfile)
+- `kubectl`, `curl`, `jq`, `git`
+- Wildcard DNS (`*.yourdomain.com`) pointing to your cluster's ingress IP
+
+#### Linux (bare metal or VM)
+
 ```bash
-# 1. Clone and configure
-git clone <repo-url>
+# Install k3s (if needed)
+curl -sfL https://get.k3s.io | sh -
+
+# Clone and configure
+git clone https://github.com/trevato/open-platform.git
 cd open-platform
 cp open-platform.yaml.example open-platform.yaml
-# Edit open-platform.yaml — set domain, admin user, TLS mode
+# Edit: set domain, admin email, tls.mode (letsencrypt recommended)
 
-# 2. Generate and deploy
+# Deploy
 make deploy
+```
+
+#### macOS (Colima -- for local development)
+
+```bash
+# Start a k3s-compatible VM
+colima start op --kubernetes --cpu 4 --memory 8 --disk 50 \
+  --runtime containerd --network-address
+
+# Note the VM IP from `colima list` (e.g., 192.168.64.4)
+# Configure DNS: resolve *.dev.test to the VM IP (dnsmasq or /etc/hosts)
+
+# Clone and configure
+git clone https://github.com/trevato/open-platform.git
+cd open-platform
+cp open-platform.yaml.example open-platform.yaml
+# Edit: set domain: dev.test, tls.mode: selfsigned
+
+# Deploy
+make deploy
+
+# Trust the self-signed CA
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain certs/ca.crt
+```
+
+### After Deploy
+
+1. Open `https://forgejo.{domain}` and sign in with the admin credentials from `open-platform.state.yaml`
+2. All other services use Forgejo SSO -- click "Sign in with Forgejo"
+3. Run `make urls` to see all service URLs
+
+## Creating Apps
+
+Create a new repository from `system/template` on Forgejo, or use the CLI:
+
+```bash
+op app create --org myorg --name myapp
+```
+
+The template includes:
+
+- **Next.js 15** with App Router
+- **PostgreSQL** database (provisioned per app)
+- **S3/MinIO** storage (bucket per app)
+- **Forgejo OAuth2** via better-auth
+- **4 CI workflows**: deploy (main), preview (PR), preview-cleanup (PR close), reset (manual)
+
+Push to main and Woodpecker builds, provisions infrastructure, and deploys. The app is live at `https://{appname}.{domain}`.
+
+### PR Preview Environments
+
+Open a pull request and an isolated preview auto-deploys:
+
+- Dedicated namespace, database, and S3 bucket
+- URL: `https://pr-{N}-{repo}.{domain}`
+- Protected by OAuth2-Proxy (requires Forgejo login)
+- Seed data applied automatically
+- Cleaned up when the PR closes
+
+## Dev Pods
+
+Cloud development environments running in your cluster with pre-configured tools.
+
+```bash
+op devpod create             # Create a dev pod for the current user
+op devpod list               # List all dev pods
+op devpod stop alice         # Stop a dev pod (scales to 0)
+op devpod start alice        # Start it back up
+op devpod delete alice       # Delete pod and storage
+```
+
+Each dev pod includes: Ubuntu 24.04, Nix, nixvim, Claude Code, Node.js, Docker-in-Docker, the `op` CLI, and a pre-configured MCP connection. Persistent home directory via PVC.
+
+Also available from the Console UI at `https://console.{domain}`.
+
+## CLI
+
+The `op` CLI authenticates with a Forgejo personal access token:
+
+```bash
+op login https://api.{domain} --token <your-pat>
+```
+
+Selected commands:
+
+```
+op status                           Platform health check
+op whoami                           Current user info
+
+op app list                         List deployed apps
+op app create --org O --name N      Create app from template
+op app deploy org/repo              Trigger deploy pipeline
+
+op pr list org/repo                 List pull requests
+op pr create org/repo -t "Title"    Create a PR
+op pr merge org/repo 1              Merge PR #1
+
+op issue list org/repo              List issues
+op issue create org/repo -t "Bug"   Create an issue
+
+op pipeline list org/repo           List CI pipelines
+op pipeline logs org/repo 42        View pipeline logs
+
+op devpod create                    Create dev pod
+op devpod list                      List dev pods
+
+op instance create acme             Provision tenant instance
+op instance credentials show acme   Show instance credentials
+```
+
+See [docs/cli.md](docs/cli.md) for the full command reference.
+
+## MCP Server
+
+The MCP server gives AI agents full access to the platform through 40+ tools. Inside a dev pod, it is already configured. For external use, add to your MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "open-platform": {
+      "type": "streamable-http",
+      "url": "https://api.{domain}/mcp",
+      "headers": {
+        "Authorization": "Bearer <forgejo-pat>"
+      }
+    }
+  }
+}
+```
+
+Tool categories: orgs, repos, PRs, issues, branches, files, pipelines, apps, users, platform, instances, dev pods.
+
+See [docs/mcp.md](docs/mcp.md) for the full tool catalog.
+
+## Multi-Tenant Hosting
+
+Provision isolated platform instances for teams or customers using vCluster. Each instance gets its own Forgejo, Woodpecker, Headlamp, MinIO, and PostgreSQL.
+
+```bash
+op instance create acme --name "Acme Corp" --email admin@acme.com --tier pro
+op instance list
+op instance credentials show acme
+```
+
+| Tier | CPU  | Memory | Storage |
+| ---- | ---- | ------ | ------- |
+| Free | 500m | 2Gi    | 10Gi    |
+| Pro  | 2    | 8Gi    | 50Gi    |
+| Team | 4    | 16Gi   | 100Gi   |
+
+Enable by adding `provisioner: { enabled: true }` to `open-platform.yaml`. See [docs/hosting.md](docs/hosting.md) for the full architecture.
+
+## Configuration
+
+`open-platform.yaml` is the single source of truth. Copy the example and edit:
+
+```yaml
+domain: myplatform.example.com
+
+admin:
+  username: opadmin
+  email: admin@example.com
+
+tls:
+  mode: letsencrypt # letsencrypt | selfsigned | cloudflare
+  email: admin@example.com
+```
+
+Optional sections: `service_prefix` (multi-tenant subdomain prefix), `cloudflare` (tunnel config), `provisioner` (vCluster hosting).
+
+## Makefile Targets
+
+```
+make deploy      Full deploy -- generates config, syncs releases, bootstraps Flux (idempotent)
+make generate    Regenerate config from open-platform.yaml
+make diff        Preview changes without applying
+make status      Check Helm release status
+make urls        Show all service URLs
+make teardown    Destroy all resources (requires confirmation)
+make test-smoke  Run smoke tests (curl-based)
+make test-e2e    Run Playwright E2E tests
 ```
 
 ## How It Works
 
-1. `open-platform.yaml` defines your platform (domain, admin, TLS mode)
-2. `generate-config.sh` creates all Helm values and Flux manifests from templates
-3. `deploy.sh` bootstraps services via Helmfile with automated hooks
-4. Flux adopts all releases — platform is now self-managing
-5. Push changes to `system/open-platform` on your Forgejo → Flux reconciles
-
-## Configuration
-
-See `open-platform.yaml.example` for all options:
-
-- `domain` — your platform domain (e.g., `dev.test`, `myplatform.com`)
-- `admin.username` / `admin.email` — platform admin
-- `tls_mode` — `selfsigned`, `letsencrypt`, or `cloudflare`
-- `cloudflare` — optional tunnel configuration
-- `service_prefix` — optional prefix for multi-tenant deployments
-
-## App Development
-
-Create apps from the built-in template:
-
-1. Use `system/template` as a template in Forgejo to create a new repo
-2. CI/CD pipelines are included — push to deploy
-3. PR previews with isolated databases and storage
-
-The template includes: Next.js 15, PostgreSQL, S3, Forgejo OAuth2, 4 CI workflows.
-
-## Day-to-Day
-
-```bash
-make deploy     # idempotent full sync
-make diff       # preview changes
-make status     # check release status
-make urls       # print service URLs
-```
-
-## Prerequisites
-
-- Linux server with k3s (or any Kubernetes cluster)
-- Helm + Helmfile
-- curl and jq
+1. `open-platform.yaml` defines your platform (domain, admin, TLS, optional features)
+2. `generate-config.sh` templates all Helm values, Flux manifests, and env files
+3. `deploy.sh` bootstraps in 5 tiers: infra, storage, identity, apps, gitops
+4. Automated hooks configure OAuth2 between services, set up the system org, and seed repos
+5. Flux adopts all releases -- the platform is now self-managing
+6. Push changes to `system/open-platform` on Forgejo and Flux reconciles within a minute
 
 ## Documentation
 
-- `CLAUDE.md` — comprehensive architecture reference
-- `open-platform.yaml.example` — configuration reference
-- `config/templates/` — all configuration templates
+| Document                                   | Description                                   |
+| ------------------------------------------ | --------------------------------------------- |
+| [Getting Started](docs/getting-started.md) | Install, deploy, first login, create an app   |
+| [REST API](docs/api.md)                    | Endpoint reference, auth, error format        |
+| [CLI](docs/cli.md)                         | Full command reference for `op`               |
+| [MCP Server](docs/mcp.md)                  | Tool catalog for AI agents                    |
+| [Multi-Tenant Hosting](docs/hosting.md)    | vCluster architecture and instance management |
+| [Permissions](docs/permissions.md)         | Auth model, roles, AI agent setup             |
+| [Services](docs/services.md)               | Per-service config, secrets, env vars         |
+| [Bootstrap](docs/bootstrap.md)             | Deploy pipeline, scripts, template inventory  |
+| [Known Issues](docs/known-issues.md)       | Implementation notes and debugging            |
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE)
+Apache License 2.0 -- see [LICENSE](LICENSE).

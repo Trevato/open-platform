@@ -5,7 +5,7 @@ Self-hosted developer platform running on k3s. All services authenticate through
 ## Architecture
 
 ```
-                    ┌─── Cloudflare Tunnel (optional) ───► *.product-garden.com
+                    ┌─── Cloudflare Tunnel (optional) ───► *.open-platform.sh
                     │
 Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
               *.{PLATFORM_DOMAIN}             ├── ci ─────────► Woodpecker (CI/CD)
@@ -13,7 +13,13 @@ Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ──�
                                               ├── minio ──────► MinIO Console
                                               ├── s3 ─────────► MinIO S3 API
                                               ├── oauth2 ─────► OAuth2-Proxy (preview auth)
+                                              ├── console ────► Console (dashboard, instance mgmt)
+                                              ├── api ────────► Platform API (REST + MCP)
                                               └── <app> ──────► Apps (from template)
+
+Console ──► op-api (REST) ──► Forgejo API + K8s API
+op-api ──► MCP Server (40+ tools for AI agents)
+op-api ──► DevPods (K8s-native dev environments with Claude Code)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -33,11 +39,11 @@ Single source of truth: `open-platform.yaml` → `scripts/generate-config.sh` �
 - **TLS modes**: `selfsigned` (auto-generated CA), `letsencrypt` (cert-manager + HTTP-01), `cloudflare` (tunnel at edge)
 - **Deploy flow**: `open-platform.yaml` → `generate-config.sh` (Phase 0 in deploy.sh) → `helmfile sync`
 - **`service_prefix`** — Optional prefix prepended to all service subdomains (e.g., `myteam-` → `myteam-forgejo.open-platform.sh`). Empty by default. Used for multi-tenant deployments where each customer instance gets a unique prefix.
-- **Template placeholders**: `SERVICE_PREFIX` (domain prefix) and `REGISTRY_HOST` (Forgejo hostname, e.g., `myteam-forgejo.open-platform.sh`). Used in app CI pipelines and k8s manifests. Both are Woodpecker org secrets: `service_prefix`, `registry_host`.
+- **Template placeholders**: `__SERVICE_PREFIX__` (domain prefix), `__PLATFORM_DOMAIN__` (base domain), `__PROVISIONER_ENABLED__` (feature flag). Used in k8s manifests and substituted via `sed` during CI deploy. Woodpecker org secrets: `service_prefix`, `platform_domain`, `registry_host`, `registry_push_host`, `registry_username`, `registry_token`, `provisioner_enabled`.
 
 ### Domain Strategy
 
-The domain is set in `open-platform.yaml` (e.g., `domain: dev.test` or `domain: product-garden.com`). All services use `*.{PLATFORM_DOMAIN}`.
+The domain is set in `open-platform.yaml` (e.g., `domain: dev.test` or `domain: open-platform.sh`). All services use `*.{PLATFORM_DOMAIN}`.
 
 Forgejo's `ROOT_URL`, Woodpecker's `WOODPECKER_HOST`, and app `BETTER_AUTH_URL` all use `https://<service>.{PLATFORM_DOMAIN}`. In-cluster service-to-service communication uses Kubernetes DNS (e.g., `forgejo-http.forgejo.svc.cluster.local`).
 
@@ -53,9 +59,10 @@ Enabled when `cloudflare` section is present in `open-platform.yaml`. Config gen
 
 ### Preview Environments
 
-PR previews deploy at `pr-N-<app>.product-garden.com`, protected by OAuth2-Proxy (Forgejo login required):
+PR previews deploy at `pr-N-<app>.open-platform.sh`, protected by OAuth2-Proxy (Forgejo login required):
+
 - **Namespace**: `op-{org}-{repo}-pr-{number}` (e.g., `op-system-social-pr-1`)
-- **Domain**: `pr-{number}-{repo}.product-garden.com` (e.g., `pr-1-social.product-garden.com`)
+- **Domain**: `pr-{number}-{repo}.open-platform.sh` (e.g., `pr-1-social.open-platform.sh`)
 - **Auth**: Traefik ForwardAuth middleware → OAuth2-Proxy → Forgejo OIDC
 - **Isolation**: Separate DB, S3 bucket, and namespace per PR
 - **Seed data**: Applied via `_seed_marker` pattern — checks for marker row before seeding to avoid duplicates on re-runs
@@ -89,89 +96,61 @@ Host k3s (VxRail)
 
 ## Services
 
-### Forgejo (Git + Identity Provider)
-- **Config**: `platform/identity/forgejo.yaml` (Flux HelmRelease), `forgejo-values.yaml` (helmfile bootstrap)
-- **Namespace**: `forgejo`
-- **Domain**: `forgejo.product-garden.com`
-- **Helm chart**: `oci://code.forgejo.org/forgejo-helm/forgejo` (version pinned via OCIRepository semver)
-- **Database**: PostgreSQL at `postgres-rw.postgres.svc.cluster.local:5432`, database `forgejo`
-- **Role**: Central identity provider. All other services authenticate through Forgejo OAuth2 applications.
-- **Canonical URL**: `ROOT_URL: https://forgejo.product-garden.com`. OIDC token `iss` claim uses this URL — all consumers must match.
-- **Secrets**: `forgejo-admin-credentials` (admin user), `forgejo-db-config` (database password) — both referenced as existing K8s secrets
-- **Features enabled**: OAuth2 provider, OpenID signin, package/container registry, LFS, organization creation
-- **Webhook hosts**: `ALLOWED_HOST_LIST: "*.product-garden.com"`
+| Service      | Namespace           | Domain                                             | Role                                                                                   |
+| ------------ | ------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Forgejo      | `forgejo`           | `forgejo.{PLATFORM_DOMAIN}`                        | Git, packages, OIDC identity provider. Central auth — all services use Forgejo OAuth2. |
+| Headlamp     | `headlamp`          | `headlamp.{PLATFORM_DOMAIN}`                       | K8s dashboard. OIDC via Forgejo.                                                       |
+| Woodpecker   | `woodpecker`        | `ci.{PLATFORM_DOMAIN}`                             | CI/CD. K8s-native backend, Kaniko image builds, auto-activated repos.                  |
+| MinIO        | `minio`             | `minio.{PLATFORM_DOMAIN}` / `s3.{PLATFORM_DOMAIN}` | Object storage (console + S3 API).                                                     |
+| PostgreSQL   | `postgres`          | internal only                                      | CNPG cluster. Databases: `forgejo`, `platform_ledger`.                                 |
+| OAuth2-Proxy | `oauth2-proxy`      | `oauth2.{PLATFORM_DOMAIN}`                         | Protects PR preview environments via Traefik ForwardAuth.                              |
+| Console      | `op-system-console` | `console.{PLATFORM_DOMAIN}`                        | Management dashboard. Instance provisioning, dev pods, admin panel.                    |
+| Platform API | `op-system-op-api`  | `api.{PLATFORM_DOMAIN}`                            | REST API + MCP server. Forgejo PAT auth. 40+ MCP tools.                                |
+| Flux         | `flux-system`       | n/a                                                | GitOps — watches `system/open-platform`, reconciles all HelmReleases.                  |
 
-### Headlamp (Kubernetes Dashboard)
-- **Config**: `platform/apps/headlamp.yaml` (Flux HelmRelease), `headlamp-values.yaml` (helmfile bootstrap)
-- **Namespace**: `headlamp`
-- **Domain**: `headlamp.product-garden.com`
-- **Helm chart**: `headlamp/headlamp`
-- **Auth**: OIDC via Forgejo using the chart's `externalSecret` pattern (Option 3). The `oidc` secret in the headlamp namespace is created by `scripts/setup-oauth2.sh` with keys: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`.
-- **OIDC issuer**: `https://forgejo.product-garden.com`
-- **Callback URL**: `https://headlamp.product-garden.com/oidc-callback`
+For full config details (Helm charts, secrets, RBAC, env vars), see [docs/services.md](docs/services.md).
 
-### Woodpecker (CI/CD)
-- **Config**: `platform/apps/woodpecker.yaml` (Flux HelmRelease), `woodpecker-values.yaml` (helmfile bootstrap)
-- **Namespace**: `woodpecker`
-- **Domain**: `ci.product-garden.com` (`WOODPECKER_HOST`)
-- **Helm chart**: `woodpecker/woodpecker`
-- **Auth**: Forgejo OAuth2 integration. Redirect URI: `https://ci.product-garden.com/authorize`
-- **Backend**: Kubernetes-native (pipelines run as pods)
-- **Forgejo URL**: `WOODPECKER_FORGEJO_URL: "https://forgejo.product-garden.com"`
-- **Secrets**: `woodpecker-secrets` — contains `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`. Loaded via `extraSecretNamesForEnvFrom`.
-- **RBAC**: `woodpecker-deployer` ClusterRole grants the agent and pipeline pods permissions to manage deployments, services, secrets, configmaps, pods, ingresses, jobs, namespaces, and pods/exec. `woodpecker-pipeline` ServiceAccount is used by CI deploy steps.
-- **Image builds**: Uses Kaniko (woodpeckerci/plugin-kaniko) — works in K8s backend without Docker daemon. Kaniko cache enabled for faster rebuilds.
-- **Auto-setup**: `scripts/setup-woodpecker-repos.sh` programmatically logs into Woodpecker via the Forgejo→Woodpecker OAuth2 flow (curl-based), activates repos, and creates org-level secrets. No manual UI steps required.
-- **Org secrets**: `registry_username`, `registry_token`, `platform_domain`, and `registry_host` are set at the `system` org level — inherited by all repos in the org automatically. New repos from the template get CI credentials and domain config without per-repo setup.
+### Platform API (`apps/op-api/`)
 
-### MinIO (Object Storage)
-- **Config**: `platform/infrastructure/configs/minio.yaml` (Flux HelmRelease), `minio-values.yaml` (helmfile bootstrap)
-- **Namespace**: `minio`
-- **Domains**: `minio.product-garden.com` (console), `s3.product-garden.com` (S3 API)
-- **Helm chart**: `minio/minio`
-- **Mode**: standalone, 20Gi storage
-- **Secrets**: `minio-credentials` (rootUser, rootPassword)
-
-### PostgreSQL (CNPG)
-- **Config**: `platform/infrastructure/configs/postgres-cluster.yaml` (Flux-managed), `manifests/postgres-cluster.yaml` (helmfile bootstrap)
-- **Namespace**: `postgres`
-- **Access**: `postgres-rw.postgres.svc.cluster.local:5432`
-- **Instances**: 1 (non-HA, dev environment)
-- **Databases**: `forgejo`, `platform_ledger`, `product_garden`
-- **Resources**: 256Mi–1Gi memory, 100m–1000m CPU, 10Gi storage
-- **Max connections**: 200
-
-### OAuth2-Proxy (Preview Auth)
-- **Config**: `platform/apps/oauth2-proxy.yaml` (Flux HelmRelease), inline values in `helmfile.yaml` (bootstrap)
-- **Namespace**: `oauth2-proxy`
-- **Domain**: `oauth2.product-garden.com`
-- **Helm chart**: `oauth2-proxy/oauth2-proxy`
-- **Provider**: OIDC with Forgejo as issuer (`https://forgejo.product-garden.com`)
-- **Role**: Protects preview environments. Traefik ForwardAuth middleware redirects unauthenticated users to Forgejo login before accessing PR preview deployments.
-- **Upstream**: `static://200` — Traefik handles proxying, oauth2-proxy only validates auth
-- **Cookie domain**: `.product-garden.com`
-- **Whitelist domain**: `.product-garden.com`
-- **Secrets**: `oauth2-proxy-secrets` (oauth2-proxy ns) — `client-id`, `client-secret`, `cookie-secret`. Created by `scripts/setup-oauth2.sh` (OAuth2 creds) and `scripts/ensure-secrets.sh` (cookie secret bootstrap).
-- **Traefik Middleware**: `oauth2-proxy-auth` in oauth2-proxy namespace — ForwardAuth CRD pointing to `http://oauth2-proxy.oauth2-proxy.svc:4180/oauth2/auth`. Preview ingresses reference: `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd`
-- **TLS**: Depends on TLS mode — self-signed uses `ssl_insecure_skip_verify = true`, Cloudflare uses real TLS
-
-### Flux (GitOps)
-- **Config**: `helmfile.yaml` (bootstrap), `scripts/setup-flux.sh` (bootstrap resources)
-- **Namespace**: `flux-system`
-- **Helm chart**: `fluxcd-community/flux2`
-- **Role**: Watches `system/open-platform` on Forgejo, reconciles all platform HelmReleases and manifests
-- **Secrets**: `forgejo-auth` in flux-system — admin credentials for Forgejo git access
+- **Source**: `apps/op-api/`
+- **Namespace**: `op-system-op-api`
+- **Domain**: `api.{PLATFORM_DOMAIN}`
+- **Runtime**: Elysia on Bun
+- **Auth**: Bearer token (Forgejo PAT) validated against Forgejo API. Admin check via `system` org membership.
+- **REST API**: 14 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, platform (admin), instances, dev-pods. Swagger docs at `/swagger`.
+- **MCP Server**: 40+ tools across 12 categories (orgs, repos, PRs, issues, branches, files, pipelines, apps, users, platform, instances, dev-pods). HTTP streaming transport at `/mcp`. Session-based with 30-min TTL.
+- **Database**: `platform_ledger` (shared with console) — `dev_pods` table for pod state.
+- **K8s access**: ServiceAccount `op-api` with ClusterRole for managing dev pod deployments, PVCs, secrets, RBAC, and ingresses. Instance-scoped clients include `appsV1`, `coreV1`, `networkingV1`, and `rbacV1`.
+- **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`.
 
 ### Console (Management Dashboard)
+
 - **Source**: `apps/console/`
 - **Namespace**: `op-system-console` (host cluster)
-- **Domain**: `console.open-platform.sh`
+- **Domain**: `console.{PLATFORM_DOMAIN}`
+- **Runtime**: Next.js 15 (App Router)
 - **Database**: `platform_ledger` on host PostgreSQL
 - **Auth**: Forgejo OAuth2 via better-auth
-- **Role**: Customer-facing dashboard for creating, monitoring, and managing vCluster instances. Tracks instance status, credentials, and provision events.
-- **Schema**: `customers` (user mapping), `instances` (slug, tier, status, credentials), `tiers` (resource limits), `provision_events` (audit log)
+- **Backend**: Calls op-api via internal HTTP (`http://op-api.op-system-op-api.svc:80`)
+- **Role**: Management dashboard for platform admin and developers. Instance management (create, monitor, credentials, kubeconfig), dev pod management, service/app viewer, admin panel.
+- **Schema**: `customers` (user mapping), `instances` (slug, tier, status, credentials, kubeconfig), `dev_pods` (pod state), `provision_events` (audit log)
+- **Pages**: Landing (`/`), dashboard (`/dashboard`), instance detail (`/dashboard/[slug]`), dev pods (`/dashboard/[slug]/dev-pods`), admin users/services/apps/settings
+- **Permission model**: Binary admin/user. Admin = Forgejo `is_admin` or `system` org member. Developers see own instances/devpods only.
+- **Key env vars**: `DATABASE_URL`, `BETTER_AUTH_URL`, `AUTH_FORGEJO_URL`, `AUTH_FORGEJO_INTERNAL_URL`, `OP_API_URL`, `PLATFORM_DOMAIN`, `NEXT_PUBLIC_PLATFORM_DOMAIN`, `NEXT_PUBLIC_PROVISIONER_ENABLED`.
+
+### Dev Pods (AI-Native Dev Environments)
+
+- **Service**: `apps/op-api/src/services/devpod.ts` (K8s operations), `apps/op-api/src/routes/dev-pods.ts` (REST endpoints)
+- **Namespace**: `op-dev-pods` (host-level pods), or inside vCluster instances
+- **Image**: `apps/devpod/Dockerfile` — Ubuntu 24.04 + Nix + nixvim + Claude Code + op-cli + Docker-in-Docker
+- **Access**: Console UI, CLI (`op devpod`), MCP tools (`create_dev_pod`, `control_dev_pod`, etc.)
+- **Architecture**: K8s Deployment with 2 containers — dev (Nix environment) + dind (Docker-in-Docker sidecar). Persistent home via PVC (20Gi default). Forgejo PAT auto-injected as secret.
+- **Lifecycle**: `POST /api/v1/dev-pods` creates Deployment + PVC + Secret + RBAC. `PATCH .../start` scales to 1, `PATCH .../stop` scales to 0. `DELETE` removes all resources.
+- **Resources**: Default 2 CPU / 4Gi memory (dev) + 1 CPU / 2Gi (dind). Configurable per pod.
+- **Pre-installed tools**: Nix, nixvim, op-cli, Claude Code, Node.js 20, git, zsh, curl, k9s, starship prompt, Docker CLI.
 
 ### Provisioner (Instance Lifecycle)
+
 - **Config**: `host/provisioner/cronjob.yaml` (CronJob + RBAC)
 - **Namespace**: `provisioner` (host cluster)
 - **Role**: Automated instance lifecycle management. Polls console DB every minute for pending/terminating instances.
@@ -183,55 +162,47 @@ Host k3s (VxRail)
 
 Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 
-| Repo | Purpose |
-|------|---------|
-| `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services. |
-| `system/template` | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
-| `system/social` | Social media app — posts feed, image uploads, Forgejo OAuth2 auth. Includes `feat/markdown-posts` PR for preview environments. Deployed at `social.product-garden.com`. |
-| `system/minecraft` | Minecraft server hosting — create/start/stop/delete real Minecraft servers via K8s API. Uses `itzg/minecraft-server` pods, NodePort services, namespace-scoped RBAC. Deployed at `minecraft.product-garden.com`. |
-| `system/arcade` | Arcade app — generated from template. Deployed at `arcade.product-garden.com`. (Namespaced, not yet in setup-system-org.sh) |
-| `system/events` | Events app — generated from template. Deployed at `events.product-garden.com`. (Namespaced, not yet in setup-system-org.sh) |
-| `system/hub` | Hub app — generated from template. Deployed at `hub.product-garden.com`. |
+| Repo                   | Purpose                                                                                                                                                                          |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services.                                                                                  |
+| `system/template`      | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
+| `system/console`       | Management dashboard — instance provisioning, dev pods, admin panel. Deployed at `console.{PLATFORM_DOMAIN}`.                                                                    |
+| `system/op-api`        | Platform API — REST (Elysia/Bun) + MCP server for repos, pipelines, apps, instances, dev-pods. Deployed at `api.{PLATFORM_DOMAIN}`.                                              |
+| `system/social`        | Example app — posts feed, image uploads, Forgejo OAuth2 auth. Includes `feat/markdown-posts` PR for preview environments.                                                        |
+| `system/minecraft`     | Example app — Minecraft server hosting via K8s API. Uses `itzg/minecraft-server` pods, NodePort services.                                                                        |
+| `system/arcade`        | Example app — generated from template.                                                                                                                                           |
+| `system/events`        | Example app — generated from template.                                                                                                                                           |
+| `system/hub`           | Example app — generated from template.                                                                                                                                           |
 
 ## Namespace Layout
 
-| Namespace | Services |
-|-----------|----------|
-| `kube-system` | Traefik, CoreDNS, metrics-server |
-| `cnpg-system` | CNPG operator |
-| `postgres` | PostgreSQL cluster |
-| `forgejo` | Forgejo |
-| `headlamp` | Headlamp |
-| `woodpecker` | Woodpecker server + agent + pipeline pods |
-| `minio` | MinIO |
-| `oauth2-proxy` | OAuth2-Proxy (preview environment auth) |
-| `flux-system` | Flux controllers (source, kustomize, helm, notification) |
-| `cloudflare` | cloudflared tunnel pod (optional, when Cloudflare configured) |
-| `provisioner` | Provisioner CronJob (host cluster only) |
-| `op-system-console` | Console management app (host cluster only) |
-| `vc-{slug}` | Customer vCluster instance (one per customer) |
-| `op-system-social` | Social media app (posts, images, auth) |
-| `op-system-minecraft` | Minecraft server hosting app + managed MC server pods |
-| `op-system-arcade` | Arcade app |
-| `op-system-events` | Events app |
+**Infrastructure**: `kube-system` (Traefik, CoreDNS), `cnpg-system`, `postgres`, `flux-system`, `cloudflare` (optional)
+**Services**: `forgejo`, `headlamp`, `woodpecker`, `minio`, `oauth2-proxy`
+**Platform**: `op-system-console`, `op-system-op-api`, `op-dev-pods`, `provisioner` (host cluster only)
+**Apps**: `op-{org}-{repo}` convention (e.g., `op-system-social`, `op-system-minecraft`)
+**Instances**: `vc-{slug}` per customer vCluster
 
 ## Deployment
 
 ### Bootstrap (first deploy)
+
 ```bash
 cp open-platform.yaml.example open-platform.yaml  # set domain, admin, TLS mode
 make deploy                                        # generates config, helmfile sync, Flux takes over
 ```
 
 ### Steady state (after bootstrap)
+
 Push changes to `system/open-platform` on Forgejo → Flux reconciles within ~1 minute.
 
 ### Recovery
+
 ```bash
 make deploy                 # re-bootstraps everything, Flux re-adopts
 ```
 
 ### Day-to-Day
+
 ```bash
 make deploy   # idempotent helmfile sync (bootstrap + Flux adoption)
 make diff     # preview changes
@@ -239,26 +210,12 @@ make status   # check release status
 make urls     # show all service URLs
 ```
 
-### Release Layers (Helmfile Bootstrap)
-| Layer | Releases | Label |
-|-------|----------|-------|
-| 0 — Infrastructure | traefik, cnpg | `tier: infra` |
-| 1 — Storage | minio | `tier: infra` |
-| 2 — Identity | forgejo | `tier: infra` |
-| 3 — Consumers | headlamp, woodpecker, oauth2-proxy | `tier: apps` |
-| 4 — GitOps | flux | `tier: platform` |
+### Deployment Layers
 
-### Flux Kustomization Layers (Ongoing Management)
-| Layer | Resources | Path |
-|-------|-----------|------|
-| infra-controllers | traefik, cnpg | `platform/infrastructure/controllers/` |
-| infra-configs | minio, postgres, namespaces, TLS, cloudflared | `platform/infrastructure/configs/` |
-| identity | forgejo, OIDC RBAC | `platform/identity/` |
-| apps | headlamp, woodpecker, oauth2-proxy, RBAC | `platform/apps/` |
-
-Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
+Helmfile bootstraps in 5 tiers: infra (traefik, cnpg) → storage (minio) → identity (forgejo) → apps (headlamp, woodpecker, oauth2-proxy) → gitops (flux). Flux then manages ongoing via Kustomizations in `platform/` with `dependsOn` ordering.
 
 ### Hook Execution Order (Bootstrap)
+
 1. **traefik presync**: apply `manifests/namespaces.yaml`, run `scripts/ensure-secrets.sh`, create wildcard TLS secret
 2. **traefik postsync**: apply `manifests/traefik-tls.yaml` (TLSStore), run `scripts/setup-coredns.sh` (CoreDNS custom zone)
 3. **cnpg postsync**: wait for operator readiness, apply `manifests/postgres-cluster.yaml`
@@ -266,124 +223,23 @@ Layers enforce ordering via `dependsOn`. Each uses `wait: true`.
 5. **woodpecker postsync**: apply `manifests/woodpecker-rbac.yaml`, run `scripts/setup-woodpecker-repos.sh`
 6. **flux postsync**: run `scripts/setup-flux.sh` (GitRepository, root Kustomization, wait for reconciliation)
 
-### Platform Config (`platform/`)
-| Path | Contents |
-|------|----------|
-| `platform/cluster/` | Flux Kustomization resources defining layer ordering |
-| `platform/infrastructure/controllers/` | HelmReleases for traefik, cnpg |
-| `platform/infrastructure/configs/` | Namespaces, TLSStore, minio HelmRelease, postgres cluster, oauth2-proxy ForwardAuth middleware |
-| `platform/identity/` | Forgejo HelmRelease (OCIRepository), OIDC RBAC |
-| `platform/apps/` | Headlamp + Woodpecker HelmReleases, RBAC |
-
 ### App Template (`templates/app/`)
-| Path | Contents |
-|------|----------|
-| `src/auth.ts` | Forgejo OAuth2 via better-auth + genericOAuth plugin |
-| `src/lib/auth-client.ts` | Client-side auth (createAuthClient + genericOAuthClient) |
-| `src/app/api/auth/[...all]/route.ts` | better-auth route handler via toNextJsHandler |
-| `src/app/components/sign-in-button.tsx` | SignInButton + SignOutButton client components |
-| `src/app/` | Next.js App Router pages, API routes, components |
-| `src/lib/db.ts` | pg Pool via DATABASE_URL |
-| `src/lib/s3.ts` | S3Client for MinIO |
-| `Dockerfile` | Multi-stage Node 20 Alpine, Next.js standalone output |
-| `package.json` | next 15, react 19, pg, @aws-sdk/client-s3, better-auth |
-| `tsconfig.json` | Next.js App Router TypeScript config |
-| `next.config.js` | `output: "standalone"` |
-| `schema.sql` | Declarative DB schema — better-auth tables (user, session, account, verification) + app tables |
-| `seed/` | SQL seed files + S3 seed data (applied in preview envs) |
-| `k8s/` | Deployment (DB, S3, auth env vars), Service, Ingress (`PLATFORM_DOMAIN` placeholder) |
-| `.woodpecker/deploy.yml` | Main branch: Kaniko build → provision → schema → typecheck → deploy |
-| `.woodpecker/preview.yml` | PR: build → provision → schema → seed (`_seed_marker` pattern) → typecheck → deploy preview → PR comment |
-| `.woodpecker/preview-cleanup.yml` | PR close: delete preview resources, DB, bucket |
-| `.woodpecker/reset.yml` | Manual: wipe and re-seed preview data |
-| `PLATFORM.md` | Platform conventions, env vars, setup guide |
 
-### Auth URL Pattern (Apps)
-Apps use Forgejo OAuth2 via better-auth:
-- `AUTH_FORGEJO_URL` (`https://forgejo.product-garden.com`) — used for both browser-facing `authorizationUrl` and server-side `tokenUrl`/`userInfoUrl`.
-- `BETTER_AUTH_URL` (`https://<app>.product-garden.com`) — canonical app URL for callbacks.
-
-### Social App (`apps/social/`)
-Source for `system/social` repo. Complete app (feat/markdown-posts version). `apps/social-overrides/` contains main-branch variants of `page.tsx` and `package.json` (without markdown rendering). Bootstrap creates main by overlaying overrides, then creates the feature branch with the originals and opens a PR.
-
-### Minecraft App (`apps/minecraft/`)
-Source for `system/minecraft` repo. Minecraft server hosting app — users create/start/stop/delete real Minecraft servers through a dark-themed dashboard. Key additions beyond the standard app template:
-- **`src/lib/k8s.ts`** — K8s client using `@kubernetes/client-node` with `loadFromCluster()`. Creates `itzg/minecraft-server` Deployments + NodePort Services. Status polling checks readyReplicas and CrashLoopBackOff.
-- **`k8s/rbac.yaml`** — Namespace-scoped ServiceAccount (`minecraft-manager`) + Role + RoleBinding granting deployments, services, pods CRUD within the minecraft namespace only.
-- **`next.config.js`** — `serverExternalPackages: ["@kubernetes/client-node"]` to exclude from webpack bundling.
-- **API routes** — `/api/servers` (CRUD), `/api/servers/[id]/start` (create K8s resources), `/api/servers/[id]/stop` (delete K8s resources), `/api/servers/[id]/status` (poll K8s, sync DB).
-- **Server limit**: 5 per user. Resource naming: `mc-{serverId.slice(0,8)}`.
-
-### Arcade & Events Apps (`apps/arcade/`, `apps/events/`)
-Generated from the app template. Namespaces and deployment manifests ready. Not yet wired into `setup-system-org.sh` — repos will be created and pushed when activated.
-
-### Manifests (`manifests/`)
-| File | Purpose |
-|------|---------|
-| `namespaces.yaml` | All namespaces (workloads use `op-{org}-{repo}` convention) |
-| `postgres-cluster.yaml` | CNPG Cluster resource |
-| `woodpecker-rbac.yaml` | Woodpecker agent + pipeline RBAC |
-| `traefik-tls.yaml` | Default TLSStore for wildcard cert |
-| `oidc-rbac.yaml` | ClusterRoleBinding for OIDC admin user → `cluster-admin` (generated) |
+Next.js 15 App Router with PostgreSQL, S3/MinIO, Forgejo OAuth2 (better-auth), 4 Woodpecker CI workflows. Apps use `AUTH_FORGEJO_URL` for OAuth2 and `BETTER_AUTH_URL` as canonical callback URL. See [docs/bootstrap.md](docs/bootstrap.md) for full file inventory, example app details, platform config paths, and manifests.
 
 ## Secrets Management
 
-### Environment Variables (`.env`)
-| Variable | Purpose |
-|----------|---------|
-| `PLATFORM_DOMAIN` | Platform domain (from `open-platform.yaml`) |
-| `FORGEJO_ADMIN_USER` | Forgejo admin username |
-| `FORGEJO_ADMIN_PASSWORD` | Forgejo admin password (auto-generated) |
-| `FORGEJO_DB_PASSWORD` | Forgejo PostgreSQL password (auto-generated) |
-| `MINIO_ROOT_USER` | MinIO admin username |
-| `MINIO_ROOT_PASSWORD` | MinIO admin password (auto-generated) |
-| `WOODPECKER_AGENT_SECRET` | Woodpecker agent↔server shared secret (auto-generated) |
-| `OAUTH2_PROXY_COOKIE_SECRET` | OAuth2-Proxy cookie encryption (auto-generated) |
-| `BETTER_AUTH_SECRET` | App session encryption key (auto-generated) |
-| `CLOUDFLARE_ACCOUNT_TAG` | Cloudflare account ID (optional) |
-| `CLOUDFLARE_TUNNEL_ID` | Cloudflare tunnel UUID (optional) |
-| `CLOUDFLARE_TUNNEL_SECRET` | Cloudflare tunnel credential secret (optional) |
+All secrets are auto-generated during bootstrap and persisted in `open-platform.state.yaml` (gitignored). Three layers:
 
-### Bootstrap Secrets (from `.env`)
-Created by `scripts/ensure-secrets.sh` (runs as traefik presync hook):
-- `forgejo-admin-credentials` (forgejo ns) — username, password
-- `forgejo-db-config` (forgejo ns) — password
-- `forgejo-db-credentials` (postgres ns) — username, password (for CNPG bootstrap)
-- `minio-credentials` (minio ns) — rootUser, rootPassword
-- `woodpecker-secrets` (woodpecker ns) — WOODPECKER_AGENT_SECRET (preserves OAuth2 fields if they exist)
-- `oauth2-proxy-secrets` (oauth2-proxy ns) — cookie-secret (auto-generated if not set)
-- `cloudflared-credentials` (cloudflare ns) — tunnel credentials JSON (from CLOUDFLARE_* vars, optional)
+- **Bootstrap secrets** (`ensure-secrets.sh`, traefik presync) — admin credentials, DB passwords, agent secrets from `.env`
+- **OAuth2 secrets** (`setup-oauth2.sh`, forgejo postsync) — per-service OAuth2 client IDs/secrets, OIDC config
+- **Flux secrets** (`setup-flux.sh`, flux postsync) — git credentials for Forgejo access
 
-### OAuth2 Secrets (auto-generated)
-Created by `scripts/setup-oauth2.sh` (runs as forgejo postsync hook):
-- `oidc` (headlamp ns) — `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL`
-- `woodpecker-secrets` (woodpecker ns) — merges `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET` into existing secret
-- `oauth2-proxy-secrets` (oauth2-proxy ns) — merges `client-id`, `client-secret` into existing cookie-secret
-- `social-auth` (op-system-social ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET — preserved across PATCHes)
-- `minecraft-auth` (op-system-minecraft ns) — `client-id`, `client-secret`, `secret` (BETTER_AUTH_SECRET — preserved across PATCHes)
-
-### Flux Secrets
-Created by `scripts/setup-flux.sh` (runs as flux postsync hook):
-- `forgejo-auth` (flux-system ns) — admin username, password for git access
+See [docs/services.md](docs/services.md) for full secret inventory, env vars, and per-service configuration.
 
 ### Scripts
-| Script | Trigger | Purpose |
-|--------|---------|---------|
-| `scripts/generate-config.sh` | `make generate` / Phase 0 | Generates all config files from `open-platform.yaml` + `config/templates/` |
-| `scripts/ensure-secrets.sh` | traefik presync | Creates namespaces + bootstrap K8s secrets from `.env` (validates required vars) |
-| `scripts/setup-coredns.sh` | traefik postsync | CoreDNS custom zone: `*.{DOMAIN}` → Traefik IP. Detects `hostNetwork` and uses node IP. |
-| `scripts/setup-oauth2.sh` | forgejo postsync | Creates OAuth2 apps via Forgejo API + K8s secrets (preserves BETTER_AUTH_SECRET) |
-| `scripts/setup-system-org.sh` | forgejo postsync | Creates system org, pushes platform config + template + social + minecraft repos (uses GIT_ASKPASS for credentials) |
-| `scripts/setup-woodpecker-repos.sh` | woodpecker postsync | Programmatic Woodpecker login, dynamic repo discovery + activation, org secrets — zero manual steps |
-| `scripts/setup-flux.sh` | flux postsync | Creates Flux bootstrap resources (GitRepository, Kustomization) |
-| `scripts/setup-oidc.sh` | after helmfile sync | Updates k3s OIDC client ID — prints NixOS instructions for VxRail, auto-updates Colima |
-| `scripts/provision-instance.sh` | Reconciler CronJob | 8-phase vCluster instance provisioning (create vCluster, helmfile bootstrap, OAuth2, Woodpecker, OIDC, metadata) |
-| `scripts/teardown-instance.sh` | Reconciler CronJob | vCluster teardown — deletes namespace, cleans up stale resources |
-| `host/deploy-provisioner.sh` | Manual | Deploys provisioner CronJob + RBAC to host cluster |
-| `host/provisioner/reconciler.sh` | CronJob (1min) | Polls console DB for pending/terminating instances, runs provision/teardown |
-| `host/provisioner/health-check.sh` | CronJob (5min) | Monitors instance health via HTTPS probe to Forgejo endpoint |
 
-All scripts are idempotent — safe to run on every `make deploy`.
+All scripts are idempotent — safe to run on every `make deploy`. See [docs/bootstrap.md](docs/bootstrap.md) for the full script table.
 
 ## TLS Setup
 
@@ -393,62 +249,18 @@ Configured via `tls_mode` in `open-platform.yaml`:
 - **`letsencrypt`**: cert-manager + HTTP-01 challenge. Requires public DNS.
 - **`cloudflare`**: TLS at Cloudflare edge. Traefik receives plain HTTP from tunnel.
 
-## k3s API Server OIDC Configuration
+## k3s API Server OIDC
 
-### VxRail (NixOS)
-Managed declaratively in `~/nix-darwin-config/modules/nixos.nix` on VxRail:
-```nix
-services.k3s.extraFlags = [
-  "--kube-apiserver-arg=oidc-issuer-url=https://forgejo.product-garden.com"
-  "--kube-apiserver-arg=oidc-client-id=<headlamp-client-id>"
-  "--kube-apiserver-arg=oidc-username-claim=preferred_username"
-  "--kube-apiserver-arg=oidc-username-prefix=-"
-  "--kube-apiserver-arg=oidc-groups-claim=groups"
-];
-```
-Changes require: `ssh vxrail 'sudo nixos-rebuild switch --flake ~/nix-darwin-config#otavert-vxrail'`
+Headlamp OIDC requires k3s API server flags. VxRail: declarative in `~/nix-darwin-config/modules/nixos.nix`. Colima: `/etc/rancher/k3s/config.yaml`, updated by `scripts/setup-oidc.sh`.
 
-### Colima (legacy single-node)
-Located inside the Colima VM at `/etc/rancher/k3s/config.yaml`. Updated by `scripts/setup-oidc.sh`.
-
-### OIDC Notes
-
-- **`oidc-issuer-url`** must match Forgejo's `ROOT_URL` exactly: `https://forgejo.product-garden.com`
-- **`oidc-client-id`** must match the Headlamp OAuth2 app's client ID. Retrieve: `kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 -d`
-- **`oidc-username-prefix=-`** is required. Without it, the API server prepends the issuer URL to usernames, causing RBAC mismatches.
-- **Config requires restart** — k3s only reads the config at startup.
-- **DNS resolution** — the server node must resolve `forgejo.product-garden.com` to Traefik's ClusterIP (via CoreDNS or `/etc/hosts`), not hairpin through Cloudflare.
+- `oidc-issuer-url` must match Forgejo's `ROOT_URL` exactly
+- `oidc-client-id` must match Headlamp OAuth2 app (retrieve from `kubectl get secret oidc -n headlamp`)
+- `oidc-username-prefix=-` required (prevents issuer URL prefix on usernames)
+- Config requires k3s restart. Server node must resolve `forgejo.{PLATFORM_DOMAIN}` via CoreDNS, not hairpin through Cloudflare.
 
 ## Known Quirks
 
-- **Headlamp chart OIDC secret** — uses the `externalSecret` pattern (Option 3 in the chart). All OIDC values come from the K8s secret via `envFrom`. Keys must be uppercase with underscores (`OIDC_CLIENT_ID`, not `clientID`). The chart's Option 1 (`secret.create: false` with `secret.name`) does NOT inject client credentials.
-- **Headlamp callback path** — `/oidc-callback` (not `/oidc/callback`). The redirect URI in the Forgejo OAuth2 app must match exactly.
-- **Headlamp OIDC scopes** — must be comma-separated (`"openid,profile,email,groups"`), not space-separated.
-- **Woodpecker redirect URI** — `https://ci.product-garden.com/authorize`.
-- **Woodpecker image builds** — must use Kaniko (not docker-buildx) with the K8s backend. Kaniko cache enabled for faster rebuilds.
-- **Forgejo SSH** — listens on port 2222 internally, exposed on port 22 via ingress/service.
-- **Forgejo container registry** — images at `forgejo.product-garden.com/<owner>/<image>:<tag>`. Admin password works for registry auth; PATs may fail on the v2 token endpoint.
-- **Forgejo webhook `ALLOWED_HOST_LIST`** — default blocks outgoing webhooks to external IPs. Set to `"*.product-garden.com"`.
-- **Forgejo PATCH regenerates client_secret** — updating OAuth2 app redirect URIs regenerates the secret. `setup-oauth2.sh` handles this by updating K8s secrets while preserving `BETTER_AUTH_SECRET`.
-- **Kaniko `repo` value** — must NOT include the registry hostname (it's prepended from `registry` setting). Use `repo: ${CI_REPO_OWNER}/${CI_REPO_NAME}`.
-- **CNPG peer auth** — only `postgres` user can use local socket auth. Schema runs as postgres superuser, then GRANT ALL ON ALL TABLES/SEQUENCES to the app user.
-- **CREATE DATABASE requires separate psql -c calls** — semicolons in a single `-c` run in a transaction block, but CREATE DATABASE can't run in a transaction. Split into separate kubectl exec calls.
-- **kubectl run with --overrides** — don't combine `-- sh -c "..."` args with `--overrides` JSON that specifies `command/args`. Use overrides-only for minio/mc pods.
-- **better-auth sign-in is POST** — `/api/auth/sign-in/oauth2` returns `{"url":"...","redirect":true}` JSON. Must use client-side `authClient.signIn.oauth2()`, not `<a href>` links.
-- **better-auth callback URL** — `/api/auth/oauth2/callback/{providerId}` (e.g., `/api/auth/oauth2/callback/forgejo`).
-- **better-auth env vars** — `BETTER_AUTH_SECRET` (session encryption), `BETTER_AUTH_URL` (public app URL), `AUTH_FORGEJO_URL` (Forgejo URL for OAuth2).
-- **better-auth DB tables** — `user`, `session`, `account`, `verification` with camelCase quoted column names. Must exist before app starts (created via schema.sql in CI).
-- **Helmfile global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
-- **OAuth2-Proxy redirect** — callback at `https://oauth2.product-garden.com/oauth2/callback`. Cookie domain: `.product-garden.com`.
-- **Preview auth annotation** — preview ingresses use `traefik.ingress.kubernetes.io/router.middlewares: oauth2-proxy-oauth2-proxy-auth@kubernetescrd` to trigger ForwardAuth.
-- **Flux + helmfile coexistence** — helmfile bootstraps releases, Flux adopts them via matching HelmReleases. Flux's helm-controller runs `helm upgrade --install` — if values match, it's a no-op. After bootstrap, Flux owns the releases. Bootstrap ↔ Flux values MUST stay in sync or Flux thrashes config on every reconciliation.
-- **Git credential security** — `setup-system-org.sh` uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
-- **vCluster CoreDNS port** — custom server zones must use `:1053` inside vCluster (not `:53`). vCluster's kube-dns maps 53→1053.
-- **vCluster Traefik mode** — must be `Deployment` inside vCluster, not DaemonSet. `hostNetwork: true` is incompatible — synced pods would steal host ports.
-- **vCluster Headlamp OIDC** — needs Traefik Middleware (`X-Forwarded-Proto: https`) on host cluster because host Traefik terminates TLS. Also needs API server `--oidc-*` flags via helm upgrade (Phase 7c in provision-instance.sh).
-- **vCluster StatefulSet immutability** — `helm upgrade` fails if StatefulSet spec fields change (e.g., adding OIDC args). Delete StatefulSet with `--cascade=orphan` first, then upgrade.
-- **vCluster ingress sync** — ingresses sync to host namespace `vc-{slug}` with mangled names (e.g., `headlamp-x-headlamp-x-tester`). Host Traefik picks them up automatically.
-- **Headlamp OIDC skip TLS** — use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY=true` env var (NOT a CLI flag). Works correctly despite "failed to append ca cert to pool" log (non-fatal).
+Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, better-auth, helmfile, OAuth2-Proxy, Flux coexistence, and vCluster. See [docs/known-issues.md](docs/known-issues.md) for the full list.
 
 ## Development Conventions
 
@@ -459,78 +271,26 @@ Located inside the Colima VM at `/etc/rancher/k3s/config.yaml`. Updated by `scri
 - **App templates**: in `templates/` directory, pushed to `system/template` on Forgejo
 - **K8s manifests**: in `manifests/` directory (bootstrap), duplicated in `platform/` (Flux)
 - **Automation scripts**: in `scripts/` directory
-- **Domain convention**: `<service>.product-garden.com` (configurable via `PLATFORM_DOMAIN` env var)
+- **Domain convention**: `<service>.open-platform.sh` (configurable via `PLATFORM_DOMAIN` env var)
 - **Deployment**: helmfile bootstraps, Flux manages ongoing; Makefile provides workflow targets
 - **CI/CD**: Woodpecker with `.woodpecker/` directory (deploy.yml for main, preview.yml for PRs, preview-cleanup.yml for PR close, reset.yml for manual data reset). Template changes must be synced to all apps.
 
-## Multi-Agent Development Workflow
+## Multi-Agent Development
 
-Documented from the Foundry experiment: 6 agents (nova, orbit, nebula, atlas, prism, forge) across 2 teams building 2 apps in parallel using real Forgejo workflows.
+6-agent experiment (Foundry): 2 teams building 2 apps in parallel using real Forgejo workflows. File isolation per agent prevents merge conflicts. Foundation-first ordering ensures API routes exist before UI agents start. See [docs/multi-agent.md](docs/multi-agent.md) for full workflow, team structure, and setup checklist.
 
-### Organization Pattern
-- **Org**: `foundry` with a `developers` team (write access, `includes_all_repositories: true`)
-- **Repos**: `foundry/pulse` (discussion platform), `foundry/craft` (code snippet sharing)
-- **Users**: One Forgejo account per agent (e.g., `nova` / `novaPass1234`). Avoids `!` in passwords (JSON escape issues).
-- **Project board**: "Foundry v1" — Forgejo projects are web UI only (no API), created via Playwright
-- **Labels**: `feature`, `bug`, `foundation`, `ui`, `integration`, `priority:high`, `priority:medium`
-- **Milestones**: `v1.0 — Foundation`, `v1.1 — Features`, `v2.0 — Integration`
+## Documentation Index
 
-### Team Structure
-Each app has 3 agents with distinct roles:
-1. **Foundation agent** (nova/atlas): Schema + API routes. Works first, others depend on output.
-2. **Pages agent** (orbit/prism): Server components, layouts, core UI pages.
-3. **Interactions agent** (nebula/forge): Client components, forms, supplementary endpoints.
-
-### Development Phases
-- **Phase 1**: Foundation agents build API routes (2 agents in parallel, one per app)
-- **Phase 2**: Feature agents build UI (4 agents in parallel, 2 per app)
-- **Phase 3**: Polish + cross-app features (6 agents in parallel, one issue each)
-- **Phase 4+**: Integration, new features, perpetual iteration
-
-### Agent Workflow (per agent)
-1. Clone repo from Forgejo (admin credentials via `GIT_ASKPASS`, `GIT_SSL_NO_VERIFY=1`)
-2. Create feature branch from main
-3. Read existing code to understand patterns
-4. Implement changes (only NEW files where possible to avoid merge conflicts)
-5. Commit with agent identity (`git -c user.name="nova" -c user.email="nova@foundry.dev"`)
-6. Push branch, create PR via Forgejo API (using agent's own credentials)
-7. Comment on assigned issues with PR reference
-
-### Manager Responsibilities
-- Create issues with detailed specs and clear file boundaries
-- Review PRs (approve via API)
-- Merge PRs in correct dependency order (foundation → pages → interactions)
-- Monitor Woodpecker pipelines between phases
-- Move project board items
-- Create new issues/milestones as work completes
-
-### Conflict Avoidance Strategy
-Each agent works on **non-overlapping files**. Within the same phase:
-- Foundation agent: `src/app/api/**` (API routes only)
-- Pages agent: `src/app/page.tsx`, `src/app/*/page.tsx`, `src/app/components/{page-components}.tsx`, `src/app/layout.tsx`
-- Interactions agent: `src/app/{feature}/page.tsx` (NEW pages only), `src/app/api/{supplementary}/route.ts`, `src/app/components/{form-components}.tsx`
-
-### Key Learnings
-- **File isolation is critical**: Agents working on different files = clean merges. Same file = merge conflicts.
-- **Foundation-first ordering**: API routes must merge before UI agents start, so pages can call real endpoints.
-- **Wait for pipelines**: Always verify deploy pipeline succeeds before launching dependent agents.
-- **Sculptor agents work well**: Each agent cloned, read existing code, implemented, and pushed autonomously.
-- **PR merge ordering matters**: Within a phase, merge the "broader" PR first (pages before interactions) to minimize conflicts.
-- **Forgejo team creation needs `units`**: `POST /api/v1/orgs/{org}/teams` requires `"units": ["repo.code", "repo.issues", "repo.pulls", ...]` — omitting it returns "units permission should not be empty".
-- **Woodpecker pipeline trigger uses numeric repo ID**: `POST /api/repos/{id}/pipelines` (not `owner/repo` path). Bearer token returns HTML for name-based paths.
-- **Woodpecker API token scope**: GET requests work with Bearer token on any URL. POST requires the public domain (WOODPECKER_HOST) or numeric repo ID on internal URL.
-- **6 agents × 3 phases = 14 PRs merged**: Each PR took ~2-5 minutes of agent work plus ~4 minutes of CI pipeline time.
-- **Total pipeline count**: ~20 pipelines per repo across the experiment (push events, PR events, manual triggers).
-
-### Forgejo Org Setup Checklist
-1. Create user accounts (one per agent)
-2. Create org
-3. Create team with `units` + `includes_all_repositories: true`
-4. Add all agents to team
-5. Create repos, push scaffolds with app-specific schemas
-6. Create OAuth2 apps + K8s auth secrets per app
-7. Copy minio-credentials, forgejo-registry to app namespaces
-8. Activate repos in Woodpecker, create org CI secrets
-9. Trigger initial deploy pipelines
-10. Create labels, milestones, issues
-11. Create project board via Playwright
+| Doc                                                    | Purpose                                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------------- |
+| [docs/getting-started.md](docs/getting-started.md)     | Golden path: install, deploy, first login, create app, create devpod |
+| [docs/api.md](docs/api.md)                             | REST API reference (endpoints, auth, error format)                   |
+| [docs/cli.md](docs/cli.md)                             | CLI command reference (`op` binary)                                  |
+| [docs/mcp.md](docs/mcp.md)                             | MCP server tool catalog for AI agents                                |
+| [docs/hosting.md](docs/hosting.md)                     | Multi-tenant hosting via vCluster                                    |
+| [docs/permissions.md](docs/permissions.md)             | Permission model, roles, AI agent setup                              |
+| [docs/services.md](docs/services.md)                   | Per-service config, secrets, env vars, OAuth2 details                |
+| [docs/bootstrap.md](docs/bootstrap.md)                 | Deploy pipeline, template inventory, scripts, manifests              |
+| [docs/known-issues.md](docs/known-issues.md)           | Implementation gotchas and debugging notes                           |
+| [docs/multi-agent.md](docs/multi-agent.md)             | Multi-agent development workflow and org setup                       |
+| [templates/app/PLATFORM.md](templates/app/PLATFORM.md) | Per-app platform conventions and env var reference                   |
