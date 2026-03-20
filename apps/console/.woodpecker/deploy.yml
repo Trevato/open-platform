@@ -96,7 +96,8 @@ steps:
     commands:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
       - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
-      - sed -i "s/APP_NAMESPACE/$APP_NS/g; s/DB_NAME/$DB_NAME/g; s/PROJECT_NAME/${CI_REPO_NAME}/g; s/ORG_NAME/${CI_REPO_OWNER}/g; s/PLATFORM_DOMAIN/$PLATFORM_DOMAIN/g; s/SERVICE_PREFIX/$SERVICE_PREFIX/g" k8s/*.yaml
+      - SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
+      - sed -i "s|__SERVICE_PREFIX__|$SP|g; s|__PLATFORM_DOMAIN__|$PLATFORM_DOMAIN|g; s|__PROVISIONER_ENABLED__|${PROVISIONER_ENABLED:-false}|g; s|APP_NAMESPACE|$APP_NS|g; s|DB_NAME|$DB_NAME|g; s|PROJECT_NAME|${CI_REPO_NAME}|g; s|ORG_NAME|${CI_REPO_OWNER}|g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - |
         kubectl get secret forgejo-admin-credentials -n forgejo -o json | \
@@ -104,9 +105,11 @@ steps:
           kubectl apply -n $APP_NS -f - 2>/dev/null || true
       - kubectl apply -f k8s/rbac.yaml 2>/dev/null || true
       - kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml -f k8s/ingress.yaml
-      - kubectl set env deployment/${CI_REPO_NAME} -n $APP_NS PLATFORM_DOMAIN=$PLATFORM_DOMAIN SERVICE_PREFIX=$SERVICE_PREFIX
       - kubectl rollout status deployment/${CI_REPO_NAME} -n $APP_NS --timeout=120s
     environment:
       PLATFORM_DOMAIN:
         from_secret: platform_domain
-      SERVICE_PREFIX: ""
+      SERVICE_PREFIX:
+        from_secret: service_prefix
+      PROVISIONER_ENABLED:
+        from_secret: provisioner_enabled

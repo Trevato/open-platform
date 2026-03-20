@@ -210,6 +210,7 @@ const instanceClients = new Map<
   {
     appsV1: k8s.AppsV1Api;
     coreV1: k8s.CoreV1Api;
+    networkingV1: k8s.NetworkingV1Api;
     rbacV1: k8s.RbacAuthorizationV1Api;
     kc: k8s.KubeConfig;
     cachedAt: number;
@@ -223,6 +224,7 @@ export async function getClientsForInstance(slug: string) {
     return {
       appsV1: cached.appsV1,
       coreV1: cached.coreV1,
+      networkingV1: cached.networkingV1,
       rbacV1: cached.rbacV1,
       kc: cached.kc,
     };
@@ -244,12 +246,23 @@ export async function getClientsForInstance(slug: string) {
   }
   instKc.loadFromString(kubeconfigStr);
 
+  // Ensure TLS verification is skipped for vCluster connections (self-signed certs).
+  // The kubeconfig has insecure-skip-tls-verify: true but @kubernetes/client-node
+  // on Bun may not propagate it to the underlying fetch implementation.
+  // Mutate the cluster object directly since the property is readonly on the type.
+  const cluster = instKc.getCurrentCluster();
+  if (cluster) {
+    (cluster as { skipTLSVerify: boolean }).skipTLSVerify = true;
+  }
+
   const instAppsV1 = instKc.makeApiClient(k8s.AppsV1Api);
   const instCoreV1 = instKc.makeApiClient(k8s.CoreV1Api);
+  const instNetworkingV1 = instKc.makeApiClient(k8s.NetworkingV1Api);
   const instRbacV1 = instKc.makeApiClient(k8s.RbacAuthorizationV1Api);
   instanceClients.set(slug, {
     appsV1: instAppsV1,
     coreV1: instCoreV1,
+    networkingV1: instNetworkingV1,
     rbacV1: instRbacV1,
     kc: instKc,
     cachedAt: Date.now(),
@@ -257,6 +270,7 @@ export async function getClientsForInstance(slug: string) {
   return {
     appsV1: instAppsV1,
     coreV1: instCoreV1,
+    networkingV1: instNetworkingV1,
     rbacV1: instRbacV1,
     kc: instKc,
   };
@@ -348,6 +362,17 @@ export async function getInstanceApps(
         // namespace exists but no deployments
       }
 
+      let url = `https://${slug}-${repo || nsName}.${PLATFORM_DOMAIN}`;
+      try {
+        const ingList = await clients.networkingV1.listNamespacedIngress({
+          namespace: nsName,
+        });
+        const host = ingList.items?.[0]?.spec?.rules?.[0]?.host;
+        if (host) url = `https://${host}`;
+      } catch {
+        // fallback to label-based URL
+      }
+
       apps.push({
         name: repo || nsName.replace(/^op-[^-]+-/, ""),
         namespace: nsName,
@@ -355,7 +380,7 @@ export async function getInstanceApps(
         repo,
         ready,
         replicas: { ready: readyReplicas, total: totalReplicas },
-        url: `https://${slug}-${repo || nsName}.${PLATFORM_DOMAIN}`,
+        url,
       });
     }
   } catch {

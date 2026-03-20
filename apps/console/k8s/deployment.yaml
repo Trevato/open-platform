@@ -20,7 +20,7 @@ spec:
         - name: forgejo-registry
       containers:
         - name: app
-          image: SERVICE_PREFIXforgejo.PLATFORM_DOMAIN/ORG_NAME/PROJECT_NAME:latest
+          image: __SERVICE_PREFIX__forgejo.__PLATFORM_DOMAIN__/ORG_NAME/PROJECT_NAME:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
@@ -47,11 +47,11 @@ spec:
                   key: client-secret
                   optional: true
             - name: BETTER_AUTH_URL
-              value: "https://SERVICE_PREFIXconsole.PLATFORM_DOMAIN"
+              value: "https://__SERVICE_PREFIX__console.__PLATFORM_DOMAIN__"
             - name: BETTER_AUTH_TRUSTED_ORIGINS
-              value: "https://SERVICE_PREFIXconsole.PLATFORM_DOMAIN"
+              value: "https://__SERVICE_PREFIX__console.__PLATFORM_DOMAIN__"
             - name: AUTH_FORGEJO_URL
-              value: "https://SERVICE_PREFIXforgejo.PLATFORM_DOMAIN"
+              value: "https://__SERVICE_PREFIX__forgejo.__PLATFORM_DOMAIN__"
             - name: AUTH_FORGEJO_INTERNAL_URL
               value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
             - name: OP_API_URL
@@ -69,11 +69,11 @@ spec:
                   key: password
                   optional: true
             - name: PLATFORM_DOMAIN
-              value: "PLATFORM_DOMAIN"
+              value: "__PLATFORM_DOMAIN__"
             - name: NEXT_PUBLIC_PLATFORM_DOMAIN
-              value: "PLATFORM_DOMAIN"
+              value: "__PLATFORM_DOMAIN__"
             - name: NEXT_PUBLIC_PROVISIONER_ENABLED
-              value: "true"
+              value: "__PROVISIONER_ENABLED__"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
             - name: NODE_TLS_REJECT_UNAUTHORIZED
