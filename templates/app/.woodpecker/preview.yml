@@ -42,11 +42,13 @@ steps:
         from_secret: registry_token
       REGISTRY_HOST:
         from_secret: registry_host
-      SERVICE_PREFIX: ""
+      SERVICE_PREFIX:
+        from_secret: service_prefix
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
       - |
+        export SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         kubectl create namespace $$PREVIEW_NS --dry-run=client -o yaml | kubectl apply -f -
@@ -98,8 +100,8 @@ steps:
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+        if [ -n "$$SP" ]; then
+          SLUG=$(echo "$$SP" | sed 's/-$$//')
           PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
         else
           PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
@@ -176,18 +178,20 @@ steps:
     environment:
       REGISTRY_HOST:
         from_secret: registry_host
-      SERVICE_PREFIX: ""
+      SERVICE_PREFIX:
+        from_secret: service_prefix
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
       - |
+        export SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
         export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
         export PREVIEW_BUCKET="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+        if [ -n "$$SP" ]; then
+          SLUG=$(echo "$$SP" | sed 's/-$$//')
           PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
         else
           PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
@@ -223,7 +227,7 @@ steps:
                     - name: S3_ENDPOINT
                       value: "http://minio.minio.svc:9000"
                     - name: S3_PUBLIC_URL
-                      value: "https://${SERVICE_PREFIX}s3.$PLATFORM_DOMAIN"
+                      value: "https://$${SP}s3.$PLATFORM_DOMAIN"
                     - name: S3_BUCKET
                       value: "$$PREVIEW_BUCKET"
                     - name: S3_ACCESS_KEY
@@ -324,15 +328,17 @@ steps:
     environment:
       REGISTRY_HOST:
         from_secret: registry_host
-      SERVICE_PREFIX: ""
+      SERVICE_PREFIX:
+        from_secret: service_prefix
       PLATFORM_DOMAIN:
         from_secret: platform_domain
     commands:
       - |
+        export SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
         export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
         # Compute preview URL host (platform slug appended for multi-tenant)
-        if [ -n "$SERVICE_PREFIX" ]; then
-          SLUG=$(echo "$SERVICE_PREFIX" | sed 's/-$$//')
+        if [ -n "$$SP" ]; then
+          SLUG=$(echo "$$SP" | sed 's/-$$//')
           PREVIEW_URL_HOST="$$PREVIEW_NAME-$$SLUG.$PLATFORM_DOMAIN"
         else
           PREVIEW_URL_HOST="$$PREVIEW_NAME.$PLATFORM_DOMAIN"
