@@ -145,6 +145,29 @@ Admin endpoints (`/api/v1/platform/*`) additionally verify the user is a Forgejo
 | PATCH  | `/api/v1/dev-pods/:username` | Start/stop dev pod (`{"action":"start\|stop"}`) |
 | DELETE | `/api/v1/dev-pods/:username` | Delete dev pod                                  |
 
+### Agents (admin only)
+
+| Method | Path                            | Description                              |
+| ------ | ------------------------------- | ---------------------------------------- |
+| GET    | `/api/v1/agents`                | List agents (`?all=true` for all agents) |
+| POST   | `/api/v1/agents`                | Create agent with Forgejo identity       |
+| GET    | `/api/v1/agents/:slug`          | Get agent by slug                        |
+| PATCH  | `/api/v1/agents/:slug`          | Update agent config                      |
+| DELETE | `/api/v1/agents/:slug`          | Delete agent and Forgejo identity        |
+| POST   | `/api/v1/agents/:slug/activate` | Manually trigger agent with prompt       |
+
+Create body: `name` (required), `description`, `model`, `instructions`, `allowed_tools[]`, `orgs[]`, `schedule`, `max_steps` (1-500). The API creates a Forgejo user (`agent-{slug}`), generates a PAT, and adds the agent to specified orgs.
+
+Activate body: `prompt` (required), `context` (optional object with `owner`, `repo`, `issue_number`, `pr_number`).
+
+### Webhooks (HMAC-authenticated)
+
+| Method | Path                       | Description            |
+| ------ | -------------------------- | ---------------------- |
+| POST   | `/api/v1/webhooks/forgejo` | Receive Forgejo events |
+
+Forgejo org-level webhooks are auto-registered when agents join orgs. Events: `issue_comment`, `pull_request`, `issues`. Comments mentioning `@agent-{slug}` trigger the corresponding agent. Requests are validated via HMAC-SHA256 signature (`X-Forgejo-Signature` header) using `WEBHOOK_SECRET`.
+
 ### Platform (admin only)
 
 | Method | Path                        | Description                     |

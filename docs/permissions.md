@@ -38,7 +38,9 @@ Developers cannot see other users' dev pods or instances.
 
 ### AI Agent
 
-Uses a Forgejo PAT scoped by token permissions. The agent operates with the same identity and access as the user who created the PAT. There is no separate agent role -- the API treats PAT-authenticated requests identically to any other bearer token.
+Managed agents are first-class platform entities with dedicated Forgejo identities. Each agent gets its own user account (`agent-{slug}`), PAT, and org memberships. Agents are triggered via `@agent-{slug}` mentions in issues/PRs or manual activation.
+
+Ad-hoc agents (e.g., Claude Code in a dev pod) use a Forgejo PAT scoped by token permissions. The agent operates with the same identity and access as the user who created the PAT.
 
 ## Forgejo as RBAC
 
@@ -117,7 +119,42 @@ The console does not perform its own admin checks at the auth layer. Instance vi
 4. The user authenticates to op-api with a PAT or to the console via OAuth2
 5. Repo-level access is inherited from Forgejo team membership -- no op-api configuration needed
 
-## Setting Up Claude Code (or any AI agent)
+## Setting Up Managed Agents
+
+Managed agents run in dev pods and respond to `@agent-{slug}` mentions in Forgejo issues and PRs.
+
+1. **Create via API or console**: `POST /api/v1/agents` with `name`, `instructions`, `orgs[]`, and optional `model`/`max_steps`
+2. The platform automatically:
+   - Creates a Forgejo user (`agent-{slug}`) with a generated password
+   - Generates a PAT with required scopes (user, repo, org, issue, package)
+   - Adds the agent to specified orgs (Owners team)
+   - Registers org-level webhooks for `issue_comment`, `pull_request`, and `issues` events
+3. **Trigger**: mention `@agent-{slug}` in any issue or PR comment within the agent's orgs
+4. The agent receives a dev pod, pulls the repo, reads `CLAUDE.md` for project conventions, and executes with Claude Code
+5. Results are posted back as a comment from the agent's Forgejo identity
+
+### Agent Quality Gates
+
+The app template includes three defense layers that prevent agents from pushing broken code:
+
+1. **`CLAUDE.md`** -- project conventions (import patterns, stack, commands) loaded into the agent's system prompt
+2. **`.claude/settings.json`** -- `PreToolUse` hook that runs `npm run typecheck` before every `git commit`
+3. **`--append-system-prompt`** -- universal quality instructions appended at execution time (typecheck before commit, read CLAUDE.md, keep changes minimal)
+
+### Agent Configuration
+
+| Field           | Default                    | Description                           |
+| --------------- | -------------------------- | ------------------------------------- |
+| `model`         | `claude-sonnet-4-20250514` | Claude model for execution            |
+| `max_steps`     | `50`                       | Maximum turns per execution           |
+| `instructions`  | (none)                     | Agent-specific system prompt          |
+| `allowed_tools` | (none)                     | Tool restrictions (unused currently)  |
+| `orgs`          | (none)                     | Forgejo orgs the agent can access     |
+| `schedule`      | (none)                     | Cron schedule for periodic activation |
+
+## Setting Up Claude Code (ad-hoc)
+
+For manual Claude Code sessions (not managed agents):
 
 1. Create a Forgejo user account for the agent (e.g., `claude-dev`)
 2. Add the user to the appropriate org and team on Forgejo

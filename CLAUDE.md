@@ -20,6 +20,7 @@ Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ──�
 Console ──► op-api (REST) ──► Forgejo API + K8s API
 op-api ──► MCP Server (40+ tools for AI agents)
 op-api ──► DevPods (K8s-native dev environments with Claude Code)
+op-api ──► Agents (managed AI identities triggered via @mentions in issues/PRs)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -117,11 +118,12 @@ For full config details (Helm charts, secrets, RBAC, env vars), see [docs/servic
 - **Domain**: `api.{PLATFORM_DOMAIN}`
 - **Runtime**: Elysia on Bun
 - **Auth**: Bearer token (Forgejo PAT) validated against Forgejo API. Admin check via `system` org membership.
-- **REST API**: 14 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, platform (admin), instances, dev-pods. Swagger docs at `/swagger`.
-- **MCP Server**: 40+ tools across 12 categories (orgs, repos, PRs, issues, branches, files, pipelines, apps, users, platform, instances, dev-pods). HTTP streaming transport at `/mcp`. Session-based with 30-min TTL.
-- **Database**: `platform_ledger` (shared with console) — `dev_pods` table for pod state.
+- **REST API**: 16 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, agents, webhooks, platform (admin), instances, dev-pods. Swagger docs at `/swagger`.
+- **MCP Server**: 46+ tools across 13 categories (orgs, repos, PRs, issues, branches, files, pipelines, apps, agents, users, platform, instances, dev-pods). HTTP streaming transport at `/mcp`. Session-based with 30-min TTL.
+- **Agents**: Managed AI identities with Forgejo users, PATs, org webhooks. Triggered by `@agent-{slug}` mentions in issues/PRs. Execute in dev pods via Claude Code with quality gates (CLAUDE.md, pre-commit typecheck hooks, `--append-system-prompt`).
+- **Database**: `platform_ledger` (shared with console) — `dev_pods` and `agents` tables.
 - **K8s access**: ServiceAccount `op-api` with ClusterRole for managing dev pod deployments, PVCs, secrets, RBAC, and ingresses. Instance-scoped clients include `appsV1`, `coreV1`, `networkingV1`, and `rbacV1`.
-- **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`.
+- **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`, `WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`.
 
 ### Console (Management Dashboard)
 
@@ -225,7 +227,7 @@ Helmfile bootstraps in 5 tiers: infra (traefik, cnpg) → storage (minio) → id
 
 ### App Template (`templates/app/`)
 
-Next.js 15 App Router with PostgreSQL, S3/MinIO, Forgejo OAuth2 (better-auth), 4 Woodpecker CI workflows. Apps use `AUTH_FORGEJO_URL` for OAuth2 and `BETTER_AUTH_URL` as canonical callback URL. See [docs/bootstrap.md](docs/bootstrap.md) for full file inventory, example app details, platform config paths, and manifests.
+Next.js 15 App Router with PostgreSQL, S3/MinIO, Forgejo OAuth2 (better-auth), 4 Woodpecker CI workflows. Apps use `AUTH_FORGEJO_URL` for OAuth2 and `BETTER_AUTH_URL` as canonical callback URL. Includes `CLAUDE.md` (project conventions for AI agents), `.claude/settings.json` (Claude Code permissions + pre-commit typecheck hook), and `PLATFORM.md` (env var reference). See [docs/bootstrap.md](docs/bootstrap.md) for full file inventory.
 
 ## Secrets Management
 
@@ -288,7 +290,7 @@ Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, bet
 | [docs/cli.md](docs/cli.md)                             | CLI command reference (`op` binary)                                  |
 | [docs/mcp.md](docs/mcp.md)                             | MCP server tool catalog for AI agents                                |
 | [docs/hosting.md](docs/hosting.md)                     | Multi-tenant hosting via vCluster                                    |
-| [docs/permissions.md](docs/permissions.md)             | Permission model, roles, AI agent setup                              |
+| [docs/permissions.md](docs/permissions.md)             | Permission model, roles, managed agents, quality gates               |
 | [docs/services.md](docs/services.md)                   | Per-service config, secrets, env vars, OAuth2 details                |
 | [docs/bootstrap.md](docs/bootstrap.md)                 | Deploy pipeline, template inventory, scripts, manifests              |
 | [docs/known-issues.md](docs/known-issues.md)           | Implementation gotchas and debugging notes                           |

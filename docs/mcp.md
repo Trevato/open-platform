@@ -154,6 +154,17 @@ Sessions have a 30-minute TTL. Stale sessions are closed automatically.
 | `list_instance_services`     | Services in instance                         |
 | `list_instance_apps`         | Apps in instance                             |
 
+### Agents (admin only)
+
+| Tool             | Description                          |
+| ---------------- | ------------------------------------ |
+| `list_agents`    | List all AI agents                   |
+| `get_agent`      | Get agent by slug                    |
+| `create_agent`   | Create agent with Forgejo identity   |
+| `update_agent`   | Update agent configuration           |
+| `delete_agent`   | Delete agent and Forgejo identity    |
+| `activate_agent` | Manually trigger agent with a prompt |
+
 ### Dev Pods
 
 | Tool                       | Description                                    |
