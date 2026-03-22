@@ -315,6 +315,46 @@ done
 # ── Phase 3: Org-level secrets ────────────────────────────────────────────────
 # Org secrets are inherited by all repos — no per-repo setup needed.
 
+# Create a Forgejo admin PAT for CI pipelines (used by protect-branch step).
+# Idempotent — reuses existing token if valid.
+FORGEJO_CI_TOKEN=""
+STORED_TOKEN=$(kubectl get secret forgejo-ci-token -n forgejo -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+if [ -n "$STORED_TOKEN" ]; then
+  # Validate the stored token still works (use raw curl — forgejo_api adds Basic auth)
+  if curl -fsSk -H "Authorization: token ${STORED_TOKEN}" "${FORGEJO_API}/user" >/dev/null 2>&1; then
+    FORGEJO_CI_TOKEN="$STORED_TOKEN"
+    echo "Using existing Forgejo CI token (validated)."
+  else
+    echo "Stored Forgejo CI token is stale — creating a new one."
+  fi
+fi
+
+if [ -z "$FORGEJO_CI_TOKEN" ]; then
+  echo "Creating Forgejo admin PAT for CI..."
+  TOKEN_RESPONSE=$(forgejo_api -X POST "${FORGEJO_API}/users/${ADMIN_USER}/tokens" \
+    -H "Content-Type: application/json" \
+    -d '{"name":"woodpecker-ci","scopes":["write:repository"]}' 2>/dev/null || echo "")
+
+  # Handle name conflict (token already exists but K8s secret was lost)
+  if [ -z "$TOKEN_RESPONSE" ] || ! echo "$TOKEN_RESPONSE" | jq -e '.sha1' >/dev/null 2>&1; then
+    # Delete existing token by name and recreate
+    forgejo_api -X DELETE "${FORGEJO_API}/users/${ADMIN_USER}/tokens/woodpecker-ci" >/dev/null 2>&1 || true
+    TOKEN_RESPONSE=$(forgejo_api -X POST "${FORGEJO_API}/users/${ADMIN_USER}/tokens" \
+      -H "Content-Type: application/json" \
+      -d '{"name":"woodpecker-ci","scopes":["write:repository"]}' 2>/dev/null)
+  fi
+
+  FORGEJO_CI_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.sha1 // empty')
+  if [ -n "$FORGEJO_CI_TOKEN" ]; then
+    kubectl create secret generic forgejo-ci-token -n forgejo \
+      --from-literal=token="${FORGEJO_CI_TOKEN}" \
+      --dry-run=client -o yaml | kubectl apply -f -
+    echo "Created and stored Forgejo CI token."
+  else
+    echo "Warning: Failed to create Forgejo CI token — protect-branch step will be skipped."
+  fi
+fi
+
 # Create org-level secrets for ALL Woodpecker orgs
 WP_ORGS=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
 if [ -z "$WP_ORGS" ]; then
@@ -324,7 +364,7 @@ else
     ORG_NAME=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
     echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
 
-    for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix provisioner_enabled; do
+    for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix provisioner_enabled forgejo_admin_token; do
       EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
       if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
         continue
@@ -338,6 +378,7 @@ else
         registry_push_host) VALUE="forgejo-http.forgejo.svc.cluster.local:3000" ;;
         service_prefix) VALUE="${PREFIX}" ;;
         provisioner_enabled) VALUE="${PROVISIONER_ENABLED:-false}" ;;
+        forgejo_admin_token) VALUE="${FORGEJO_CI_TOKEN}" ;;
       esac
 
       # Woodpecker rejects empty values — use a space for empty secrets

@@ -285,4 +285,26 @@ push_content "console" "${ROOT_DIR}/apps/console"
 create_repo "op-api" "Platform API — REST and MCP interface for repos, pipelines, apps"
 push_content "op-api" "${ROOT_DIR}/apps/op-api"
 
+# ── Branch Protections ──────────────────────────────────────────────────────
+# Require PRs for changes to main on all system repos.
+# Idempotent — skips repos that already have protection.
+
+echo "Setting branch protections..."
+SYSTEM_REPOS=$(api "${API_URL}/orgs/system/repos?limit=50" | jq -r '.[].name')
+
+for REPO in $SYSTEM_REPOS; do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    -u "${ADMIN_USER}:${ADMIN_PASS}" \
+    "${API_URL}/repos/system/${REPO}/branch_protections/main")
+
+  if [ "$STATUS" = "404" ]; then
+    api -X POST "${API_URL}/repos/system/${REPO}/branch_protections" \
+      -H "Content-Type: application/json" \
+      -d '{"branch_name":"main","enable_push":false,"enable_force_push":false}' >/dev/null
+    echo "  Protected: system/${REPO}"
+  else
+    echo "  Already protected: system/${REPO}"
+  fi
+done
+
 echo "System org setup complete."

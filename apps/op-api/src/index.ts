@@ -19,6 +19,8 @@ import { filesPlugin } from "./routes/files.js";
 import { platformPlugin } from "./routes/platform.js";
 import { instancesPlugin } from "./routes/instances.js";
 import { devPodsPlugin } from "./routes/dev-pods.js";
+import { agentRoutes } from "./routes/agents.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 import { models } from "./models.js";
 import { logger } from "./logger.js";
 
@@ -69,6 +71,8 @@ const app = new Elysia()
           { name: "Platform", description: "Admin-only platform management" },
           { name: "Instances", description: "vCluster instances" },
           { name: "Dev Pods", description: "Development environments" },
+          { name: "Agents", description: "AI agent management" },
+          { name: "Webhooks", description: "Forgejo webhook receiver" },
         ],
         components: {
           securitySchemes: {
@@ -118,9 +122,10 @@ const app = new Elysia()
     detail: { tags: ["Health"], security: [] },
   })
 
-  // REST API routes (all require Bearer token)
+  // REST API routes (all require Bearer token, except webhooks)
   .group("/api/v1", (app) =>
     app
+      .use(webhookRoutes)
       .use(statusPlugin)
       .use(reposPlugin)
       .use(prsPlugin)
@@ -133,7 +138,8 @@ const app = new Elysia()
       .use(filesPlugin)
       .use(platformPlugin)
       .use(instancesPlugin)
-      .use(devPodsPlugin),
+      .use(devPodsPlugin)
+      .use(agentRoutes),
   )
 
   // MCP endpoint — Streamable HTTP with session management

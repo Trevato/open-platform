@@ -130,6 +130,32 @@ CREATE INDEX IF NOT EXISTS idx_dev_pods_user_id ON dev_pods(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dev_pods_username_instance ON dev_pods(forgejo_username, COALESCE(instance_slug, ''));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dev_pods_podname_instance ON dev_pods(pod_name, COALESCE(instance_slug, ''));
 
+-- Agents (AI agents with Forgejo identities)
+
+CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  description TEXT,
+  model TEXT NOT NULL DEFAULT 'claude-sonnet-4-5',
+  instructions TEXT,
+  allowed_tools TEXT[],
+  forgejo_username TEXT NOT NULL,
+  forgejo_token TEXT NOT NULL,
+  orgs TEXT[] NOT NULL DEFAULT '{}',
+  schedule TEXT,
+  status TEXT NOT NULL DEFAULT 'idle',
+  max_steps INTEGER NOT NULL DEFAULT 25,
+  last_activity_at TIMESTAMPTZ,
+  error_message TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_slug ON agents(slug);
+CREATE INDEX IF NOT EXISTS idx_agents_user_id ON agents(user_id);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_instances_customer_id ON instances(customer_id);
 CREATE INDEX IF NOT EXISTS idx_instances_slug ON instances(slug);

@@ -67,6 +67,18 @@ const navItems = [
     ),
   },
   {
+    href: "/dashboard/agents",
+    label: "Agents",
+    icon: (
+      <>
+        <rect x="3" y="4" width="18" height="14" rx="2" />
+        <circle cx="9" cy="11" r="1.5" />
+        <circle cx="15" cy="11" r="1.5" />
+        <line x1="12" y1="1" x2="12" y2="4" />
+      </>
+    ),
+  },
+  {
     href: "/dashboard/terminal",
     label: "Terminal",
     icon: (

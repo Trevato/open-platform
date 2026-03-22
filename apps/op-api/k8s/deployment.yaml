@@ -68,6 +68,12 @@ spec:
                 secretKeyRef:
                   name: forgejo-admin-credentials
                   key: password
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: op-api-secrets
+                  key: webhook-secret
+                  optional: true
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/certs/ca-bundle.crt"
             - name: NODE_TLS_REJECT_UNAUTHORIZED
