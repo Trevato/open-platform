@@ -43,7 +43,7 @@ let hostCoreV1: k8s.CoreV1Api | null = null;
 let hostRbacV1: k8s.RbacAuthorizationV1Api | null = null;
 let hostKc: k8s.KubeConfig | null = null;
 
-function getHostClients() {
+export function getHostClients() {
   if (!hostAppsV1 || !hostCoreV1 || !hostRbacV1 || !hostKc) {
     hostKc = new k8s.KubeConfig();
     hostKc.loadFromDefault();
@@ -464,7 +464,7 @@ async function getInstanceClients(slug: string) {
 /**
  * Execute a command inside a pod via the k8s Exec API.
  */
-async function execInPod(
+export async function execInPod(
   kc: k8s.KubeConfig,
   namespace: string,
   pod: string,
@@ -483,10 +483,28 @@ async function execInPod(
     exec
       .exec(namespace, pod, container, command, stdout, stderr, null, false)
       .then((ws) => {
-        ws.on("close", () => resolve({ stdout: out, stderr: err }));
+        ws.on("close", () => {
+          // End streams so buffered data flushes before we resolve
+          stdout.end();
+          stderr.end();
+        });
         ws.on("error", reject);
       })
       .catch(reject);
+
+    let stdoutDone = false;
+    let stderrDone = false;
+    const tryResolve = () => {
+      if (stdoutDone && stderrDone) resolve({ stdout: out, stderr: err });
+    };
+    stdout.on("end", () => {
+      stdoutDone = true;
+      tryResolve();
+    });
+    stderr.on("end", () => {
+      stderrDone = true;
+      tryResolve();
+    });
   });
 }
 

@@ -127,7 +127,9 @@ MCPEOF
 
     # Set Playwright to use Nix-provided Chromium
     if [ -n "$CHROMIUM_BIN" ]; then
-      echo "export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$CHROMIUM_BIN\"" >> "$HOME/.zshenv"
+      # .zshenv may be a home-manager symlink (read-only) — remove it first
+      [ -L "$HOME/.zshenv" ] && rm -f "$HOME/.zshenv"
+      echo "export PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=\"$CHROMIUM_BIN\"" >> "$HOME/.zshenv" 2>/dev/null || true
     fi
   fi
 
