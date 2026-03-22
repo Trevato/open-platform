@@ -134,7 +134,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_dev_pods_podname_instance ON dev_pods(pod_
 
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
   description TEXT,

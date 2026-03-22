@@ -35,6 +35,7 @@ spec:
       containers:
         - name: app
           image: REGISTRY_HOST/ORG_NAME/PROJECT_NAME:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000
           env:
@@ -73,6 +74,12 @@ spec:
                 secretKeyRef:
                   name: op-api-secrets
                   key: webhook-secret
+                  optional: true
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anthropic-api-key
+                  key: api-key
                   optional: true
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/certs/ca-bundle.crt"

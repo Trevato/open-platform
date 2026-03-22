@@ -1,6 +1,18 @@
+import * as k8s from "@kubernetes/client-node";
 import pool from "./db.js";
 import { logger } from "../logger.js";
 import type { AuthenticatedUser } from "../auth.js";
+import {
+  type DevPodSpec,
+  ensureHostInfrastructure,
+  createDevPod,
+  startDevPod,
+  getDevPodStatus,
+  getHostClients,
+  execInPod,
+  NAMESPACE as DEVPOD_NAMESPACE,
+  podName as devpodPodName,
+} from "./devpod.js";
 
 // ─── Constants ───
 
@@ -150,17 +162,41 @@ async function createForgejoToken(username: string): Promise<string> {
 }
 
 async function addUserToOrg(username: string, org: string): Promise<void> {
-  const res = await fetch(
-    `${FORGEJO_URL}/api/v1/orgs/${encodeURIComponent(org)}/members/${encodeURIComponent(username)}`,
-    { method: "PUT", headers: adminHeaders() },
-  );
-
-  if (!res.ok && res.status !== 204) {
-    const body = await res.text();
-    logger.warn(
-      { org, username, status: res.status },
-      `Failed to add user to org: ${body}`,
+  // Forgejo requires adding users to a team, not directly to an org.
+  // Find the first team (typically "Owners") and add the user there.
+  try {
+    const teamsRes = await fetch(
+      `${FORGEJO_URL}/api/v1/orgs/${encodeURIComponent(org)}/teams`,
+      { headers: adminHeaders() },
     );
+
+    if (!teamsRes.ok) {
+      logger.warn({ org, status: teamsRes.status }, "Failed to list org teams");
+      return;
+    }
+
+    const teams = (await teamsRes.json()) as { id: number; name: string }[];
+    // Prefer "Owners" team, fall back to first team
+    const team = teams.find((t) => t.name === "Owners") || teams[0];
+    if (!team) {
+      logger.warn({ org }, "No teams found in org");
+      return;
+    }
+
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/teams/${team.id}/members/${encodeURIComponent(username)}`,
+      { method: "PUT", headers: adminHeaders() },
+    );
+
+    if (!res.ok && res.status !== 204) {
+      const body = await res.text();
+      logger.warn(
+        { org, username, teamId: team.id, status: res.status },
+        `Failed to add user to team: ${body}`,
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, org, username }, "Error adding user to org");
   }
 }
 
@@ -444,13 +480,277 @@ export async function activateAgent(
   );
 
   if (result.rows.length === 0) return null;
+  const agent = result.rows[0] as Agent;
 
   logger.info(
     { slug, prompt: prompt.slice(0, 100), context },
     "Agent activated",
   );
 
-  return result.rows[0] as Agent;
+  // Fire-and-forget execution — don't block the webhook response
+  executeAgent(agent, prompt, context).catch((err) => {
+    logger.error({ err, slug }, "Agent execution failed");
+    pool
+      .query(
+        `UPDATE agents SET status = 'error', error_message = $2, updated_at = NOW() WHERE slug = $1`,
+        [slug, String(err)],
+      )
+      .catch(() => {});
+  });
+
+  return agent;
+}
+
+// ─── Agent execution pipeline ───
+
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+
+async function waitForRunningPod(
+  coreV1: k8s.CoreV1Api,
+  namespace: string,
+  labelSelector: string,
+  timeoutMs = 120_000,
+): Promise<string> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const pods = await coreV1.listNamespacedPod({ namespace, labelSelector });
+    const running = pods.items.find(
+      (p) =>
+        p.status?.phase === "Running" &&
+        p.status?.containerStatuses?.every((c) => c.ready) &&
+        p.metadata?.name,
+    );
+    if (running?.metadata?.name) return running.metadata.name;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(
+    `Pod with selector ${labelSelector} not ready after ${timeoutMs}ms`,
+  );
+}
+
+async function ensureAgentDevPod(agent: Agent): Promise<void> {
+  const status = await getDevPodStatus(agent.forgejo_username);
+  if (status.exists) {
+    if (status.replicas === 0) {
+      await startDevPod(agent.forgejo_username);
+      logger.info(
+        { username: agent.forgejo_username },
+        "Started existing agent dev pod",
+      );
+    }
+    return;
+  }
+
+  // Create new dev pod for the agent
+  await ensureHostInfrastructure();
+
+  const spec: DevPodSpec = {
+    username: agent.forgejo_username,
+    email: `${agent.forgejo_username}@${PLATFORM_DOMAIN}`,
+    fullName: agent.name,
+    forgejoToken: agent.forgejo_token || "",
+    forgejoUrl: `https://${SERVICE_PREFIX}forgejo.${PLATFORM_DOMAIN}`,
+    cpuLimit: "2000m",
+    memoryLimit: "4Gi",
+    storageSize: "20Gi",
+  };
+
+  await createDevPod(spec);
+  logger.info({ username: agent.forgejo_username }, "Created agent dev pod");
+}
+
+function buildPrompt(
+  agent: Agent,
+  prompt: string,
+  context?: Record<string, unknown>,
+): string {
+  const parts: string[] = [];
+
+  if (agent.instructions) {
+    parts.push(`## System Instructions\n${agent.instructions}`);
+  }
+
+  if (context) {
+    const { event, owner, repo, issue_number, pr_number } = context as Record<
+      string,
+      unknown
+    >;
+    parts.push(`## Context`);
+    parts.push(`Event: ${event}`);
+    parts.push(`Repository: ${owner}/${repo}`);
+    if (issue_number) parts.push(`Issue: #${issue_number}`);
+    if (pr_number) parts.push(`PR: #${pr_number}`);
+  }
+
+  parts.push(`## Task\n${prompt}`);
+
+  if (context) {
+    const { repo } = context as Record<string, unknown>;
+    parts.push(`## Workflow`);
+    parts.push(
+      `Work in ~/projects/${repo}. Create a feature branch, make changes, commit, push, and open a PR.`,
+    );
+    parts.push(`Post a concise summary of what you did.`);
+  }
+
+  return parts.join("\n\n");
+}
+
+async function executeAgent(
+  agent: Agent,
+  prompt: string,
+  context?: Record<string, unknown>,
+): Promise<void> {
+  // 1. Ensure dev pod exists and is running
+  await ensureAgentDevPod(agent);
+
+  // 2. Wait for pod to be ready (5 min for image pull + init)
+  const { coreV1, kc } = getHostClients();
+  const selector = `app=${devpodPodName(agent.forgejo_username)}`;
+  const runningPod = await waitForRunningPod(
+    coreV1,
+    DEVPOD_NAMESPACE,
+    selector,
+    300_000,
+  );
+  logger.info({ pod: runningPod, slug: agent.slug }, "Agent dev pod ready");
+
+  // Wait for init.sh to complete (check for .devpod-initialized marker)
+  const initStart = Date.now();
+  while (Date.now() - initStart < 300_000) {
+    try {
+      const check = await execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
+        "bash",
+        "-c",
+        "[ -f /home/dev/.devpod-initialized ] && echo ready || echo waiting",
+      ]);
+      if (check.stdout.trim() === "ready") break;
+    } catch {
+      // exec may fail if container not fully ready
+    }
+    logger.debug({ slug: agent.slug }, "Waiting for init.sh to complete...");
+    await new Promise((r) => setTimeout(r, 10_000));
+  }
+  logger.info({ slug: agent.slug }, "Dev pod initialization complete");
+
+  // 3. Build the full prompt
+  const fullPrompt = buildPrompt(agent, prompt, context);
+
+  // 4. Execute claude --print in the dev pod (container runs as dev user)
+  // Write prompt to a file, run claude, capture output to file — avoids
+  // WebSocket stream race conditions and shell escaping edge cases.
+  const repoDir = (context as Record<string, unknown>)?.repo || "";
+  const promptFile = "/tmp/agent-prompt.txt";
+  const outputFile = "/tmp/agent-output.txt";
+  const stderrFile = "/tmp/agent-stderr.txt";
+
+  // Pull latest changes so agent picks up CLAUDE.md and .claude/ config
+  if (repoDir) {
+    await execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
+      "bash",
+      "-c",
+      `cd ~/projects/${repoDir} && git checkout main 2>/dev/null && git pull --ff-only 2>/dev/null; chmod +x .claude/hooks/*.sh 2>/dev/null; true`,
+    ]);
+  }
+
+  // Write prompt to file in the pod
+  await execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
+    "bash",
+    "-c",
+    `cat > ${promptFile} << 'AGENT_PROMPT_EOF'\n${fullPrompt}\nAGENT_PROMPT_EOF`,
+  ]);
+
+  const systemPromptExtra = [
+    "IMPORTANT: Before committing, always run the project's typecheck/lint commands and fix any errors.",
+    "Read CLAUDE.md in the repo root before making changes.",
+    "Keep changes focused and minimal. Do not modify files unrelated to the task.",
+  ].join(" ");
+
+  const shellCmd = [
+    `export ANTHROPIC_API_KEY=${shellEscape(ANTHROPIC_API_KEY)}`,
+    `cd ~/projects/${repoDir} 2>/dev/null || cd ~`,
+    `cat ${promptFile} | claude -p --model ${agent.model} --dangerously-skip-permissions --max-turns ${agent.max_steps} --append-system-prompt ${shellEscape(systemPromptExtra)} > ${outputFile} 2> ${stderrFile}`,
+    `echo "AGENT_EXIT_CODE=$?"`,
+  ].join(" && ");
+
+  logger.info(
+    { slug: agent.slug, pod: runningPod },
+    "Executing claude in agent dev pod",
+  );
+
+  await execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
+    "bash",
+    "-lc",
+    shellCmd,
+  ]);
+
+  // Read output files back
+  const outputResult = await execInPod(
+    kc,
+    DEVPOD_NAMESPACE,
+    runningPod,
+    "dev",
+    ["cat", outputFile],
+  );
+  const stderrResult = await execInPod(
+    kc,
+    DEVPOD_NAMESPACE,
+    runningPod,
+    "dev",
+    ["cat", stderrFile],
+  );
+
+  const output = outputResult.stdout.trim();
+  const errorOutput = stderrResult.stdout.trim();
+
+  if (errorOutput) {
+    logger.warn(
+      { slug: agent.slug, stderr: errorOutput.slice(0, 500) },
+      "Agent stderr output",
+    );
+  }
+
+  // 5. Post results back to the issue/PR
+  if (context && agent.forgejo_token) {
+    const { owner, repo, issue_number, pr_number } = context as Record<
+      string,
+      unknown
+    >;
+    const targetNumber = (issue_number || pr_number) as number;
+    if (owner && repo && targetNumber) {
+      const summary =
+        output.length > 60000
+          ? output.slice(0, 60000) + "\n\n...(truncated)"
+          : output;
+      const comment = summary || "(No output from agent)";
+      await postAgentComment(
+        agent.forgejo_token,
+        String(owner),
+        String(repo),
+        targetNumber,
+        comment,
+      );
+      logger.info(
+        { slug: agent.slug, owner, repo, targetNumber },
+        "Posted agent results",
+      );
+    }
+  }
+
+  // 6. Update status to idle
+  await pool.query(
+    `UPDATE agents SET status = 'idle', last_activity_at = NOW(), updated_at = NOW() WHERE slug = $1`,
+    [agent.slug],
+  );
+
+  logger.info(
+    { slug: agent.slug, outputLength: output.length },
+    "Agent execution completed",
+  );
+}
+
+function shellEscape(s: string): string {
+  return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
 // ─── Webhook helpers ───
