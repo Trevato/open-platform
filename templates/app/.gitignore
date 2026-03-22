@@ -1,3 +1,4 @@
 node_modules/
 .next/
 bun.lock
+.claude/settings.local.json
