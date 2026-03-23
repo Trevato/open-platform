@@ -6,6 +6,8 @@ const OP_API_URL =
   process.env.OP_API_URL || "http://op-api.op-system-op-api.svc:80";
 
 const FORGEJO_INTERNAL_URL =
+  process.env.AUTH_FORGEJO_INTERNAL_URL ||
+  process.env.AUTH_FORGEJO_URL ||
   process.env.FORGEJO_INTERNAL_URL ||
   process.env.FORGEJO_URL ||
   "https://forgejo.dev.test";

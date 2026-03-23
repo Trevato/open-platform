@@ -116,6 +116,7 @@ steps:
   # The forgejo_admin_token org secret is created by setup-woodpecker-repos.sh during bootstrap.
   - name: protect-branch
     image: alpine/curl
+    failure: ignore
     commands:
       - SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
       - FORGEJO_URL="https://$${SP}forgejo.$PLATFORM_DOMAIN"
