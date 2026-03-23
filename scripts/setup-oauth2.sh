@@ -123,7 +123,7 @@ if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
     --from-literal=OIDC_CLIENT_ID="${CLIENT_IDS[Headlamp]}" \
     --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
     --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
-    --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
+    --from-literal=OIDC_SCOPES="openid,profile,email,groups,offline_access" \
     --from-literal=OIDC_CALLBACK_URL="https://${PREFIX}headlamp.${DOMAIN}/oidc-callback"
 else
   # Verify the secret exists (from a previous run)

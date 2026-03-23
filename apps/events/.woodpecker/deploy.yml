@@ -147,35 +147,3 @@ steps:
         from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
-
-  # Ensure main branch is protected (requires PRs for changes).
-  # The forgejo_admin_token org secret is created by setup-woodpecker-repos.sh during bootstrap.
-  - name: protect-branch
-    image: alpine/curl
-    commands:
-      - SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
-      - FORGEJO_URL="https://$${SP}forgejo.$PLATFORM_DOMAIN"
-      - REPO_API="$FORGEJO_URL/api/v1/repos/${CI_REPO_OWNER}/${CI_REPO_NAME}"
-      - |
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-          -H "Authorization: token $FORGEJO_ADMIN_TOKEN" \
-          "$REPO_API/branch_protections/main")
-      - |
-        if [ "$STATUS" = "404" ]; then
-          echo "Setting branch protection on main..."
-          curl -sf -X POST \
-            -H "Authorization: token $FORGEJO_ADMIN_TOKEN" \
-            -H "Content-Type: application/json" \
-            "$REPO_API/branch_protections" \
-            -d '{"branch_name":"main","enable_push":false,"enable_force_push":false}'
-          echo "Branch protection enabled."
-        else
-          echo "Branch protection already exists, skipping."
-        fi
-    environment:
-      SERVICE_PREFIX:
-        from_secret: service_prefix
-      PLATFORM_DOMAIN:
-        from_secret: platform_domain
-      FORGEJO_ADMIN_TOKEN:
-        from_secret: forgejo_admin_token

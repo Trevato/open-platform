@@ -6,8 +6,10 @@ Implementation gotchas discovered during development. Consult when debugging une
 
 - **OIDC secret pattern** — uses the `externalSecret` pattern (Option 3 in the chart). All OIDC values come from the K8s secret via `envFrom`. Keys must be uppercase with underscores (`OIDC_CLIENT_ID`, not `clientID`). The chart's Option 1 (`secret.create: false` with `secret.name`) does NOT inject client credentials.
 - **Callback path** — `/oidc-callback` (not `/oidc/callback`). The redirect URI in the Forgejo OAuth2 app must match exactly.
-- **OIDC scopes** — must be comma-separated (`"openid,profile,email,groups"`), not space-separated.
+- **OIDC scopes** — must be comma-separated, not space-separated. Include `offline_access` for token refresh.
 - **Skip TLS verify** — use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY=true` env var (NOT a CLI flag). Works correctly despite "failed to append ca cert to pool" log (non-fatal).
+- **sessionTTL flag crash** — do NOT add `sessionTTL` to HelmRelease values. Chart 0.40.x passes `-session-ttl` to the binary which doesn't support the flag yet. Causes `CrashLoopBackOff`. Omitting `sessionTTL` from values works fine — the chart skips the flag. Pin chart to `version: "0.39.0"` to avoid the crash entirely.
+- **OIDC scopes** — include `offline_access` for refresh tokens: `"openid,profile,email,groups,offline_access"`.
 
 ## Woodpecker
 

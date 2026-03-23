@@ -18,12 +18,18 @@ spec:
   chart:
     spec:
       chart: headlamp
+      version: "0.39.0"
       sourceRef:
         kind: HelmRepository
         name: headlamp
         namespace: flux-system
   install:
     createNamespace: true
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+      retries: 3
+    cleanupOnFail: true
   values:
     config:
       oidc:
@@ -34,7 +40,7 @@ spec:
           name: "oidc"
         issuerURL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
         callbackURL: https://${SERVICE_PREFIX}headlamp.${DOMAIN}/oidc-callback
-        scopes: "openid,profile,email,groups"
+        scopes: "openid,profile,email,groups,offline_access"
     ingress:
       enabled: true
       ingressClassName: traefik

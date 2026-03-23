@@ -1,5 +1,5 @@
 config:
-  sessionTTL: null
+  # Do NOT add sessionTTL — 0.40.x binary crashes with -session-ttl flag
   oidc:
     secret:
       create: false
@@ -8,7 +8,7 @@ config:
       name: "oidc"
     issuerURL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
     callbackURL: https://${SERVICE_PREFIX}headlamp.${DOMAIN}/oidc-callback
-    scopes: "openid,profile,email,groups"
+    scopes: "openid,profile,email,groups,offline_access"
 ingress:
   enabled: true
   ingressClassName: traefik
