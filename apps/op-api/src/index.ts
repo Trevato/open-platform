@@ -23,6 +23,7 @@ import { agentRoutes } from "./routes/agents.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { models } from "./models.js";
 import { logger } from "./logger.js";
+import { initScheduler } from "./services/scheduler.js";
 
 // MCP session management
 const transports = new Map<
@@ -224,5 +225,10 @@ const app = new Elysia()
 logger.info(`listening on :${app.server?.port}`);
 logger.info(`REST: http://localhost:${app.server?.port}/api/v1`);
 logger.info(`MCP:  http://localhost:${app.server?.port}/mcp`);
+
+// Initialize cron scheduler for agents
+initScheduler().catch((err) => {
+  logger.error({ err }, "Failed to initialize scheduler");
+});
 
 export type App = typeof app;

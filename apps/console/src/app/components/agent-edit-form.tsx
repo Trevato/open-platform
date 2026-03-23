@@ -3,23 +3,39 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-export function CreateAgentForm() {
+interface Agent {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  model: string;
+  instructions: string | null;
+  orgs: string[];
+  max_steps: number;
+  schedule: string | null;
+}
+
+interface AgentEditFormProps {
+  agent: Agent;
+}
+
+export function AgentEditForm({ agent }: AgentEditFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [model, setModel] = useState("claude-sonnet-4-5");
-  const [instructions, setInstructions] = useState("");
-  const [organizations, setOrganizations] = useState("");
-  const [maxSteps, setMaxSteps] = useState(25);
-  const [schedule, setSchedule] = useState("");
+  const [name, setName] = useState(agent.name);
+  const [description, setDescription] = useState(agent.description || "");
+  const [model, setModel] = useState(agent.model);
+  const [instructions, setInstructions] = useState(agent.instructions || "");
+  const [organizations, setOrganizations] = useState(
+    agent.orgs?.join(", ") || "",
+  );
+  const [maxSteps, setMaxSteps] = useState(agent.max_steps);
+  const [schedule, setSchedule] = useState(agent.schedule || "");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!name.trim()) return;
-
     setSubmitting(true);
     setError(null);
 
@@ -28,31 +44,31 @@ export function CreateAgentForm() {
         name: name.trim(),
         model,
         max_steps: maxSteps,
+        description: description.trim() || null,
+        instructions: instructions.trim() || null,
+        schedule: schedule.trim() || null,
       };
-      if (description.trim()) body.description = description.trim();
-      if (instructions.trim()) body.instructions = instructions.trim();
-      if (organizations.trim()) {
-        body.orgs = organizations
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-      }
-      if (schedule.trim()) body.schedule = schedule.trim();
 
-      const res = await fetch("/api/agents", {
-        method: "POST",
+      body.orgs = organizations.trim()
+        ? organizations
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : [];
+
+      const res = await fetch(`/api/agents/${encodeURIComponent(agent.slug)}`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        setError(data.error || "Failed to create agent");
+        setError(data.error || "Failed to update agent");
         return;
       }
 
-      const data = await res.json();
-      router.push(`/dashboard/agents/${data.slug || data.agent?.slug || ""}`);
+      router.push(`/dashboard/agents/${agent.slug}`);
     } catch {
       setError("Network error");
     } finally {
@@ -93,15 +109,13 @@ export function CreateAgentForm() {
               id="agent-name"
               className="input"
               type="text"
-              placeholder="PR Reviewer"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
               autoFocus
             />
             <span className="form-hint">
-              A human-readable name. The slug and Forgejo username will be
-              derived from this.
+              The slug ({agent.slug}) cannot be changed.
             </span>
           </div>
 
@@ -113,7 +127,6 @@ export function CreateAgentForm() {
             <textarea
               id="agent-description"
               className="input"
-              placeholder="Reviews pull requests and leaves feedback..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               rows={2}
@@ -146,7 +159,6 @@ export function CreateAgentForm() {
             <textarea
               id="agent-instructions"
               className="input"
-              placeholder="You are a code reviewer. Focus on correctness, security, and clarity..."
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               rows={5}
@@ -157,9 +169,7 @@ export function CreateAgentForm() {
                 fontSize: 13,
               }}
             />
-            <span className="form-hint">
-              System prompt for the agent. Defines its personality and behavior.
-            </span>
+            <span className="form-hint">System prompt for the agent.</span>
           </div>
 
           {/* Organizations */}
@@ -171,13 +181,11 @@ export function CreateAgentForm() {
               id="agent-orgs"
               className="input"
               type="text"
-              placeholder="system, my-team"
               value={organizations}
               onChange={(e) => setOrganizations(e.target.value)}
             />
             <span className="form-hint">
-              Comma-separated organization names. The agent will be added as a
-              member.
+              Comma-separated. Changing orgs will update Forgejo memberships.
             </span>
           </div>
 
@@ -191,14 +199,11 @@ export function CreateAgentForm() {
               className="input"
               type="number"
               min={1}
-              max={100}
+              max={500}
               value={maxSteps}
               onChange={(e) => setMaxSteps(parseInt(e.target.value, 10) || 25)}
               style={{ maxWidth: 120 }}
             />
-            <span className="form-hint">
-              Maximum number of tool-use steps per conversation turn.
-            </span>
           </div>
 
           {/* Schedule */}
@@ -220,9 +225,9 @@ export function CreateAgentForm() {
               }}
             />
             <span className="form-hint">
-              Cron expression for automatic activation. Leave empty for
-              manual-only. Examples: <code>*/30 * * * *</code> (every 30 min),{" "}
-              <code>0 9 * * 1-5</code> (weekdays at 9am).
+              Cron expression. Leave empty for manual-only activation. Examples:{" "}
+              <code>*/30 * * * *</code> (every 30 min), <code>0 9 * * 1-5</code>{" "}
+              (weekdays at 9am).
             </span>
           </div>
 
@@ -242,12 +247,12 @@ export function CreateAgentForm() {
               className="btn btn-accent"
               disabled={submitting || !name.trim()}
             >
-              {submitting ? "Creating..." : "Create Agent"}
+              {submitting ? "Saving..." : "Save Changes"}
             </button>
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => router.push("/dashboard/agents")}
+              onClick={() => router.push(`/dashboard/agents/${agent.slug}`)}
               disabled={submitting}
             >
               Cancel

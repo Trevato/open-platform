@@ -2,6 +2,7 @@ import { streamText, UIMessage, convertToModelMessages, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { opApiGet } from "@/lib/op-api";
+import pool from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -19,6 +20,7 @@ export async function POST(request: Request, { params }: Params) {
   try {
     const body = await request.json();
     const messages: UIMessage[] = body.messages ?? [];
+    const chatId: string | undefined = body.chatId;
 
     // Fetch agent config including the internal token
     const data = await opApiGet(
@@ -48,16 +50,42 @@ export async function POST(request: Request, { params }: Params) {
         ? { experimental_activeTools: agent.allowed_tools }
         : {}),
       stopWhen: stepCountIs(agent.max_steps || 25),
-      onFinish: async () => {
+    });
+
+    // Ensure onFinish fires even if client disconnects
+    result.consumeStream();
+
+    return result.toUIMessageStreamResponse({
+      originalMessages: messages,
+      onFinish: async ({ messages: allMessages }) => {
+        // Persist messages to conversation
+        if (chatId) {
+          const title = allMessages.find((m) => m.role === "user");
+          const titleText = title?.parts
+            ?.filter(
+              (p): p is { type: "text"; text: string } => p.type === "text",
+            )
+            .map((p) => p.text)
+            .join(" ")
+            .slice(0, 80);
+
+          await pool.query(
+            `UPDATE conversations
+             SET messages = $1,
+                 title = COALESCE(title, $2),
+                 updated_at = NOW()
+             WHERE id = $3`,
+            [JSON.stringify(allMessages), titleText || null, chatId],
+          );
+        }
+
+        // Clean up MCP client
         if (mcpClient) {
           await mcpClient.close().catch(() => {});
         }
       },
     });
-
-    return result.toUIMessageStreamResponse();
   } catch (e: unknown) {
-    // Clean up MCP client on error
     if (mcpClient) {
       await mcpClient.close().catch(() => {});
     }

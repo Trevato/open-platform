@@ -156,6 +156,39 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_slug ON agents(slug);
 CREATE INDEX IF NOT EXISTS idx_agents_user_id ON agents(user_id);
 
+-- Conversations (persistent chat sessions with agents)
+
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  agent_slug TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+  title TEXT,
+  messages JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversations_agent_user ON conversations(agent_slug, user_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC);
+
+-- Agent runs (execution audit log)
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  agent_slug TEXT NOT NULL,
+  trigger TEXT NOT NULL DEFAULT 'manual',
+  status TEXT NOT NULL DEFAULT 'running',
+  prompt TEXT,
+  output TEXT,
+  error_message TEXT,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ,
+  duration_ms INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_slug ON agent_runs(agent_slug);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_started ON agent_runs(started_at DESC);
+
 -- Performance indexes
 CREATE INDEX IF NOT EXISTS idx_instances_customer_id ON instances(customer_id);
 CREATE INDEX IF NOT EXISTS idx_instances_slug ON instances(slug);

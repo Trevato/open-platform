@@ -9,6 +9,7 @@ import {
   activateAgent,
   type Agent,
 } from "../services/agent.js";
+import pool from "../services/db.js";
 
 // ─── Helpers ───
 
@@ -175,6 +176,33 @@ export const agentRoutes = new Elysia({ prefix: "/agents" })
     },
     {
       detail: { tags: ["Agents"], summary: "Delete agent" },
+    },
+  )
+
+  // GET /:slug/runs — get recent runs
+  .get(
+    "/:slug/runs",
+    async ({ params: { slug }, query, set }) => {
+      const agent = await getAgent(slug);
+      if (!agent) {
+        set.status = 404;
+        return { error: "Agent not found" };
+      }
+
+      const limit = Math.min(parseInt(query.limit || "20", 10), 100);
+      const result = await pool.query(
+        `SELECT id, agent_slug, trigger, status, prompt, error_message, started_at, completed_at, duration_ms
+         FROM agent_runs WHERE agent_slug = $1 ORDER BY started_at DESC LIMIT $2`,
+        [slug, limit],
+      );
+
+      return { runs: result.rows };
+    },
+    {
+      query: t.Object({
+        limit: t.Optional(t.String()),
+      }),
+      detail: { tags: ["Agents"], summary: "Get agent run history" },
     },
   )
 

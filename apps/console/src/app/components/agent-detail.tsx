@@ -47,6 +47,18 @@ export function AgentDetail({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [runs, setRuns] = useState<
+    Array<{
+      id: string;
+      trigger: string;
+      status: string;
+      prompt: string | null;
+      error_message: string | null;
+      started_at: string;
+      completed_at: string | null;
+      duration_ms: number | null;
+    }>
+  >([]);
 
   const fetchAgent = useCallback(async () => {
     try {
@@ -69,6 +81,26 @@ export function AgentDetail({ slug }: { slug: string }) {
     const interval = setInterval(fetchAgent, 10000);
     return () => clearInterval(interval);
   }, [fetchAgent]);
+
+  const fetchRuns = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(slug)}/runs?limit=10`,
+      );
+      if (res.ok) {
+        const data = await res.json();
+        setRuns(data.runs || []);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    fetchRuns();
+    const interval = setInterval(fetchRuns, 10000);
+    return () => clearInterval(interval);
+  }, [fetchRuns]);
 
   async function handleDelete() {
     if (
@@ -276,6 +308,62 @@ export function AgentDetail({ slug }: { slug: string }) {
           </div>
         )}
 
+        {/* Recent Runs */}
+        {runs.length > 0 && (
+          <div className="card">
+            <div className="card-body">
+              <h3
+                className="text-sm"
+                style={{ fontWeight: 600, marginBottom: 12 }}
+              >
+                Recent Runs
+              </h3>
+              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                {runs.map((run) => (
+                  <div
+                    key={run.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 0",
+                      borderBottom: "1px solid var(--border)",
+                      fontSize: 12,
+                    }}
+                  >
+                    <span
+                      className={`status-dot ${
+                        run.status === "running"
+                          ? "status-dot-provisioning"
+                          : run.status === "error"
+                            ? "status-dot-failed"
+                            : "status-dot-ready"
+                      }`}
+                    />
+                    <span className="text-xs" style={{ minWidth: 50 }}>
+                      {run.trigger}
+                    </span>
+                    <span className="text-xs text-muted" style={{ flex: 1 }}>
+                      {run.prompt?.slice(0, 60)}
+                      {run.prompt && run.prompt.length > 60 ? "..." : ""}
+                    </span>
+                    {run.duration_ms != null && (
+                      <span className="text-xs text-muted">
+                        {run.duration_ms < 60000
+                          ? `${Math.round(run.duration_ms / 1000)}s`
+                          : `${Math.round(run.duration_ms / 60000)}m`}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted">
+                      {new Date(run.started_at).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div
           style={{
@@ -290,6 +378,12 @@ export function AgentDetail({ slug }: { slug: string }) {
             onClick={() => router.push(`/dashboard/agents/${agent.slug}/chat`)}
           >
             Chat
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => router.push(`/dashboard/agents/${agent.slug}/edit`)}
+          >
+            Edit
           </button>
           <button
             className="btn btn-ghost"

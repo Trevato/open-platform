@@ -13,6 +13,7 @@ import {
   NAMESPACE as DEVPOD_NAMESPACE,
   podName as devpodPodName,
 } from "./devpod.js";
+import { scheduleAgent, unscheduleAgent } from "./scheduler.js";
 
 // ─── Constants ───
 
@@ -338,7 +339,18 @@ export async function createAgent(
     ],
   );
 
-  return result.rows[0] as Agent;
+  const agent = result.rows[0] as Agent;
+
+  // Schedule if cron expression provided
+  if (agent.schedule) {
+    try {
+      scheduleAgent(agent.slug, agent.schedule);
+    } catch {
+      // Non-fatal — agent is created, schedule just won't work
+    }
+  }
+
+  return agent;
 }
 
 export async function listAgents(
@@ -446,12 +458,29 @@ export async function updateAgent(
     values,
   );
 
-  return result.rows.length > 0 ? (result.rows[0] as Agent) : null;
+  const updated = result.rows.length > 0 ? (result.rows[0] as Agent) : null;
+
+  // Update scheduler
+  if (updated) {
+    if (updated.schedule) {
+      try {
+        scheduleAgent(updated.slug, updated.schedule);
+      } catch {
+        // Non-fatal
+      }
+    } else {
+      unscheduleAgent(updated.slug);
+    }
+  }
+
+  return updated;
 }
 
 export async function deleteAgent(slug: string): Promise<boolean> {
   const agent = await getAgent(slug);
   if (!agent) return false;
+
+  unscheduleAgent(slug);
 
   // Delete Forgejo user (cascades tokens, repos, etc.)
   await deleteForgejoUser(agent.forgejo_username);
@@ -487,6 +516,15 @@ export async function activateAgent(
     "Agent activated",
   );
 
+  // Log the run
+  pool
+    .query(
+      `INSERT INTO agent_runs (id, agent_slug, trigger, status, prompt, started_at)
+     VALUES ($1, $2, $3, 'running', $4, NOW())`,
+      [crypto.randomUUID(), slug, "manual", prompt.slice(0, 1000)],
+    )
+    .catch(() => {});
+
   // Fire-and-forget execution — don't block the webhook response
   executeAgent(agent, prompt, context).catch((err) => {
     logger.error({ err, slug }, "Agent execution failed");
@@ -494,6 +532,14 @@ export async function activateAgent(
       .query(
         `UPDATE agents SET status = 'error', error_message = $2, updated_at = NOW() WHERE slug = $1`,
         [slug, String(err)],
+      )
+      .catch(() => {});
+    // Update run record
+    pool
+      .query(
+        `UPDATE agent_runs SET status = 'error', error_message = $1, completed_at = NOW()
+         WHERE agent_slug = $2 AND status = 'running'`,
+        [String(err), slug],
       )
       .catch(() => {});
   });
@@ -742,6 +788,16 @@ async function executeAgent(
     `UPDATE agents SET status = 'idle', last_activity_at = NOW(), updated_at = NOW() WHERE slug = $1`,
     [agent.slug],
   );
+
+  // Update latest run record
+  pool
+    .query(
+      `UPDATE agent_runs SET status = 'completed', completed_at = NOW(), output = $1
+     WHERE agent_slug = $2 AND status = 'running'
+     ORDER BY started_at DESC LIMIT 1`,
+      [output.slice(0, 10000), agent.slug],
+    )
+    .catch(() => {});
 
   logger.info(
     { slug: agent.slug, outputLength: output.length },

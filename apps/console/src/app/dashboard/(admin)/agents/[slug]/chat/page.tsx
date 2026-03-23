@@ -9,12 +9,7 @@ export default async function AgentChatPage({
 }) {
   const result = await getSessionWithRole();
   if (!result || result.role !== "admin") redirect("/dashboard");
-
   const { slug } = await params;
 
-  return (
-    <div className="container">
-      <AgentChat slug={slug} />
-    </div>
-  );
+  return <AgentChat slug={slug} />;
 }

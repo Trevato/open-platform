@@ -1827,3 +1827,203 @@ select.input {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
 }
+
+/* ─── Markdown Content ─── */
+
+.markdown-content {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+.markdown-content h1 {
+  font-size: 18px;
+}
+
+.markdown-content h2 {
+  font-size: 16px;
+}
+
+.markdown-content h3 {
+  font-size: 14px;
+}
+
+.markdown-content p {
+  margin: 0 0 8px;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content code {
+  font-family: "FiraCode Nerd Font Mono", monospace;
+  font-size: 13px;
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.markdown-content pre {
+  margin: 8px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.markdown-content pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content li {
+  margin: 4px 0;
+}
+
+.markdown-content a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.markdown-content blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+  color: var(--text-secondary);
+  margin: 8px 0;
+}
+
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.markdown-content th,
+.markdown-content td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--bg-inset);
+  font-weight: 600;
+}
+
+/* ─── Syntax Highlighting (dark) ─── */
+
+.hljs {
+  background: transparent !important;
+  color: var(--text-primary);
+}
+
+.hljs-keyword {
+  color: #c792ea;
+}
+
+.hljs-string {
+  color: #c3e88d;
+}
+
+.hljs-number {
+  color: #f78c6c;
+}
+
+.hljs-comment {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.hljs-function {
+  color: #82aaff;
+}
+
+.hljs-title {
+  color: #ffcb6b;
+}
+
+.hljs-built_in {
+  color: #89ddff;
+}
+
+.hljs-attr {
+  color: #ffcb6b;
+}
+
+.hljs-params {
+  color: var(--text-primary);
+}
+
+.hljs-type {
+  color: #c792ea;
+}
+
+.hljs-meta {
+  color: #f78c6c;
+}
+
+.hljs-addition {
+  color: #c3e88d;
+}
+
+.hljs-deletion {
+  color: #f07178;
+}
+
+/* ─── Tool Call Pulse ─── */
+
+@keyframes tool-pulse {
+  0%,
+  100% {
+    border-color: var(--border);
+  }
+  50% {
+    border-color: var(--accent-border);
+  }
+}
+
+.tool-call-running {
+  animation: tool-pulse 2s ease-in-out infinite;
+}
+
+/* ─── Scroll to Bottom Button ─── */
+
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.scroll-to-bottom:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
