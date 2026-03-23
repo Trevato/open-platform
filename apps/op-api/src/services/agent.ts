@@ -60,12 +60,12 @@ export interface CreateAgentOpts {
 
 export interface UpdateAgentOpts {
   name?: string;
-  description?: string;
+  description?: string | null;
   model?: string;
-  instructions?: string;
+  instructions?: string | null;
   allowed_tools?: string[];
   orgs?: string[];
-  schedule?: string;
+  schedule?: string | null;
   max_steps?: number;
 }
 
@@ -286,7 +286,7 @@ export async function createAgent(
   const forgejoUsername = `agent-${opts.slug}`;
   const forgejoEmail = `agent-${opts.slug}@${PLATFORM_DOMAIN}`;
   const orgs = opts.orgs || [];
-  const model = opts.model || "claude-sonnet-4-20250514";
+  const model = opts.model || "claude-sonnet-4-6";
   const maxSteps = opts.max_steps ?? 50;
 
   // 1. Create Forgejo user
@@ -793,8 +793,7 @@ async function executeAgent(
   pool
     .query(
       `UPDATE agent_runs SET status = 'completed', completed_at = NOW(), output = $1
-     WHERE agent_slug = $2 AND status = 'running'
-     ORDER BY started_at DESC LIMIT 1`,
+     WHERE id = (SELECT id FROM agent_runs WHERE agent_slug = $2 AND status = 'running' ORDER BY started_at DESC LIMIT 1)`,
       [output.slice(0, 10000), agent.slug],
     )
     .catch(() => {});

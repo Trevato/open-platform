@@ -10,7 +10,7 @@ export function CreateAgentForm() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [model, setModel] = useState("claude-sonnet-4-5");
+  const [model, setModel] = useState("claude-sonnet-4-6");
   const [instructions, setInstructions] = useState("");
   const [organizations, setOrganizations] = useState("");
   const [maxSteps, setMaxSteps] = useState(25);
@@ -52,7 +52,7 @@ export function CreateAgentForm() {
       }
 
       const data = await res.json();
-      router.push(`/dashboard/agents/${data.slug || data.agent?.slug || ""}`);
+      router.push(`/dashboard/agents/${data.agent?.slug || ""}`);
     } catch {
       setError("Network error");
     } finally {
@@ -132,7 +132,7 @@ export function CreateAgentForm() {
               value={model}
               onChange={(e) => setModel(e.target.value)}
             >
-              <option value="claude-sonnet-4-5">Claude Sonnet 4.5</option>
+              <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
               <option value="claude-opus-4-6">Claude Opus 4.6</option>
               <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
             </select>
@@ -191,7 +191,7 @@ export function CreateAgentForm() {
               className="input"
               type="number"
               min={1}
-              max={100}
+              max={500}
               value={maxSteps}
               onChange={(e) => setMaxSteps(parseInt(e.target.value, 10) || 25)}
               style={{ maxWidth: 120 }}

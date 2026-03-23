@@ -22,13 +22,6 @@ interface Agent {
   last_activity_at: string | null;
 }
 
-const PLATFORM_DOMAIN =
-  typeof window !== "undefined"
-    ? (document
-        .querySelector('meta[name="platform-domain"]')
-        ?.getAttribute("content") ?? "")
-    : (process.env.NEXT_PUBLIC_PLATFORM_DOMAIN ?? "");
-
 function statusDotClass(status: string): string {
   switch (status) {
     case "running":
@@ -41,7 +34,13 @@ function statusDotClass(status: string): string {
   }
 }
 
-export function AgentDetail({ slug }: { slug: string }) {
+export function AgentDetail({
+  slug,
+  platformDomain,
+}: {
+  slug: string;
+  platformDomain?: string;
+}) {
   const router = useRouter();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,9 +77,11 @@ export function AgentDetail({ slug }: { slug: string }) {
 
   useEffect(() => {
     fetchAgent();
-    const interval = setInterval(fetchAgent, 10000);
+    const interval = setInterval(() => {
+      if (!error) fetchAgent();
+    }, 10000);
     return () => clearInterval(interval);
-  }, [fetchAgent]);
+  }, [fetchAgent, error]);
 
   const fetchRuns = useCallback(async () => {
     try {
@@ -150,8 +151,8 @@ export function AgentDetail({ slug }: { slug: string }) {
     );
   }
 
-  const forgejoUrl = PLATFORM_DOMAIN
-    ? `https://forgejo.${PLATFORM_DOMAIN}/${agent.forgejo_username}`
+  const forgejoUrl = platformDomain
+    ? `https://forgejo.${platformDomain}/${agent.forgejo_username}`
     : null;
 
   return (

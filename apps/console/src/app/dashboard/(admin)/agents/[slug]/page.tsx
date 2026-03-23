@@ -12,9 +12,11 @@ export default async function AgentDetailPage({
 
   const { slug } = await params;
 
+  const platformDomain = process.env.PLATFORM_DOMAIN || "";
+
   return (
     <div className="container">
-      <AgentDetail slug={slug} />
+      <AgentDetail slug={slug} platformDomain={platformDomain} />
     </div>
   );
 }

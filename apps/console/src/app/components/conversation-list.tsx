@@ -50,6 +50,8 @@ export function ConversationList({
 
   useEffect(() => {
     fetchConversations();
+    const interval = setInterval(fetchConversations, 30000);
+    return () => clearInterval(interval);
   }, [fetchConversations]);
 
   const handleNewChat = () => {
@@ -62,9 +64,12 @@ export function ConversationList({
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await fetch(`/api/agents/${encodeURIComponent(slug)}/conversations/${id}`, {
-      method: "DELETE",
-    });
+    if (!window.confirm("Delete this conversation?")) return;
+    const res = await fetch(
+      `/api/agents/${encodeURIComponent(slug)}/conversations/${id}`,
+      { method: "DELETE" },
+    );
+    if (!res.ok) return;
     setConversations((prev) => prev.filter((c) => c.id !== id));
     if (id === activeConversationId) {
       router.push(`/dashboard/agents/${slug}/chat`);

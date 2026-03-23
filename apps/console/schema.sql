@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS agents (
   name TEXT NOT NULL,
   slug TEXT UNIQUE NOT NULL,
   description TEXT,
-  model TEXT NOT NULL DEFAULT 'claude-sonnet-4-5',
+  model TEXT NOT NULL DEFAULT 'claude-sonnet-4-6',
   instructions TEXT,
   allowed_tools TEXT[],
   forgejo_username TEXT NOT NULL,

@@ -143,14 +143,14 @@ The app template includes three defense layers that prevent agents from pushing 
 
 ### Agent Configuration
 
-| Field           | Default                    | Description                           |
-| --------------- | -------------------------- | ------------------------------------- |
-| `model`         | `claude-sonnet-4-20250514` | Claude model for execution            |
-| `max_steps`     | `50`                       | Maximum turns per execution           |
-| `instructions`  | (none)                     | Agent-specific system prompt          |
-| `allowed_tools` | (none)                     | Tool restrictions (unused currently)  |
-| `orgs`          | (none)                     | Forgejo orgs the agent can access     |
-| `schedule`      | (none)                     | Cron schedule for periodic activation |
+| Field           | Default             | Description                           |
+| --------------- | ------------------- | ------------------------------------- |
+| `model`         | `claude-sonnet-4-6` | Claude model for execution            |
+| `max_steps`     | `50`                | Maximum turns per execution           |
+| `instructions`  | (none)              | Agent-specific system prompt          |
+| `allowed_tools` | (none)              | Tool restrictions (unused currently)  |
+| `orgs`          | (none)              | Forgejo orgs the agent can access     |
+| `schedule`      | (none)              | Cron schedule for periodic activation |
 
 ## Setting Up Claude Code (ad-hoc)
 

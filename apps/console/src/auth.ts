@@ -13,9 +13,26 @@ export const auth = betterAuth({
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
     ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
     : [],
-  accountLinking: {
-    enabled: true,
-    trustedProviders: ["forgejo"],
+  session: {
+    expiresIn: 60 * 60 * 24 * 30, // 30 days
+    updateAge: 60 * 60 * 24, // refresh daily (sliding window)
+    cookieCache: {
+      enabled: true,
+      maxAge: 60 * 5, // 5-min cache reduces DB hits
+    },
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["forgejo"],
+    },
+  },
+  advanced: {
+    cookiePrefix: "console",
+    defaultCookieAttributes: {
+      sameSite: "lax" as const,
+      secure: true,
+    },
   },
   plugins: [
     nextCookies(),

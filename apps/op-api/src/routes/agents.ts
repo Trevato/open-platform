@@ -151,12 +151,12 @@ export const agentRoutes = new Elysia({ prefix: "/agents" })
     {
       body: t.Object({
         name: t.Optional(t.String({ minLength: 1 })),
-        description: t.Optional(t.String()),
+        description: t.Optional(t.Union([t.String(), t.Null()])),
         model: t.Optional(t.String()),
-        instructions: t.Optional(t.String()),
+        instructions: t.Optional(t.Union([t.String(), t.Null()])),
         allowed_tools: t.Optional(t.Array(t.String())),
         orgs: t.Optional(t.Array(t.String())),
-        schedule: t.Optional(t.String()),
+        schedule: t.Optional(t.Union([t.String(), t.Null()])),
         max_steps: t.Optional(t.Number({ minimum: 1, maximum: 500 })),
       }),
       detail: { tags: ["Agents"], summary: "Update agent" },

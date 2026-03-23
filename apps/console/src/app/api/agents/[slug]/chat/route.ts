@@ -2,6 +2,8 @@ import { streamText, UIMessage, convertToModelMessages, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { createMCPClient } from "@ai-sdk/mcp";
 import { opApiGet } from "@/lib/op-api";
+import { auth } from "@/auth";
+import { headers } from "next/headers";
 import pool from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +20,15 @@ export async function POST(request: Request, { params }: Params) {
   let mcpClient: Awaited<ReturnType<typeof createMCPClient>> | null = null;
 
   try {
+    const session = await auth.api.getSession({ headers: await headers() });
+    if (!session?.user?.id) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const userId = session.user.id;
+
     const body = await request.json();
     const messages: UIMessage[] = body.messages ?? [];
     const chatId: string | undefined = body.chatId;
@@ -40,7 +51,7 @@ export async function POST(request: Request, { params }: Params) {
     const tools = await mcpClient.tools();
 
     const result = streamText({
-      model: anthropic(agent.model || "claude-sonnet-4-5"),
+      model: anthropic(agent.model || "claude-sonnet-4-6"),
       system:
         agent.instructions ||
         `You are ${agent.name}, an AI agent on the Open Platform. You have access to Forgejo tools for managing repositories, issues, and pull requests.`,
@@ -58,8 +69,8 @@ export async function POST(request: Request, { params }: Params) {
     return result.toUIMessageStreamResponse({
       originalMessages: messages,
       onFinish: async ({ messages: allMessages }) => {
-        // Persist messages to conversation
-        if (chatId) {
+        // Persist messages to conversation (upsert — creates on first message)
+        if (chatId && userId) {
           const title = allMessages.find((m) => m.role === "user");
           const titleText = title?.parts
             ?.filter(
@@ -70,12 +81,19 @@ export async function POST(request: Request, { params }: Params) {
             .slice(0, 80);
 
           await pool.query(
-            `UPDATE conversations
-             SET messages = $1,
-                 title = COALESCE(title, $2),
-                 updated_at = NOW()
-             WHERE id = $3`,
-            [JSON.stringify(allMessages), titleText || null, chatId],
+            `INSERT INTO conversations (id, agent_slug, user_id, title, messages, updated_at)
+             VALUES ($1, $2, $3, $4, $5, NOW())
+             ON CONFLICT (id) DO UPDATE SET
+               messages = EXCLUDED.messages,
+               title = COALESCE(conversations.title, EXCLUDED.title),
+               updated_at = NOW()`,
+            [
+              chatId,
+              slug,
+              userId,
+              titleText || null,
+              JSON.stringify(allMessages),
+            ],
           );
         }
 

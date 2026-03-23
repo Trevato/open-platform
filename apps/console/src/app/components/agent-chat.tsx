@@ -26,7 +26,7 @@ interface Agent {
 
 interface AgentChatProps {
   slug: string;
-  conversationId?: string;
+  conversationId: string;
   initialMessages?: UIMessage[];
 }
 
@@ -38,16 +38,13 @@ function modelLabel(model: string): string {
 
 export function AgentChat({
   slug,
-  conversationId: initialConversationId,
+  conversationId,
   initialMessages,
 }: AgentChatProps) {
   const router = useRouter();
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [agentLoading, setAgentLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [conversationId, setConversationId] = useState<string | undefined>(
-    initialConversationId,
-  );
-  const [sidebarKey, setSidebarKey] = useState(0);
   const messagesRef = useRef<HTMLDivElement>(null);
   const { isAtBottom, scrollToBottom } = useStickToBottom(messagesRef);
 
@@ -62,6 +59,8 @@ export function AgentChat({
       setAgent(data.agent);
     } catch {
       setLoadError("Failed to load agent");
+    } finally {
+      setAgentLoading(false);
     }
   }, [slug]);
 
@@ -71,19 +70,20 @@ export function AgentChat({
 
   const [input, setInput] = useState("");
 
-  const transportRef = useRef(
+  // Following the official AI SDK persistence pattern:
+  // conversationId is always set (generated before mount via redirect).
+  // useChat's id is stable from mount — no mid-session changes.
+  const transport = useRef(
     new DefaultChatTransport({
       api: `/api/agents/${encodeURIComponent(slug)}/chat`,
-      ...(initialConversationId
-        ? { body: { chatId: initialConversationId } }
-        : {}),
+      body: { chatId: conversationId },
     }),
   );
 
   const { messages, sendMessage, status, error, stop } = useChat({
     id: conversationId,
     ...(initialMessages?.length ? { messages: initialMessages } : {}),
-    transport: transportRef.current,
+    transport: transport.current,
   });
 
   // Auto-scroll when at bottom and new content arrives
@@ -103,46 +103,20 @@ export function AgentChat({
     }
   }, [error]);
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const text = input.trim();
     if (!text) return;
     setInput("");
-
-    // Create conversation on first message if none exists
-    if (!conversationId) {
-      try {
-        const res = await fetch(
-          `/api/agents/${encodeURIComponent(slug)}/conversations`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: text.slice(0, 80) }),
-          },
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const newId = data.conversation.id;
-          setConversationId(newId);
-          // Update transport to include chatId
-          transportRef.current = new DefaultChatTransport({
-            api: `/api/agents/${encodeURIComponent(slug)}/chat`,
-            body: { chatId: newId },
-          });
-          // Update URL without full navigation
-          window.history.replaceState(
-            null,
-            "",
-            `/dashboard/agents/${slug}/chat/${newId}`,
-          );
-          setSidebarKey((k) => k + 1);
-        }
-      } catch {
-        // Continue without persistence if conversation creation fails
-      }
-    }
-
     sendMessage({ text });
-  }, [input, conversationId, slug, sendMessage]);
+  }, [input, sendMessage]);
+
+  if (agentLoading) {
+    return (
+      <div className="flex justify-center" style={{ padding: 48 }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
 
   if (loadError) {
     return (
@@ -218,11 +192,7 @@ export function AgentChat({
         }}
       >
         {/* Conversation sidebar */}
-        <ConversationList
-          key={sidebarKey}
-          slug={slug}
-          activeConversationId={conversationId}
-        />
+        <ConversationList slug={slug} activeConversationId={conversationId} />
 
         {/* Chat area */}
         <div

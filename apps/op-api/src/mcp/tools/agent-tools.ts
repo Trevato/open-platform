@@ -82,7 +82,7 @@ export function registerAgentTools(server: McpServer, user: AuthenticatedUser) {
       model: z
         .string()
         .optional()
-        .describe("AI model to use (default: claude-sonnet-4-20250514)"),
+        .describe("AI model to use (default: claude-sonnet-4-6)"),
       instructions: z
         .string()
         .optional()
