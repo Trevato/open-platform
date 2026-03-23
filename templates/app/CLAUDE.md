@@ -24,6 +24,7 @@ Next.js 15 App Router on Open Platform. See @PLATFORM.md for env vars and infras
 - Path alias: `@/*` maps to `./src/*`
 - Schema: `schema.sql` (applied via psql in CI). Auth tables (user, session, account, verification) are managed by better-auth — do not modify their column names.
 - Seed data: `seed/sql/*.sql` (applied once on first deploy)
+- Session: 30-day expiry with daily sliding window, 5-min cookie cache. Cookie prefix derived from app hostname. See `src/auth.ts`.
 
 ## Quality
 

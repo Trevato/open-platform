@@ -6,6 +6,10 @@ import pool from "@/lib/db";
 const forgejoUrl = process.env.AUTH_FORGEJO_URL!;
 const forgejoInternalUrl = process.env.AUTH_FORGEJO_INTERNAL_URL || forgejoUrl;
 
+const cookiePrefix = process.env.BETTER_AUTH_URL
+  ? new URL(process.env.BETTER_AUTH_URL).hostname.split(".")[0]
+  : "app";
+
 export const auth = betterAuth({
   database: pool,
   baseURL: process.env.BETTER_AUTH_URL,
@@ -13,6 +17,27 @@ export const auth = betterAuth({
   trustedOrigins: process.env.BETTER_AUTH_TRUSTED_ORIGINS
     ? process.env.BETTER_AUTH_TRUSTED_ORIGINS.split(",")
     : [],
+  session: {
+    expiresIn: 60 * 60 * 24 * 30, // 30 days
+    updateAge: 60 * 60 * 24, // refresh daily (sliding window)
+    cookieCache: {
+      enabled: true,
+      maxAge: 60 * 5, // 5-min cache reduces DB hits
+    },
+  },
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["forgejo"],
+    },
+  },
+  advanced: {
+    cookiePrefix,
+    defaultCookieAttributes: {
+      sameSite: "lax" as const,
+      secure: true,
+    },
+  },
   plugins: [
     nextCookies(),
     genericOAuth({
