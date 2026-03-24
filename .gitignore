@@ -19,6 +19,7 @@ bun.lock
 auth-validation-screenshots/
 
 # E2E test artifacts
+test-results/
 tests/e2e/.auth/
 tests/e2e/test-results/
 
