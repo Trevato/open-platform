@@ -345,7 +345,7 @@ Full command reference: [docs/cli.md](cli.md)
 
 ## MCP for AI Agents
 
-The MCP server exposes 40+ tools for AI-assisted development: repos, PRs, issues, pipelines, files, dev pods, and more. Inside a dev pod, it is already configured. Outside a dev pod, create a Forgejo personal access token and add this to your MCP client config (e.g., `~/.claude/.mcp.json`):
+The MCP server exposes 61 tools across 13 categories for AI-assisted development: repos, PRs, issues, pipelines, files, agents, dev pods, and more. Inside a dev pod, it is already configured. Outside a dev pod, create a Forgejo personal access token and add this to your MCP client config (e.g., `~/.claude/.mcp.json`):
 
 ```json
 {

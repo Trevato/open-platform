@@ -119,7 +119,7 @@ export function ClaudeCodeModal({
     >
       <div
         style={{
-          background: "var(--bg)",
+          background: "var(--bg-card)",
           borderRadius: 12,
           border: "1px solid var(--border)",
           maxWidth: 560,

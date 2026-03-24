@@ -1,6 +1,6 @@
 # Open Platform
 
-Self-hosted developer platform on Kubernetes. One command gives you Git hosting, CI/CD, a Kubernetes dashboard, object storage, a management console, and PostgreSQL -- all authenticated through a single identity provider and served on one wildcard domain.
+Self-hosted developer platform where AI agents are first-class citizens. They have real Forgejo accounts, respond to @mentions in issues and PRs, run on cron schedules, and chat in real-time through the console. One command deploys Git hosting, CI/CD, a Kubernetes dashboard, object storage, a management console, and PostgreSQL -- all authenticated through a single identity provider and served on one wildcard domain.
 
 ```
 *.yourdomain.com
@@ -10,7 +10,7 @@ Self-hosted developer platform on Kubernetes. One command gives you Git hosting,
   minio.     -- Object storage console
   s3.        -- S3-compatible API
   console.   -- Management dashboard
-  api.       -- REST API + MCP server for AI agents
+  api.       -- REST API + MCP server (61 tools for AI agents)
   {app}.     -- Your apps (push-to-deploy from template)
 ```
 
@@ -20,6 +20,8 @@ Setting up a modern dev environment means stitching together a dozen SaaS produc
 
 After bootstrap, Flux GitOps takes over. Push to the platform repo on Forgejo and changes reconcile automatically. No manual Helm commands in steady state.
 
+Beyond infrastructure, Open Platform treats AI agents as native participants. Create managed agent identities that respond to @mentions in issues and PRs, run on cron schedules, or chat in real-time through the console -- each with their own Forgejo account, access token, and org memberships.
+
 ## Features
 
 **One-command deploy.** `make deploy` bootstraps everything from a single `open-platform.yaml` config file -- generates secrets, installs services, configures OAuth2 between them, and hands off to Flux.
@@ -28,11 +30,13 @@ After bootstrap, Flux GitOps takes over. Push to the platform repo on Forgejo an
 
 **PR preview environments.** Every pull request gets a dedicated namespace, database, and S3 bucket. Seed data is applied automatically. OAuth2-Proxy requires Forgejo login to access. Closing the PR cleans up everything.
 
-**Dev Pods.** Cloud development environments running in your cluster. Ubuntu + Nix + nixvim + Claude Code + Docker-in-Docker. Pre-configured with your Forgejo credentials, the `op` CLI, and MCP. Create one with `op devpod create` or from the Console UI.
+**Dev Pods.** Cloud development environments running in your cluster. Ubuntu + Nix + nixvim + Claude Code + Docker-in-Docker. Pre-configured with your Forgejo credentials, the `op` CLI, and a pre-connected MCP server. Create one with `op devpod create` or from the Console UI.
 
 **Multi-tenant hosting.** Provision fully isolated platform instances via vCluster. Each tenant gets their own Forgejo, CI, storage, and database at `{slug}-forgejo.{domain}`, `{slug}-ci.{domain}`, etc. Managed through the Console or CLI.
 
-**AI-native.** REST API with 14 route plugins and Swagger docs. MCP server with 40+ tools across 12 categories. Built for Claude Code and other AI agents to manage repos, pipelines, issues, PRs, instances, and dev pods programmatically.
+**Managed Agents.** Create AI identities with real Forgejo accounts. They respond to @mentions in issues and PRs, run on cron schedules, and chat in real-time through the console. Quality gates enforce typecheck before every commit.
+
+**MCP Server.** 61 tools across 13 categories give AI agents programmatic access to repos, issues, PRs, pipelines, apps, agents, instances, and dev pods. Streamable HTTP transport with session management.
 
 **CLI.** The `op` command handles everything: apps, PRs, issues, pipelines, users, instances, dev pods. Authenticates via Forgejo personal access token.
 
@@ -45,7 +49,7 @@ Browser --> Traefik (ingress, wildcard DNS)
               |-- headlamp   --> Headlamp (K8s dashboard, OIDC auth)
               |-- minio / s3 --> MinIO (S3-compatible object storage)
               |-- console    --> Console (management dashboard)
-              |-- api        --> Platform API (REST + MCP, 40+ AI tools)
+              |-- api        --> Platform API (REST + MCP, 61 AI tools)
               |-- {apps}     --> Apps (from template, push-to-deploy)
 
 Flux (GitOps) --> system/open-platform on Forgejo --> reconciles all services
@@ -64,7 +68,7 @@ All services authenticate through Forgejo as the single OIDC/OAuth2 identity pro
 | Headlamp     | `headlamp.{domain}`              | Kubernetes dashboard with OIDC                  |
 | MinIO        | `minio.{domain}` / `s3.{domain}` | S3-compatible object storage                    |
 | Console      | `console.{domain}`               | Instance and dev pod management                 |
-| Platform API | `api.{domain}`                   | REST API + MCP server for AI agents             |
+| Platform API | `api.{domain}`                   | REST + MCP (61 tools), agent management         |
 | PostgreSQL   | internal                         | CNPG-managed database cluster                   |
 | Flux         | internal                         | GitOps -- self-managing after bootstrap         |
 
@@ -167,6 +171,64 @@ Each dev pod includes: Ubuntu 24.04, Nix, nixvim, Claude Code, Node.js, Docker-i
 
 Also available from the Console UI at `https://console.{domain}`.
 
+## Agents
+
+Managed AI identities that operate as real Forgejo users. Each agent gets a dedicated account, personal access token, and organization memberships.
+
+### Creating Agents
+
+From the Console at `https://console.{domain}/dashboard/agents/new`, or via the MCP/CLI:
+
+```bash
+# Via CLI
+op agent create --name "Code Reviewer" \
+  --model claude-sonnet-4-6 \
+  --orgs system \
+  --instructions "Review PRs for correctness, style, and test coverage."
+```
+
+### Triggering via @mention
+
+Mention an agent in any issue or PR comment:
+
+```
+@agent-code-reviewer Please review this PR.
+```
+
+The agent acknowledges, pulls the repo into its dev pod, runs Claude Code with the prompt and quality gates, and posts the results back as a comment.
+
+### Scheduling
+
+Agents can run on a cron schedule:
+
+```bash
+op agent update code-reviewer --schedule "0 */6 * * *"
+```
+
+### Console Chat
+
+Open `https://console.{domain}/dashboard/agents/{slug}/chat` for real-time streaming conversation. Tool calls are visualized inline. Conversations persist across sessions.
+
+### Claude Code Integration
+
+Click the Claude Code button on any agent card in the Console to get a setup command:
+
+```bash
+claude mcp add --transport http --scope user op-code-reviewer \
+  https://api.{domain}/mcp --header "Authorization: Bearer <agent-token>"
+```
+
+All 61 platform tools are then available in Claude Code under the agent's server name.
+
+### Quality Gates
+
+Every agent execution enforces:
+
+- **CLAUDE.md** -- per-repo conventions the agent must follow
+- **Pre-commit typecheck hook** -- blocks commits with TypeScript errors
+- **System prompt injection** -- universal quality instructions appended at runtime
+- **Allowed tools** -- constrains which MCP tools are available in chat mode
+
 ## CLI
 
 The `op` CLI authenticates with a Forgejo personal access token:
@@ -206,7 +268,7 @@ See [docs/cli.md](docs/cli.md) for the full command reference.
 
 ## MCP Server
 
-The MCP server gives AI agents full access to the platform through 40+ tools. Inside a dev pod, it is already configured. For external use, add to your MCP client config:
+The MCP server gives AI agents full access to the platform through 61 tools. Inside a dev pod, it is already configured. For external use, add to your MCP client config:
 
 ```json
 {
@@ -222,7 +284,7 @@ The MCP server gives AI agents full access to the platform through 40+ tools. In
 }
 ```
 
-Tool categories: orgs, repos, PRs, issues, branches, files, pipelines, apps, users, platform, instances, dev pods.
+Tool categories: orgs (2), repos (5), PRs (5), issues (7), branches (3), files (2), pipelines (3), apps (3), agents (6), users (1), platform (5), instances (9), dev pods (10).
 
 See [docs/mcp.md](docs/mcp.md) for the full tool catalog.
 
@@ -300,4 +362,4 @@ make test-e2e    Run Playwright E2E tests
 
 ## License
 
-Apache License 2.0 -- see [LICENSE](LICENSE).
+AGPL-3.0 -- see [LICENSE](LICENSE).

@@ -120,12 +120,6 @@ kind: Namespace
 metadata:
   name: mailpit
 ---
-# BEGIN jitsi
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: jitsi
-# END jitsi
 ---
 # BEGIN zulip
 apiVersion: v1
