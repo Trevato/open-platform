@@ -121,6 +121,21 @@ CF_ACCOUNT_TAG=$(yaml_get "$CONFIG_FILE" "cloudflare.account_tag" 2>/dev/null) |
 CF_TUNNEL_ID=$(yaml_get "$CONFIG_FILE" "cloudflare.tunnel_id" 2>/dev/null) || CF_TUNNEL_ID=""
 CF_TUNNEL_SECRET=$(yaml_get "$CONFIG_FILE" "cloudflare.tunnel_secret" 2>/dev/null) || CF_TUNNEL_SECRET=""
 
+# SMTP settings (optional — defaults to bundled Mailpit)
+SMTP_EXTERNAL_HOST=$(yaml_get "$CONFIG_FILE" "smtp.host" 2>/dev/null) || SMTP_EXTERNAL_HOST=""
+SMTP_EXTERNAL_PORT=$(yaml_get "$CONFIG_FILE" "smtp.port" 2>/dev/null) || SMTP_EXTERNAL_PORT=""
+SMTP_EXTERNAL_USER=$(yaml_get "$CONFIG_FILE" "smtp.username" 2>/dev/null) || SMTP_EXTERNAL_USER=""
+SMTP_EXTERNAL_PASS=$(yaml_get "$CONFIG_FILE" "smtp.password" 2>/dev/null) || SMTP_EXTERNAL_PASS=""
+SMTP_EXTERNAL_FROM=$(yaml_get "$CONFIG_FILE" "smtp.from" 2>/dev/null) || SMTP_EXTERNAL_FROM=""
+
+# Jitsi settings (optional)
+JITSI_ENABLED=$(yaml_get "$CONFIG_FILE" "jitsi.enabled" 2>/dev/null) || JITSI_ENABLED="false"
+JITSI_ALLOW_GUESTS=$(yaml_get "$CONFIG_FILE" "jitsi.allow_guests" 2>/dev/null) || JITSI_ALLOW_GUESTS="true"
+JITSI_JVB_ADVERTISE_IP=$(yaml_get "$CONFIG_FILE" "jitsi.jvb_advertise_ip" 2>/dev/null) || JITSI_JVB_ADVERTISE_IP=""
+
+# Zulip settings (optional)
+ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_ENABLED="false"
+
 # Provisioner (optional)
 PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
 
@@ -129,6 +144,17 @@ echo "  Admin: ${ADMIN_USER} <${ADMIN_EMAIL}>"
 echo "  TLS:   ${TLS_MODE}"
 if [ -n "$SERVICE_PREFIX" ]; then
   echo "  Prefix: ${SERVICE_PREFIX}"
+fi
+if [ -n "$SMTP_EXTERNAL_HOST" ]; then
+  echo "  SMTP: external (${SMTP_EXTERNAL_HOST})"
+else
+  echo "  SMTP: bundled Mailpit"
+fi
+if [ "$JITSI_ENABLED" = "true" ]; then
+  echo "  Jitsi: enabled"
+fi
+if [ "$ZULIP_ENABLED" = "true" ]; then
+  echo "  Zulip: enabled"
 fi
 if [ "$PROVISIONER_ENABLED" = "true" ]; then
   echo "  Provisioner: enabled"
@@ -146,6 +172,10 @@ if [ -f "$STATE_FILE" ]; then
   WOODPECKER_AGENT_SECRET=$(yaml_get "$STATE_FILE" "woodpecker_agent_secret") || WOODPECKER_AGENT_SECRET=""
   OAUTH2_PROXY_COOKIE_SECRET=$(yaml_get "$STATE_FILE" "oauth2_proxy_cookie_secret") || OAUTH2_PROXY_COOKIE_SECRET=""
   BETTER_AUTH_SECRET=$(yaml_get "$STATE_FILE" "better_auth_secret") || BETTER_AUTH_SECRET=""
+  JITSI_JWT_SECRET=$(yaml_get "$STATE_FILE" "jitsi_jwt_secret") || JITSI_JWT_SECRET=""
+  ZULIP_SECRET_KEY=$(yaml_get "$STATE_FILE" "zulip_secret_key") || ZULIP_SECRET_KEY=""
+  ZULIP_RABBITMQ_PASSWORD=$(yaml_get "$STATE_FILE" "zulip_rabbitmq_password") || ZULIP_RABBITMQ_PASSWORD=""
+  ZULIP_DB_PASSWORD=$(yaml_get "$STATE_FILE" "zulip_db_password") || ZULIP_DB_PASSWORD=""
 else
   echo "  State: generating new secrets"
 fi
@@ -158,6 +188,10 @@ if [ -z "${MINIO_ROOT_PASSWORD:-}" ]; then MINIO_ROOT_PASSWORD=$(generate_secret
 if [ -z "${WOODPECKER_AGENT_SECRET:-}" ]; then WOODPECKER_AGENT_SECRET=$(generate_secret); changed=true; fi
 if [ -z "${OAUTH2_PROXY_COOKIE_SECRET:-}" ]; then OAUTH2_PROXY_COOKIE_SECRET=$(openssl rand -base64 32 | head -c 32); changed=true; fi
 if [ -z "${BETTER_AUTH_SECRET:-}" ]; then BETTER_AUTH_SECRET=$(generate_secret); changed=true; fi
+if [ "$JITSI_ENABLED" = "true" ] && [ -z "${JITSI_JWT_SECRET:-}" ]; then JITSI_JWT_SECRET=$(generate_secret); changed=true; fi
+if [ "$ZULIP_ENABLED" = "true" ] && [ -z "${ZULIP_SECRET_KEY:-}" ]; then ZULIP_SECRET_KEY=$(generate_secret); changed=true; fi
+if [ "$ZULIP_ENABLED" = "true" ] && [ -z "${ZULIP_RABBITMQ_PASSWORD:-}" ]; then ZULIP_RABBITMQ_PASSWORD=$(generate_secret); changed=true; fi
+if [ "$ZULIP_ENABLED" = "true" ] && [ -z "${ZULIP_DB_PASSWORD:-}" ]; then ZULIP_DB_PASSWORD=$(generate_secret); changed=true; fi
 
 # Persist state
 if [ "$changed" = true ] || [ ! -f "$STATE_FILE" ]; then
@@ -169,6 +203,10 @@ minio_root_password: ${MINIO_ROOT_PASSWORD}
 woodpecker_agent_secret: ${WOODPECKER_AGENT_SECRET}
 oauth2_proxy_cookie_secret: ${OAUTH2_PROXY_COOKIE_SECRET}
 better_auth_secret: ${BETTER_AUTH_SECRET}
+jitsi_jwt_secret: ${JITSI_JWT_SECRET}
+zulip_secret_key: ${ZULIP_SECRET_KEY}
+zulip_rabbitmq_password: ${ZULIP_RABBITMQ_PASSWORD}
+zulip_db_password: ${ZULIP_DB_PASSWORD}
 EOF
   echo "  State: saved to open-platform.state.yaml"
 fi
@@ -183,6 +221,17 @@ esac
 
 # In-cluster Forgejo URL: always use K8s service DNS (HTTP, no TLS)
 FORGEJO_INTERNAL_URL="http://forgejo-http.forgejo.svc.cluster.local:3000"
+
+# SMTP: use external if configured, else bundled Mailpit
+if [ -n "$SMTP_EXTERNAL_HOST" ]; then
+  SMTP_HOST="$SMTP_EXTERNAL_HOST"
+  SMTP_PORT="${SMTP_EXTERNAL_PORT:-587}"
+  SMTP_FROM="${SMTP_EXTERNAL_FROM:-forgejo@${DOMAIN}}"
+else
+  SMTP_HOST="mailpit-smtp.mailpit.svc.cluster.local"
+  SMTP_PORT="1025"
+  SMTP_FROM="forgejo@${DOMAIN}"
+fi
 
 # Cloudflare tunnel ID (empty string disables cloudflared template)
 CLOUDFLARE_TUNNEL_ID="${CF_TUNNEL_ID}"
@@ -202,6 +251,12 @@ template_file() {
     -e "s|\${TLS_SKIP_VERIFY}|${TLS_SKIP_VERIFY}|g" \
     -e "s|\${FORGEJO_INTERNAL_URL}|${FORGEJO_INTERNAL_URL}|g" \
     -e "s|\${CLOUDFLARE_TUNNEL_ID}|${CLOUDFLARE_TUNNEL_ID}|g" \
+    -e "s|\${SMTP_HOST}|${SMTP_HOST}|g" \
+    -e "s|\${SMTP_PORT}|${SMTP_PORT}|g" \
+    -e "s|\${SMTP_FROM}|${SMTP_FROM}|g" \
+    -e "s|\${JITSI_ALLOW_GUESTS}|${JITSI_ALLOW_GUESTS}|g" \
+    -e "s|\${JITSI_JVB_ADVERTISE_IP}|${JITSI_JVB_ADVERTISE_IP}|g" \
+    -e "s|\${ZULIP_RABBITMQ_PASSWORD}|${ZULIP_RABBITMQ_PASSWORD}|g" \
     "$src" > "$dest"
 }
 
@@ -221,6 +276,30 @@ echo "  forgejo-values.yaml"
 echo "  woodpecker-values.yaml"
 echo "  headlamp-values.yaml"
 echo "  minio-values.yaml"
+
+# Mailpit: only when not using external SMTP
+if [ -z "$SMTP_EXTERNAL_HOST" ]; then
+  template_file "$TEMPLATES_DIR/mailpit-values.yaml.tmpl" "$ROOT_DIR/mailpit-values.yaml"
+  echo "  mailpit-values.yaml"
+else
+  rm -f "$ROOT_DIR/mailpit-values.yaml"
+fi
+
+# Jitsi: optional
+if [ "$JITSI_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/jitsi-values.yaml.tmpl" "$ROOT_DIR/jitsi-values.yaml"
+  echo "  jitsi-values.yaml"
+else
+  rm -f "$ROOT_DIR/jitsi-values.yaml"
+fi
+
+# Zulip: optional
+if [ "$ZULIP_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/zulip-values.yaml.tmpl" "$ROOT_DIR/zulip-values.yaml"
+  echo "  zulip-values.yaml"
+else
+  rm -f "$ROOT_DIR/zulip-values.yaml"
+fi
 
 if [ "$PROVISIONER_ENABLED" = "true" ]; then
   template_file "$TEMPLATES_DIR/provisioner-values.yaml.tmpl" "$ROOT_DIR/provisioner-values.yaml"
@@ -264,6 +343,28 @@ template_platform "apps/headlamp.yaml"
 template_platform "apps/oauth2-proxy.yaml"
 template_platform "infrastructure/configs/minio.yaml"
 template_platform "infrastructure/configs/oauth2-proxy-middleware.yaml"
+
+# Mailpit: only generate if not using external SMTP
+if [ -z "$SMTP_EXTERNAL_HOST" ]; then
+  template_platform "apps/mailpit.yaml"
+else
+  echo "  (skipping mailpit — external SMTP configured)"
+  rm -f "$ROOT_DIR/platform/apps/mailpit.yaml"
+fi
+
+# Jitsi: only generate if enabled
+if [ "$JITSI_ENABLED" = "true" ]; then
+  template_platform "apps/jitsi.yaml"
+else
+  rm -f "$ROOT_DIR/platform/apps/jitsi.yaml"
+fi
+
+# Zulip: only generate if enabled
+if [ "$ZULIP_ENABLED" = "true" ]; then
+  template_platform "apps/zulip.yaml"
+else
+  rm -f "$ROOT_DIR/platform/apps/zulip.yaml"
+fi
 
 # Cloudflared: only generate if tunnel is configured
 if [ -n "$CLOUDFLARE_TUNNEL_ID" ]; then
@@ -332,6 +433,13 @@ echo "Templating manifests..."
 template_file "$TEMPLATES_DIR/manifests/oidc-rbac.yaml.tmpl" "$ROOT_DIR/manifests/oidc-rbac.yaml"
 echo "  manifests/oidc-rbac.yaml"
 
+if [ "$JITSI_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/manifests/jitsi-oidc-adapter.yaml.tmpl" "$ROOT_DIR/manifests/jitsi-oidc-adapter.yaml"
+  echo "  manifests/jitsi-oidc-adapter.yaml"
+else
+  rm -f "$ROOT_DIR/manifests/jitsi-oidc-adapter.yaml"
+fi
+
 # ── Template: helmfile.yaml ───────────────────────────────────────────────────
 
 echo ""
@@ -345,6 +453,28 @@ if [ "$TLS_MODE" != "letsencrypt" ]; then
   echo "  helmfile.yaml (cert-manager excluded — tls.mode=${TLS_MODE})"
 else
   echo "  helmfile.yaml (cert-manager included)"
+fi
+
+# Conditional: remove mailpit block if using external SMTP
+if [ -n "$SMTP_EXTERNAL_HOST" ]; then
+  sed_i '/# BEGIN mailpit/,/# END mailpit/d' "$ROOT_DIR/helmfile.yaml"
+  echo "  mailpit excluded (external SMTP)"
+fi
+
+# Conditional: remove jitsi block if not enabled
+if [ "$JITSI_ENABLED" != "true" ]; then
+  sed_i '/# BEGIN jitsi/,/# END jitsi/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN jitsi/,/# END jitsi/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN jitsi/,/# END jitsi/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  echo "  jitsi excluded"
+fi
+
+# Conditional: remove zulip block if not enabled
+if [ "$ZULIP_ENABLED" != "true" ]; then
+  sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  echo "  zulip excluded"
 fi
 
 # Conditional: remove provisioner block if not enabled
@@ -376,7 +506,41 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 WOODPECKER_AGENT_SECRET=${WOODPECKER_AGENT_SECRET}
 OAUTH2_PROXY_COOKIE_SECRET=${OAUTH2_PROXY_COOKIE_SECRET}
 BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+SMTP_HOST=${SMTP_HOST}
+SMTP_PORT=${SMTP_PORT}
+SMTP_FROM=${SMTP_FROM}
 EOF
+
+# External SMTP credentials
+if [ -n "$SMTP_EXTERNAL_HOST" ] && [ -n "$SMTP_EXTERNAL_USER" ]; then
+  cat >> "$ROOT_DIR/.env" <<EOF
+
+# External SMTP
+SMTP_USERNAME=${SMTP_EXTERNAL_USER}
+SMTP_PASSWORD=${SMTP_EXTERNAL_PASS}
+EOF
+fi
+
+# Jitsi secrets
+if [ "$JITSI_ENABLED" = "true" ]; then
+  cat >> "$ROOT_DIR/.env" <<EOF
+
+# Jitsi
+JITSI_JWT_SECRET=${JITSI_JWT_SECRET}
+JITSI_JVB_ADVERTISE_IP=${JITSI_JVB_ADVERTISE_IP}
+EOF
+fi
+
+# Zulip secrets
+if [ "$ZULIP_ENABLED" = "true" ]; then
+  cat >> "$ROOT_DIR/.env" <<EOF
+
+# Zulip
+ZULIP_SECRET_KEY=${ZULIP_SECRET_KEY}
+ZULIP_RABBITMQ_PASSWORD=${ZULIP_RABBITMQ_PASSWORD}
+ZULIP_DB_PASSWORD=${ZULIP_DB_PASSWORD}
+EOF
+fi
 
 # Cloudflare settings
 if [ -n "$CF_TUNNEL_ID" ]; then
@@ -460,5 +624,14 @@ echo "  Headlamp:   https://${SERVICE_PREFIX}headlamp.${DOMAIN}"
 echo "  MinIO:      https://${SERVICE_PREFIX}minio.${DOMAIN}"
 echo "  S3 API:     https://${SERVICE_PREFIX}s3.${DOMAIN}"
 echo "  OAuth2:     https://${SERVICE_PREFIX}oauth2.${DOMAIN}"
+if [ -z "$SMTP_EXTERNAL_HOST" ]; then
+  echo "  Mailpit:    https://${SERVICE_PREFIX}mail.${DOMAIN}"
+fi
+if [ "$JITSI_ENABLED" = "true" ]; then
+  echo "  Jitsi:      https://${SERVICE_PREFIX}meet.${DOMAIN}"
+fi
+if [ "$ZULIP_ENABLED" = "true" ]; then
+  echo "  Zulip:      https://${SERVICE_PREFIX}chat.${DOMAIN}"
+fi
 echo ""
 echo "Next: make deploy"

@@ -8,6 +8,28 @@ gitea:
         secretKeyRef:
           name: forgejo-db-config
           key: password
+    - name: FORGEJO__mailer__USER
+      valueFrom:
+        secretKeyRef:
+          name: forgejo-smtp-config
+          key: username
+          optional: true
+    - name: FORGEJO__mailer__PASSWD
+      valueFrom:
+        secretKeyRef:
+          name: forgejo-smtp-config
+          key: password
+          optional: true
+    - name: FORGEJO__storage_0X2E_packages__MINIO_ACCESS_KEY_ID
+      valueFrom:
+        secretKeyRef:
+          name: forgejo-minio-config
+          key: accessKey
+    - name: FORGEJO__storage_0X2E_packages__MINIO_SECRET_ACCESS_KEY
+      valueFrom:
+        secretKeyRef:
+          name: forgejo-minio-config
+          key: secretKey
   config:
     server:
       DOMAIN: ${SERVICE_PREFIX}forgejo.${DOMAIN}
@@ -22,8 +44,6 @@ gitea:
       NAME: forgejo
       USER: forgejo
       SSL_MODE: disable
-    packages:
-      ENABLED: true
     service:
       DISABLE_REGISTRATION: true
       DEFAULT_ALLOW_CREATE_ORGANIZATION: false
@@ -33,6 +53,19 @@ gitea:
       ENABLED: true
     openid:
       ENABLE_OPENID_SIGNIN: true
+    mailer:
+      ENABLED: true
+      PROTOCOL: smtp
+      SMTP_ADDR: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      FROM: "${SMTP_FROM}"
+    packages:
+      ENABLED: true
+    storage.packages:
+      STORAGE_TYPE: minio
+      MINIO_ENDPOINT: minio.minio.svc:9000
+      MINIO_BUCKET: forgejo-packages
+      MINIO_USE_SSL: false
     webhook:
       ALLOWED_HOST_LIST: "*.${DOMAIN}"
       SKIP_TLS_VERIFY: ${TLS_SKIP_VERIFY}

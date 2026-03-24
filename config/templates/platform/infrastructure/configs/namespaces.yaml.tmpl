@@ -109,6 +109,25 @@ metadata:
     open-platform.sh/tier: "workload"
     open-platform.sh/environment: "production"
 ---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mailpit
+---
+# BEGIN jitsi
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jitsi
+# END jitsi
+---
+# BEGIN zulip
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zulip
+# END zulip
+---
 # BEGIN provisioner
 apiVersion: v1
 kind: Namespace

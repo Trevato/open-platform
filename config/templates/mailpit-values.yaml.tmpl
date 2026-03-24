@@ -1,0 +1,12 @@
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  hostname: ${SERVICE_PREFIX}mail.${DOMAIN}
+
+resources:
+  requests:
+    memory: 64Mi
+    cpu: 25m
+  limits:
+    memory: 128Mi
+    cpu: 100m

@@ -1,0 +1,155 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jitsi
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://jitsi-contrib.github.io/jitsi-helm/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: jitsi
+  namespace: jitsi
+spec:
+  interval: 15m
+  timeout: 10m
+  chart:
+    spec:
+      chart: jitsi-meet
+      version: "2.13.1"
+      sourceRef:
+        kind: HelmRepository
+        name: jitsi
+        namespace: flux-system
+  install:
+    createNamespace: true
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+      retries: 3
+  values:
+    publicURL: "https://${SERVICE_PREFIX}meet.${DOMAIN}"
+    enableAuth: true
+    enableGuests: ${JITSI_ALLOW_GUESTS}
+    web:
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        hosts:
+          - host: ${SERVICE_PREFIX}meet.${DOMAIN}
+            paths: ["/"]
+      extraEnvs:
+        TOKEN_AUTH_URL: "https://${SERVICE_PREFIX}meet-auth.${DOMAIN}/room/{room}"
+      extraContainers:
+        - name: jitsi-oidc
+          image: ghcr.io/marcelcoding/jitsi-openid:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: JITSI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jitsi-secrets
+                  key: JWT_APP_SECRET
+            - name: JITSI_URL
+              value: "https://${SERVICE_PREFIX}meet.${DOMAIN}"
+            - name: JITSI_SUB
+              value: "${SERVICE_PREFIX}meet.${DOMAIN}"
+            - name: ISSUER_URL
+              value: "https://${SERVICE_PREFIX}forgejo.${DOMAIN}"
+            - name: BASE_URL
+              value: "https://${SERVICE_PREFIX}meet-auth.${DOMAIN}"
+            - name: CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: jitsi-oidc
+                  key: client-id
+            - name: CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jitsi-oidc
+                  key: client-secret
+            - name: VERIFY_ACCESS_TOKEN_HASH
+              value: "false"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+    prosody:
+      jwt:
+        existingSecretName: jitsi-secrets
+      persistence:
+        enabled: true
+        size: 5Gi
+    jicofo:
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+    jvb:
+      replicaCount: 1
+      publicIPs:
+        - ${JITSI_JVB_ADVERTISE_IP}
+      useNodeIP: false
+      stunServers: "stun.l.google.com:19302"
+      UDPPort: 10000
+      service:
+        enabled: true
+        type: NodePort
+        nodePort: 10000
+      resources:
+        requests:
+          memory: 512Mi
+          cpu: 500m
+        limits:
+          memory: 2Gi
+          cpu: "2"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jitsi-oidc
+  namespace: jitsi
+spec:
+  selector:
+    app.kubernetes.io/name: jitsi-meet
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: jitsi
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jitsi-oidc
+  namespace: jitsi
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: ${SERVICE_PREFIX}meet-auth.${DOMAIN}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: jitsi-oidc
+                port:
+                  number: 80

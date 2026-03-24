@@ -19,6 +19,8 @@ OAUTH2_APPS=(
   "Events|https://${PREFIX}events.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
   "Hub|https://${PREFIX}hub.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
   "Console|https://${PREFIX}console.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+  "Jitsi|https://${PREFIX}meet-auth.${DOMAIN}/callback|true"
+  "Zulip|https://${PREFIX}chat.${DOMAIN}/complete/oidc/|true"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
     --from-literal=OIDC_CLIENT_ID="${CLIENT_IDS[Headlamp]}" \
     --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
     --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
-    --from-literal=OIDC_SCOPES="openid,profile,email,groups,offline_access" \
+    --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
     --from-literal=OIDC_CALLBACK_URL="https://${PREFIX}headlamp.${DOMAIN}/oidc-callback"
 else
   # Verify the secret exists (from a previous run)
@@ -211,5 +213,48 @@ create_app_auth_secret "Arcade" "arcade-auth" "op-system-arcade"
 create_app_auth_secret "Events" "events-auth" "op-system-events"
 create_app_auth_secret "Hub" "hub-auth" "op-system-hub"
 create_app_auth_secret "Console" "console-auth" "op-system-console"
+
+# ── Jitsi OIDC secret ──────────────────────────────────────────────────────────
+
+if [ -n "${CLIENT_SECRETS[Jitsi]}" ]; then
+  echo "Creating Jitsi OIDC secret..."
+  apply_secret jitsi-oidc -n jitsi \
+    --from-literal=client-id="${CLIENT_IDS[Jitsi]}" \
+    --from-literal=client-secret="${CLIENT_SECRETS[Jitsi]}"
+else
+  if kubectl get secret jitsi-oidc -n jitsi >/dev/null 2>&1; then
+    echo "Jitsi OIDC secret already exists."
+  else
+    echo "Skipping Jitsi OIDC secret (namespace may not exist)."
+  fi
+fi
+
+# ── Zulip OIDC secret ─────────────────────────────────────────────────────────
+
+if [ -n "${CLIENT_SECRETS[Zulip]}" ]; then
+  echo "Creating Zulip OIDC secret..."
+  # Preserve existing rabbitmq/secret-key if the secret already exists
+  ZULIP_ARGS=(zulip-secrets -n zulip
+    --from-literal=oidc-client-id="${CLIENT_IDS[Zulip]}"
+    --from-literal=oidc-client-secret="${CLIENT_SECRETS[Zulip]}"
+  )
+  if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+    EXISTING_RMQ=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.rabbitmq-password}' 2>/dev/null | base64 -d || true)
+    EXISTING_SK=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || true)
+    if [ -n "$EXISTING_RMQ" ]; then
+      ZULIP_ARGS+=(--from-literal=rabbitmq-password="${EXISTING_RMQ}")
+    fi
+    if [ -n "$EXISTING_SK" ]; then
+      ZULIP_ARGS+=(--from-literal=secret-key="${EXISTING_SK}")
+    fi
+  fi
+  apply_secret "${ZULIP_ARGS[@]}"
+else
+  if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+    echo "Zulip OIDC secret already exists."
+  else
+    echo "Skipping Zulip OIDC secret (namespace may not exist)."
+  fi
+fi
 
 echo "OAuth2 setup complete."

@@ -91,6 +91,56 @@ else
     --from-literal=cookie-secret="${OAUTH2_PROXY_COOKIE_SECRET}"
 fi
 
+# Forgejo MinIO credentials (for package storage)
+apply_secret forgejo-minio-config -n forgejo \
+  --from-literal=accessKey="${MINIO_ROOT_USER}" \
+  --from-literal=secretKey="${MINIO_ROOT_PASSWORD}"
+
+# External SMTP credentials (optional — only when external SMTP configured)
+if [ -n "${SMTP_USERNAME:-}" ] && [ -n "${SMTP_PASSWORD:-}" ]; then
+  apply_secret forgejo-smtp-config -n forgejo \
+    --from-literal=username="${SMTP_USERNAME}" \
+    --from-literal=password="${SMTP_PASSWORD}"
+  echo "External SMTP credentials ready."
+fi
+
+# Jitsi JWT secret (conditional)
+if [ -n "${JITSI_JWT_SECRET:-}" ]; then
+  apply_secret jitsi-secrets -n jitsi \
+    --from-literal=JWT_APP_SECRET="${JITSI_JWT_SECRET}"
+  echo "Jitsi JWT secret ready."
+fi
+
+# Zulip database credentials (conditional)
+if [ -n "${ZULIP_DB_PASSWORD:-}" ]; then
+  apply_secret zulip-db-credentials -n postgres \
+    --from-literal=username=zulip \
+    --from-literal=password="${ZULIP_DB_PASSWORD}"
+  apply_secret zulip-db-credentials -n zulip \
+    --from-literal=username=zulip \
+    --from-literal=password="${ZULIP_DB_PASSWORD}"
+  echo "Zulip DB credentials ready."
+fi
+
+# Zulip secrets (conditional)
+if [ -n "${ZULIP_SECRET_KEY:-}" ]; then
+  # Preserve existing OIDC creds if they exist (from setup-oauth2.sh)
+  ZULIP_ARGS=(zulip-secrets -n zulip
+    --from-literal=rabbitmq-password="${ZULIP_RABBITMQ_PASSWORD}"
+    --from-literal=secret-key="${ZULIP_SECRET_KEY}"
+  )
+  if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+    EXISTING_OIDC_ID=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.oidc-client-id}' 2>/dev/null | base64 -d || true)
+    EXISTING_OIDC_SECRET=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.oidc-client-secret}' 2>/dev/null | base64 -d || true)
+    if [ -n "$EXISTING_OIDC_ID" ]; then
+      ZULIP_ARGS+=(--from-literal=oidc-client-id="${EXISTING_OIDC_ID}")
+      ZULIP_ARGS+=(--from-literal=oidc-client-secret="${EXISTING_OIDC_SECRET}")
+    fi
+  fi
+  apply_secret "${ZULIP_ARGS[@]}"
+  echo "Zulip secrets ready."
+fi
+
 # Cloudflare tunnel credentials (optional, for public access via Cloudflare)
 if [ -n "${CLOUDFLARE_TUNNEL_SECRET:-}" ] && [ -n "${CLOUDFLARE_TUNNEL_ID:-}" ] && [ -n "${CLOUDFLARE_ACCOUNT_TAG:-}" ]; then
   kubectl create secret generic cloudflared-credentials -n cloudflare \

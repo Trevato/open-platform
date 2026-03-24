@@ -15,6 +15,10 @@ repositories:
     url: https://charts.jetstack.io
   - name: fluxcd-community
     url: https://fluxcd-community.github.io/helm-charts
+  - name: jouve
+    url: https://jouve.github.io/charts
+  - name: jitsi
+    url: https://jitsi-contrib.github.io/jitsi-helm/
 
 helmDefaults:
   wait: true
@@ -98,6 +102,10 @@ releases:
       - kube-system/traefik
     labels:
       tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "./scripts/setup-minio-buckets.sh"
 
   # ─── Layer 2: Identity ─────────────────────────────────────────────────
 
@@ -176,6 +184,51 @@ releases:
         service:
           type: ClusterIP
           portNumber: 4180
+
+  # BEGIN mailpit
+  - name: mailpit
+    namespace: mailpit
+    chart: jouve/mailpit
+    version: "0.31.3"
+    values:
+      - mailpit-values.yaml
+    needs:
+      - kube-system/traefik
+    labels:
+      tier: apps
+  # END mailpit
+
+  # BEGIN jitsi
+  - name: jitsi
+    namespace: jitsi
+    chart: jitsi/jitsi-meet
+    version: "2.13.1"
+    values:
+      - jitsi-values.yaml
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: apps
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "kubectl"
+        args: ["apply", "-f", "manifests/jitsi-oidc-adapter.yaml"]
+  # END jitsi
+
+  # BEGIN zulip
+  - name: zulip
+    namespace: zulip
+    chart: oci://ghcr.io/zulip/helm-charts/zulip
+    version: "1.11.57"
+    values:
+      - zulip-values.yaml
+    needs:
+      - cnpg-system/cnpg
+      - forgejo/forgejo
+    labels:
+      tier: apps
+  # END zulip
 
   # ─── Layer 4: GitOps ───────────────────────────────────────────────
 

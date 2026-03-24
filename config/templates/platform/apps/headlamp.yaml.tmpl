@@ -40,7 +40,7 @@ spec:
           name: "oidc"
         issuerURL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
         callbackURL: https://${SERVICE_PREFIX}headlamp.${DOMAIN}/oidc-callback
-        scopes: "openid,profile,email,groups,offline_access"
+        scopes: "openid,profile,email,groups"
     ingress:
       enabled: true
       ingressClassName: traefik

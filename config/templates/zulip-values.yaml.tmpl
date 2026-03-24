@@ -1,0 +1,98 @@
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: ${SERVICE_PREFIX}chat.${DOMAIN}
+      paths:
+        - path: /
+
+resources:
+  requests:
+    memory: 1Gi
+    cpu: 500m
+  limits:
+    memory: 2Gi
+    cpu: "2"
+
+zulip:
+  environment:
+    SETTING_EXTERNAL_HOST: "${SERVICE_PREFIX}chat.${DOMAIN}"
+    SETTING_ZULIP_ADMINISTRATOR: "${ADMIN_EMAIL}"
+    DISABLE_HTTPS: "true"
+    SSL_CERTIFICATE_GENERATION: "self-signed"
+    SETTING_SECURE_PROXY_SSL_HEADER: "('HTTP_X_FORWARDED_PROTO', 'https')"
+    SETTING_CSRF_TRUSTED_ORIGINS: '["https://${SERVICE_PREFIX}chat.${DOMAIN}"]'
+    SETTING_SOCIAL_AUTH_REDIRECT_IS_HTTPS: "True"
+    SETTING_EMAIL_HOST: "${SMTP_HOST}"
+    SETTING_EMAIL_HOST_PORT: "${SMTP_PORT}"
+    SETTING_EMAIL_USE_TLS: "false"
+    SETTING_DEFAULT_FROM_EMAIL: "zulip@${DOMAIN}"
+    SETTING_NOREPLY_EMAIL_ADDRESS: "noreply@${DOMAIN}"
+    ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
+    OIDC_CLIENT_ID:
+      valueFrom:
+        secretKeyRef:
+          name: zulip-secrets
+          key: oidc-client-id
+    OIDC_CLIENT_SECRET:
+      valueFrom:
+        secretKeyRef:
+          name: zulip-secrets
+          key: oidc-client-secret
+    SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS: >-
+      {"forgejo":{"oidc_url":"https://${SERVICE_PREFIX}forgejo.${DOMAIN}","display_name":"Forgejo","display_icon":None,"auto_signup":True,"client_id":"$(OIDC_CLIENT_ID)","secret":"$(OIDC_CLIENT_SECRET)"}}
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# Use platform CNPG PostgreSQL cluster
+postgresql:
+  enabled: false
+
+externalPostgresql:
+  host: "postgres-rw.postgres.svc.cluster.local"
+  port: 5432
+  database: "zulip"
+  user: "zulip"
+  password:
+    valueFrom:
+      secretKeyRef:
+        name: zulip-db-credentials
+        key: password
+
+# Bitnami subcharts for Zulip-internal services
+rabbitmq:
+  enabled: true
+  auth:
+    username: zulip
+    password: "${ZULIP_RABBITMQ_PASSWORD}"
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+
+memcached:
+  enabled: true
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 25m
+    limits:
+      memory: 256Mi
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 25m
+      limits:
+        memory: 256Mi

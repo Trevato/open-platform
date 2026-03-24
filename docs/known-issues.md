@@ -6,10 +6,13 @@ Implementation gotchas discovered during development. Consult when debugging une
 
 - **OIDC secret pattern** — uses the `externalSecret` pattern (Option 3 in the chart). All OIDC values come from the K8s secret via `envFrom`. Keys must be uppercase with underscores (`OIDC_CLIENT_ID`, not `clientID`). The chart's Option 1 (`secret.create: false` with `secret.name`) does NOT inject client credentials.
 - **Callback path** — `/oidc-callback` (not `/oidc/callback`). The redirect URI in the Forgejo OAuth2 app must match exactly.
-- **OIDC scopes** — must be comma-separated, not space-separated. Include `offline_access` for token refresh.
+- **OIDC scopes** — must be comma-separated, not space-separated. Do NOT include `offline_access` — Forgejo doesn't support it (not in `scopes_supported`). Using it causes "key not found" refresh token errors and auth loops. Use: `"openid,profile,email,groups"`.
+- **OIDC external secret keys** — the `oidc` K8s secret MUST include `OIDC_ISSUER_URL` and `OIDC_CALLBACK_URL` in addition to `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_SCOPES`. The chart uses `$(OIDC_ISSUER_URL)` in CLI args — missing key causes literal string and immediate OIDC failure.
 - **Skip TLS verify** — use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY=true` env var (NOT a CLI flag). Works correctly despite "failed to append ca cert to pool" log (non-fatal).
 - **sessionTTL flag crash** — do NOT add `sessionTTL` to HelmRelease values. Chart 0.40.x passes `-session-ttl` to the binary which doesn't support the flag yet. Causes `CrashLoopBackOff`. Omitting `sessionTTL` from values works fine — the chart skips the flag. Pin chart to `version: "0.39.0"` to avoid the crash entirely.
-- **OIDC scopes** — include `offline_access` for refresh tokens: `"openid,profile,email,groups,offline_access"`.
+- **OIDC state is in-memory** — Headlamp stores OIDC state in a Go in-memory map (`oauthRequestMap`). Pod restarts during active login sessions cause "invalid request state is empty" errors. This is expected — users just retry.
+- **k3s OIDC must match** — k3s `--kube-apiserver-arg=oidc-issuer-url` and `oidc-client-id` MUST match Headlamp's OIDC secret. Mismatch causes silent token rejection and infinite auth loop. Update NixOS config on VxRail and rebuild after changing OAuth2 apps.
+- **k3s OIDC CA cert** — k3s needs `--oidc-ca-file` pointing to the platform CA cert (`/etc/ssl/custom/openplatform-ca.crt`). Must match the CA in `certs/ca.crt`. Copy updated cert to VxRail's `~/nix-darwin-config/certs/openplatform-ca.crt` and rebuild NixOS.
 
 ## Woodpecker
 
@@ -62,6 +65,27 @@ Implementation gotchas discovered during development. Consult when debugging une
 ## Git
 
 - **Credential security** — `setup-system-org.sh` uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
+
+## Jitsi
+
+- **OIDC adapter** — uses `MarcelCoding/jitsi-openid` (Rust), NOT `nordeck/jitsi-keycloak-adapter` (Keycloak-only). The adapter runs as a sidecar in the web pod (port 3000) with a separate Service/Ingress at `meet-auth.{PLATFORM_DOMAIN}`.
+- **`tokenAuthUrl`** — set via `web.extraEnvs.TOKEN_AUTH_URL` in the Helm chart. Value: `https://meet-auth.{DOMAIN}/room/{room}`. The `{room}` placeholder is replaced by Jitsi at runtime.
+- **Prosody PVC persistence** — Helm upgrades regenerate XMPP passwords but Prosody's PVC retains old SCRAM-SHA-1 hashes. After any Helm upgrade, re-register accounts: `prosodyctl --config /config/prosody.cfg.lua register focus auth.meet.jitsi <JICOFO_PASS>` and same for `jvb`. Then restart Jicofo and JVB deployments.
+- **XMPP secret names** — `jitsi-jitsi-meet-jicofo-secret` and `jitsi-jitsi-meet-jvb-secret` (NOT `-jicofo` or `-jvb-0`). Container name in Prosody pod is `jitsi-meet` (not `prosody`).
+- **OAuth2 redirect URI** — `https://meet-auth.{DOMAIN}/callback` (jitsi-openid's callback path).
+- **VERIFY_ACCESS_TOKEN_HASH** — set to `false` initially. Test if Forgejo's `id_token` includes `at_hash`; if so, set to `true` for tighter security.
+
+## Zulip
+
+- **OIDC per-IdP credentials** — `SOCIAL_AUTH_OIDC_KEY`/`SECRET` top-level vars are IGNORED. The `client_id` and `secret` MUST be inside the per-IdP dict in `SOCIAL_AUTH_OIDC_ENABLED_IDPS`. Use K8s `$(VAR)` env var expansion to inject from secrets.
+- **`oidc_url` is the base URL** — set to `https://forgejo.{DOMAIN}`, NOT the discovery URL. The `python-social-auth` library appends `/.well-known/openid-configuration` automatically. Using the full discovery URL causes a double path and 404.
+- **HTTPS redirect** — behind Cloudflare Tunnel, Traefik strips `X-Forwarded-Proto` headers (no trusted IPs). Set `SETTING_SOCIAL_AUTH_REDIRECT_IS_HTTPS: "True"` to force HTTPS redirect URIs.
+- **CSRF behind proxy** — requires `SETTING_SECURE_PROXY_SSL_HEADER: "('HTTP_X_FORWARDED_PROTO', 'https')"` and `SETTING_CSRF_TRUSTED_ORIGINS: '["https://chat.{DOMAIN}"]'`.
+- **Bitnami-style chart** — uses Bitnami `ingress.hostname` and `ingress.ingressClassName`, similar to Mailpit.
+
+## Mailpit
+
+- **Bitnami-style ingress** — uses `ingress.hostname` and `ingress.ingressClassName`, NOT `ingress.hosts[]` array with `className`.
 
 ## vCluster
 

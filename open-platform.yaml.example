@@ -25,6 +25,26 @@ tls:
 #   tunnel_id: ""
 #   tunnel_secret: ""
 
+# Email: Bundled Mailpit (dev) or external SMTP (production)
+# Mailpit deploys automatically at mail.{domain} for catching all emails.
+# To use an external SMTP server instead, uncomment the smtp section:
+# smtp:
+#   host: smtp.example.com
+#   port: 587
+#   username: user@example.com
+#   password: secret
+#   from: noreply@example.com
+
+# Jitsi Meet: Video conferencing (optional)
+# jitsi:
+#   enabled: true
+#   allow_guests: true             # Allow unauthenticated guests to join meetings
+#   jvb_advertise_ip: 10.0.0.44   # Required: server IP for media traffic (not proxied by Cloudflare)
+
+# Zulip: Team messaging (optional)
+# zulip:
+#   enabled: true
+
 # Instance provisioning (optional — enables child platform creation via vCluster)
 # provisioner:
 #   enabled: true
