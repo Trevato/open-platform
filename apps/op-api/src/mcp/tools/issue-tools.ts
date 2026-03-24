@@ -6,10 +6,7 @@ const text = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
 });
 
-export function registerIssueTools(
-  server: McpServer,
-  forgejo: ForgejoClient,
-) {
+export function registerIssueTools(server: McpServer, forgejo: ForgejoClient) {
   server.tool(
     "list_issues",
     "List issues in a repository. Returns issue numbers, titles, state, labels, assignees, and milestone.",
@@ -25,7 +22,10 @@ export function registerIssueTools(
         .optional()
         .describe("Comma-separated label names to filter by"),
       milestone: z.string().optional().describe("Milestone name to filter by"),
-      assignee: z.string().optional().describe("Username to filter by assignee"),
+      assignee: z
+        .string()
+        .optional()
+        .describe("Username to filter by assignee"),
     },
     async ({ org, repo, state, labels, milestone, assignee }) => {
       const issues = await forgejo.listIssues(org, repo, {
@@ -39,8 +39,8 @@ export function registerIssueTools(
           number: i.number,
           title: i.title,
           state: i.state,
-          labels: i.labels.map((l) => l.name),
-          assignees: i.assignees.map((a) => a.login),
+          labels: (i.labels || []).map((l) => l.name),
+          assignees: (i.assignees || []).map((a) => a.login),
           milestone: i.milestone?.title ?? null,
           url: i.html_url,
         })),
@@ -56,15 +56,9 @@ export function registerIssueTools(
       repo: z.string().describe("Repository name"),
       title: z.string().describe("Issue title"),
       body: z.string().default("").describe("Issue body (markdown)"),
-      labels: z
-        .array(z.number())
-        .optional()
-        .describe("Label IDs to attach"),
+      labels: z.array(z.number()).optional().describe("Label IDs to attach"),
       milestone: z.number().optional().describe("Milestone ID"),
-      assignees: z
-        .array(z.string())
-        .optional()
-        .describe("Usernames to assign"),
+      assignees: z.array(z.string()).optional().describe("Usernames to assign"),
     },
     async ({ org, repo, title, body, labels, milestone, assignees }) => {
       const issue = await forgejo.createIssue(org, repo, {
@@ -92,17 +86,21 @@ export function registerIssueTools(
       title: z.string().optional().describe("New title"),
       body: z.string().optional().describe("New body"),
       state: z.enum(["open", "closed"]).optional().describe("New state"),
-      labels: z
-        .array(z.number())
-        .optional()
-        .describe("Replace labels (by ID)"),
+      labels: z.array(z.number()).optional().describe("Replace labels (by ID)"),
       milestone: z.number().optional().describe("New milestone ID"),
-      assignees: z
-        .array(z.string())
-        .optional()
-        .describe("Replace assignees"),
+      assignees: z.array(z.string()).optional().describe("Replace assignees"),
     },
-    async ({ org, repo, number, title, body, state, labels, milestone, assignees }) => {
+    async ({
+      org,
+      repo,
+      number,
+      title,
+      body,
+      state,
+      labels,
+      milestone,
+      assignees,
+    }) => {
       const opts: Record<string, unknown> = {};
       if (title !== undefined) opts.title = title;
       if (body !== undefined) opts.body = body;
@@ -110,7 +108,12 @@ export function registerIssueTools(
       if (labels !== undefined) opts.labels = labels;
       if (milestone !== undefined) opts.milestone = milestone;
       if (assignees !== undefined) opts.assignees = assignees;
-      const issue = await forgejo.updateIssue(org, repo, number, opts as Parameters<typeof forgejo.updateIssue>[3]);
+      const issue = await forgejo.updateIssue(
+        org,
+        repo,
+        number,
+        opts as Parameters<typeof forgejo.updateIssue>[3],
+      );
       return text({
         updated: true,
         number: issue.number,
@@ -162,9 +165,7 @@ export function registerIssueTools(
       org: z.string().describe("Organization or owner name"),
       repo: z.string().describe("Repository name"),
       name: z.string().describe("Label name"),
-      color: z
-        .string()
-        .describe("Hex color without # (e.g. 'e11d48')"),
+      color: z.string().describe("Hex color without # (e.g. 'e11d48')"),
       description: z.string().default("").describe("Label description"),
     },
     async ({ org, repo, name, color, description }) => {
