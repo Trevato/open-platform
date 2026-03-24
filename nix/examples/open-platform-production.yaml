@@ -1,0 +1,36 @@
+# Production — NixOS with k3s
+# Copy to project root: cp nix/examples/open-platform-production.yaml open-platform.yaml
+#
+# NixOS module configuration (in your NixOS flake):
+#
+#   inputs.open-platform.url = "github:trevato/open-platform";
+#
+#   services.open-platform = {
+#     enable = true;
+#     domain = "platform.company.com";
+#     tailscale.enable = true;       # if using Tailscale for cross-node
+#     flannel.externalIp = true;     # if multi-node over Tailscale
+#     # After first deploy, enable OIDC:
+#     # k3s.oidc.enable = true;
+#     # k3s.oidc.clientId = "...";   # from: kubectl get secret oidc -n headlamp
+#   };
+#
+# Then: cd /opt/open-platform && make deploy
+
+domain: platform.company.com
+
+admin:
+  username: opadmin
+  email: admin@company.com
+
+tls:
+  mode: letsencrypt
+  email: admin@company.com
+
+# Uncomment for Cloudflare tunnel:
+# tls:
+#   mode: cloudflare
+# cloudflare:
+#   account_tag: ""
+#   tunnel_id: ""
+#   tunnel_secret: ""

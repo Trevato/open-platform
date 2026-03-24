@@ -1,4 +1,4 @@
-.PHONY: deploy generate deploy-infra diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth
+.PHONY: deploy generate deploy-infra diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset
 
 deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
 	./scripts/deploy.sh
@@ -51,6 +51,15 @@ test-e2e-platform: ## Run platform E2E tests only
 
 test-e2e-auth: ## Run auth flow E2E tests only
 	cd tests/e2e && bun x playwright test platform/*-auth*
+
+colima-start: ## Start Colima k3s for local development
+	./nix/scripts/colima-start.sh
+
+colima-stop: ## Stop Colima
+	colima stop op
+
+colima-reset: ## Delete and recreate Colima (clean state)
+	./nix/scripts/colima-start.sh --delete-first
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
