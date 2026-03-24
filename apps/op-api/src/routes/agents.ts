@@ -125,6 +125,30 @@ export const agentRoutes = new Elysia({ prefix: "/agents" })
     },
   )
 
+  // GET /:slug/connection — Claude Code MCP connection info
+  .get(
+    "/:slug/connection",
+    async ({ params: { slug }, set }) => {
+      const agent = await getAgent(slug);
+      if (!agent) {
+        set.status = 404;
+        return { error: "Agent not found" };
+      }
+      const prefix = process.env.SERVICE_PREFIX || "";
+      const domain = process.env.PLATFORM_DOMAIN || "open-platform.sh";
+      return {
+        mcp_url: `https://${prefix}api.${domain}/mcp`,
+        token: agent.forgejo_token,
+        agent_name: agent.name,
+        agent_slug: agent.slug,
+        instructions: agent.instructions,
+      };
+    },
+    {
+      detail: { tags: ["Agents"], summary: "Get Claude Code connection info" },
+    },
+  )
+
   // PATCH /:slug — update agent
   .patch(
     "/:slug",

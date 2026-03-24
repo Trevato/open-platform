@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ClaudeCodeModal } from "./claude-code-modal";
 
 interface Agent {
   id: string;
@@ -45,6 +46,7 @@ export function AgentDetail({
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [showClaudeCode, setShowClaudeCode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<
     Array<{
@@ -382,6 +384,12 @@ export function AgentDetail({
           </button>
           <button
             className="btn btn-ghost"
+            onClick={() => setShowClaudeCode(true)}
+          >
+            Claude Code
+          </button>
+          <button
+            className="btn btn-ghost"
             onClick={() => router.push(`/dashboard/agents/${agent.slug}/edit`)}
           >
             Edit
@@ -402,6 +410,13 @@ export function AgentDetail({
           </button>
         </div>
       </div>
+      {showClaudeCode && agent && (
+        <ClaudeCodeModal
+          agentSlug={agent.slug}
+          agentName={agent.name}
+          onClose={() => setShowClaudeCode(false)}
+        />
+      )}
     </>
   );
 }

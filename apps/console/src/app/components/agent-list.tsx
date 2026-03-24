@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { ClaudeCodeModal } from "./claude-code-modal";
 
 interface Agent {
   id: string;
@@ -44,10 +45,12 @@ function modelLabel(model: string): string {
 function AgentCard({
   agent,
   onDelete,
+  onClaudeCode,
   deleting,
 }: {
   agent: Agent;
   onDelete: (slug: string) => void;
+  onClaudeCode: (slug: string) => void;
   deleting: string | null;
 }) {
   const router = useRouter();
@@ -145,6 +148,12 @@ function AgentCard({
           </button>
           <button
             className="btn btn-ghost btn-sm"
+            onClick={() => onClaudeCode(agent.slug)}
+          >
+            Claude Code
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
             onClick={() => router.push(`/dashboard/agents/${agent.slug}`)}
           >
             Details
@@ -168,6 +177,7 @@ export function AgentList() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [showClaudeCode, setShowClaudeCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAgents = useCallback(async () => {
@@ -290,11 +300,22 @@ export function AgentList() {
                 key={agent.id}
                 agent={agent}
                 onDelete={handleDelete}
+                onClaudeCode={setShowClaudeCode}
                 deleting={deleting}
               />
             ))}
           </div>
         </>
+      )}
+      {showClaudeCode && (
+        <ClaudeCodeModal
+          agentSlug={showClaudeCode}
+          agentName={
+            agents.find((a) => a.slug === showClaudeCode)?.name ??
+            showClaudeCode
+          }
+          onClose={() => setShowClaudeCode(null)}
+        />
       )}
     </>
   );
