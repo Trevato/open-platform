@@ -174,9 +174,11 @@ fi
 # Platform CA configmap — apps mount this for TLS to Forgejo
 CA_CERT="$ROOT_DIR/certs/ca.crt"
 if [ -f "$CA_CERT" ]; then
-  kubectl create configmap platform-ca -n kube-system \
-    --from-file=ca.crt="$CA_CERT" \
-    --dry-run=client -o yaml | kubectl apply -f -
+  for ns in kube-system headlamp; do
+    kubectl create configmap platform-ca -n "$ns" \
+      --from-file=ca.crt="$CA_CERT" \
+      --dry-run=client -o yaml | kubectl apply -f -
+  done
 fi
 
 echo "Bootstrap secrets ready."

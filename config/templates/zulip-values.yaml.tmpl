@@ -29,6 +29,11 @@ zulip:
     SETTING_DEFAULT_FROM_EMAIL: "zulip@${DOMAIN}"
     SETTING_NOREPLY_EMAIL_ADDRESS: "noreply@${DOMAIN}"
     ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
+    # Disable PKCE — confidential client doesn't need it, and the code_verifier
+    # gets lost between Zulip's authorization redirect and callback.
+    SETTING_SOCIAL_AUTH_OIDC_PKCE_ENABLED: "False"
+    # Allow OIDC users to sign up without invitation
+    SETTING_INVITATION_REQUIRED: "False"
     OIDC_CLIENT_ID:
       valueFrom:
         secretKeyRef:

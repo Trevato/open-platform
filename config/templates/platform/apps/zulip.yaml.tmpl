@@ -60,6 +60,8 @@ spec:
         SETTING_DEFAULT_FROM_EMAIL: "zulip@${DOMAIN}"
         SETTING_NOREPLY_EMAIL_ADDRESS: "noreply@${DOMAIN}"
         ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
+        SETTING_SOCIAL_AUTH_OIDC_PKCE_ENABLED: "False"
+        SETTING_INVITATION_REQUIRED: "False"
         OIDC_CLIENT_ID:
           valueFrom:
             secretKeyRef:

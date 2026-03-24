@@ -9,6 +9,28 @@ config:
     issuerURL: https://${SERVICE_PREFIX}forgejo.${DOMAIN}
     callbackURL: https://${SERVICE_PREFIX}headlamp.${DOMAIN}/oidc-callback
     scopes: "openid,profile,email,groups"
+
+# Headlamp's -oidc-ca-file flag parses the cert but does NOT propagate the
+# custom TLS context to the OIDC HTTP client. Go's default HTTP client reads
+# SSL_CERT_FILE, so we build a combined CA bundle (system + platform) via init
+# container and point SSL_CERT_FILE at it.
+env:
+  - name: SSL_CERT_FILE
+    value: /custom-certs/ca-certificates.crt
+
+initContainers:
+  - name: build-ca-bundle
+    image: alpine:3.22
+    command: [sh, -c]
+    args:
+      - cat /etc/ssl/certs/ca-certificates.crt /platform-ca/ca.crt > /custom-certs/ca-certificates.crt
+    volumeMounts:
+      - name: platform-ca
+        mountPath: /platform-ca
+        readOnly: true
+      - name: custom-certs
+        mountPath: /custom-certs
+
 ingress:
   enabled: true
   ingressClassName: traefik
@@ -18,6 +40,14 @@ ingress:
         - path: /
           type: ImplementationSpecific
 
-env:
-  - name: HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY
-    value: "${TLS_SKIP_VERIFY}"
+volumes:
+  - name: platform-ca
+    configMap:
+      name: platform-ca
+  - name: custom-certs
+    emptyDir: {}
+
+volumeMounts:
+  - name: custom-certs
+    mountPath: /custom-certs
+    readOnly: true

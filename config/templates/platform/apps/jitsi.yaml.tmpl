@@ -33,6 +33,9 @@ spec:
     publicURL: "https://${SERVICE_PREFIX}meet.${DOMAIN}"
     enableAuth: true
     enableGuests: ${JITSI_ALLOW_GUESTS}
+    extraCommonEnvs:
+      AUTH_TYPE: jwt
+      JWT_APP_ID: "jitsi"
     web:
       ingress:
         enabled: true
