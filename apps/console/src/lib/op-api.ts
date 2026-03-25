@@ -45,6 +45,63 @@ async function validateForgejoToken(token: string): Promise<boolean> {
   }
 }
 
+/** Dedup in-flight refresh requests per userId (Forgejo refresh tokens are single-use) */
+const pendingRefreshes = new Map<string, Promise<string | null>>();
+
+async function refreshForgejoToken(userId: string): Promise<string | null> {
+  const pending = pendingRefreshes.get(userId);
+  if (pending) return pending;
+
+  const promise = doRefreshForgejoToken(userId).finally(() => {
+    pendingRefreshes.delete(userId);
+  });
+  pendingRefreshes.set(userId, promise);
+  return promise;
+}
+
+async function doRefreshForgejoToken(userId: string): Promise<string | null> {
+  const result = await pool.query(
+    `SELECT "refreshToken" FROM account
+     WHERE "userId" = $1 AND "providerId" = 'forgejo'
+     ORDER BY "createdAt" DESC LIMIT 1`,
+    [userId],
+  );
+  const refreshToken = result.rows[0]?.refreshToken;
+  if (!refreshToken) return null;
+
+  try {
+    const res = await fetch(
+      `${FORGEJO_INTERNAL_URL}/login/oauth/access_token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_id: process.env.AUTH_FORGEJO_ID!,
+          client_secret: process.env.AUTH_FORGEJO_SECRET!,
+        }),
+      },
+    );
+    if (!res.ok) return null;
+
+    const data = await res.json();
+    await pool.query(
+      `UPDATE account
+       SET "accessToken" = $1, "refreshToken" = $2,
+           "accessTokenExpiresAt" = NOW() + INTERVAL '1 second' * $3,
+           "updatedAt" = NOW()
+       WHERE "userId" = $4 AND "providerId" = 'forgejo'`,
+      [data.access_token, data.refresh_token, data.expires_in || 3600, userId],
+    );
+
+    tokenValidationCache.set(data.access_token.slice(0, 16), Date.now());
+    return data.access_token;
+  } catch {
+    return null;
+  }
+}
+
 async function getForgejoToken(): Promise<string | null> {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return null;
@@ -57,7 +114,10 @@ async function getForgejoToken(): Promise<string | null> {
   if (!token) return null;
 
   const valid = await validateForgejoToken(token);
-  return valid ? token : null;
+  if (valid) return token;
+
+  // Token expired — try refresh
+  return refreshForgejoToken(session.user.id);
 }
 
 export async function opApiFetch(

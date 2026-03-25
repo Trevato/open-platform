@@ -28,15 +28,18 @@ import { initScheduler } from "./services/scheduler.js";
 // MCP session management
 const transports = new Map<
   string,
-  { transport: WebStandardStreamableHTTPServerTransport; createdAt: number }
+  {
+    transport: WebStandardStreamableHTTPServerTransport;
+    lastAccessedAt: number;
+  }
 >();
 
-// Clean up stale sessions every 5 minutes
+// Clean up idle sessions every 5 minutes
 setInterval(
   () => {
-    const maxAge = 30 * 60 * 1000; // 30 minutes
+    const maxAge = 30 * 60 * 1000; // 30 minutes of inactivity
     for (const [id, entry] of transports) {
-      if (Date.now() - entry.createdAt > maxAge) {
+      if (Date.now() - entry.lastAccessedAt > maxAge) {
         entry.transport.close();
         transports.delete(id);
       }
@@ -177,6 +180,7 @@ const app = new Elysia()
           headers: { "Content-Type": "application/json" },
         });
       }
+      entry.lastAccessedAt = Date.now();
       return entry.transport.handleRequest(request);
     }
 
@@ -193,8 +197,9 @@ const app = new Elysia()
 
     // Existing session
     if (sessionId && transports.has(sessionId)) {
-      const { transport } = transports.get(sessionId)!;
-      return transport.handleRequest(request);
+      const entry = transports.get(sessionId)!;
+      entry.lastAccessedAt = Date.now();
+      return entry.transport.handleRequest(request);
     }
 
     // New session — must be initialize request
@@ -213,7 +218,7 @@ const app = new Elysia()
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
     });
-    transports.set(newSessionId, { transport, createdAt: Date.now() });
+    transports.set(newSessionId, { transport, lastAccessedAt: Date.now() });
 
     const server = createMcpServer(user);
     await server.connect(transport);
