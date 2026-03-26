@@ -6,11 +6,13 @@ export function PostForm() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || submitting) return;
     setSubmitting(true);
+    setError("");
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
@@ -24,6 +26,9 @@ export function PostForm() {
         setTitle("");
         setContent("");
         window.location.reload();
+      } else {
+        const data = await res.json().catch(() => null);
+        setError(data?.error || `Failed to create post (${res.status})`);
       }
     } finally {
       setSubmitting(false);
@@ -67,6 +72,17 @@ export function PostForm() {
           marginBottom: 12,
         }}
       />
+      {error && (
+        <p
+          style={{
+            color: "var(--error, #ef4444)",
+            marginBottom: 12,
+            fontSize: 14,
+          }}
+        >
+          {error}
+        </p>
+      )}
       <button
         type="submit"
         className="btn btn-accent"

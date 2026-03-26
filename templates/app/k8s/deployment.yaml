@@ -24,8 +24,13 @@ spec:
           ports:
             - containerPort: 3000
           env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: PROJECT_NAME-db
+                  key: password
             - name: DATABASE_URL
-              value: "postgresql://DB_NAME:DB_NAME@postgres-rw.postgres.svc.cluster.local:5432/DB_NAME"
+              value: "postgresql://DB_NAME:$(DB_PASSWORD)@postgres-rw.postgres.svc.cluster.local:5432/DB_NAME"
             - name: S3_ENDPOINT
               value: "http://minio.minio.svc:9000"
             - name: S3_BUCKET

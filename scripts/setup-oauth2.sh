@@ -224,6 +224,10 @@ if kubectl get ns jitsi >/dev/null 2>&1; then
       --from-literal=client-secret="${CLIENT_SECRETS[Jitsi]}"
   elif kubectl get secret jitsi-oidc -n jitsi >/dev/null 2>&1; then
     echo "Jitsi OIDC secret already exists."
+  else
+    echo "Warning: Jitsi OAuth2 app exists but 'jitsi-oidc' secret is missing."
+    echo "Delete the app in Forgejo and re-run, or create the secret manually."
+    exit 1
   fi
 else
   echo "Skipping Jitsi OIDC secret (jitsi not enabled)."
@@ -252,6 +256,10 @@ if kubectl get ns zulip >/dev/null 2>&1; then
     apply_secret "${ZULIP_ARGS[@]}"
   elif kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
     echo "Zulip OIDC secret already exists."
+  else
+    echo "Warning: Zulip OAuth2 app exists but 'zulip-secrets' secret is missing."
+    echo "Delete the app in Forgejo and re-run, or create the secret manually."
+    exit 1
   fi
 else
   echo "Skipping Zulip OIDC secret (zulip not enabled)."

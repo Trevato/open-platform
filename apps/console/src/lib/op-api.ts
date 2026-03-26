@@ -14,11 +14,11 @@ const FORGEJO_INTERNAL_URL =
 
 const TOKEN_VALIDATION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Maps truncated token (first 16 chars) to last successful validation timestamp */
+/** Maps token to last successful validation timestamp */
 const tokenValidationCache = new Map<string, number>();
 
 async function validateForgejoToken(token: string): Promise<boolean> {
-  const cacheKey = token.slice(0, 16);
+  const cacheKey = token;
   const lastValidated = tokenValidationCache.get(cacheKey);
 
   if (lastValidated && Date.now() - lastValidated < TOKEN_VALIDATION_TTL_MS) {
@@ -95,7 +95,7 @@ async function doRefreshForgejoToken(userId: string): Promise<string | null> {
       [data.access_token, data.refresh_token, data.expires_in || 3600, userId],
     );
 
-    tokenValidationCache.set(data.access_token.slice(0, 16), Date.now());
+    tokenValidationCache.set(data.access_token, Date.now());
     return data.access_token;
   } catch {
     return null;

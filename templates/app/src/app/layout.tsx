@@ -3,9 +3,13 @@ import { Providers } from "@/app/components/providers";
 import "./globals.css";
 
 export function generateMetadata(): Metadata {
-  const host = process.env.BETTER_AUTH_URL
-    ? new URL(process.env.BETTER_AUTH_URL).hostname.split(".")[0]
-    : "app";
+  let host = "app";
+  try {
+    if (process.env.BETTER_AUTH_URL)
+      host = new URL(process.env.BETTER_AUTH_URL).hostname.split(".")[0];
+  } catch {
+    // malformed URL — fall back to "app"
+  }
   return { title: host.charAt(0).toUpperCase() + host.slice(1) };
 }
 

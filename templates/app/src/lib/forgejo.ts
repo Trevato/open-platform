@@ -42,7 +42,8 @@ async function doRefreshToken(userId: string): Promise<string | null> {
     await db.query(
       `UPDATE account SET "accessToken" = $1, "refreshToken" = $2,
        "accessTokenExpiresAt" = NOW() + INTERVAL '1 second' * $3, "updatedAt" = NOW()
-       WHERE "userId" = $4 AND "providerId" = 'forgejo'`,
+       WHERE "userId" = $4 AND "providerId" = 'forgejo'
+         AND id = (SELECT id FROM account WHERE "userId" = $4 AND "providerId" = 'forgejo' ORDER BY "createdAt" DESC LIMIT 1)`,
       [data.access_token, data.refresh_token, data.expires_in || 3600, userId],
     );
     return data.access_token;
@@ -57,7 +58,7 @@ export async function forgejoFetch(
   init?: RequestInit,
 ): Promise<Response> {
   const result = await db.query(
-    `SELECT "accessToken" FROM account WHERE "userId" = $1 AND "providerId" = 'forgejo' LIMIT 1`,
+    `SELECT "accessToken" FROM account WHERE "userId" = $1 AND "providerId" = 'forgejo' ORDER BY "createdAt" DESC LIMIT 1`,
     [userId],
   );
   let token = result.rows[0]?.accessToken;

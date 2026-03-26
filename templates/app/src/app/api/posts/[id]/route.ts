@@ -9,7 +9,7 @@ export async function GET(
 ) {
   const { id } = await params;
   const result = await db.query(
-    `SELECT p.*, u.name as author, u.image as author_image
+    `SELECT p.id, p.title, p.content, p.created_at, u.name as author, u.image as author_image
      FROM posts p JOIN "user" u ON p.author_id = u.id WHERE p.id = $1`,
     [id],
   );
@@ -35,14 +35,32 @@ export async function PATCH(
   if (post.rows[0].author_id !== session.user.id)
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { title, content, published } = await req.json();
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const { title, content, published } = body;
+  if (title !== undefined && !title?.trim())
+    return NextResponse.json({ error: "Title required" }, { status: 400 });
+  if (title && title.length > 200)
+    return NextResponse.json(
+      { error: "Title too long (max 200)" },
+      { status: 400 },
+    );
+  if (content && content.length > 10000)
+    return NextResponse.json(
+      { error: "Content too long (max 10000)" },
+      { status: 400 },
+    );
   const result = await db.query(
     `UPDATE posts SET
       title = COALESCE($1, title),
       content = COALESCE($2, content),
       published = COALESCE($3, published),
       updated_at = NOW()
-     WHERE id = $4 RETURNING *`,
+     WHERE id = $4 RETURNING id, title, content, published, created_at, updated_at`,
     [title, content, published, id],
   );
   return NextResponse.json(result.rows[0]);
