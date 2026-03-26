@@ -2,9 +2,12 @@ import type { Metadata } from "next";
 import { Providers } from "@/app/components/providers";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "PROJECT_NAME",
-};
+export function generateMetadata(): Metadata {
+  const host = process.env.BETTER_AUTH_URL
+    ? new URL(process.env.BETTER_AUTH_URL).hostname.split(".")[0]
+    : "app";
+  return { title: host.charAt(0).toUpperCase() + host.slice(1) };
+}
 
 export default function RootLayout({
   children,

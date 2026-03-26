@@ -121,22 +121,7 @@ metadata:
   name: mailpit
 ---
 ---
-# BEGIN zulip
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: zulip
-# END zulip
 ---
-# BEGIN provisioner
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: provisioner
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/tier: "platform"
-# END provisioner
 ---
 apiVersion: v1
 kind: Namespace

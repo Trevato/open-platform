@@ -21,10 +21,20 @@ Next.js 15 App Router on Open Platform. See @PLATFORM.md for env vars and infras
 - `src/lib/s3.ts` exports `s3` as **default export** — import as `import s3 from "@/lib/s3"`
 - `src/auth.ts` exports `auth` as **named export** — import as `import { auth } from "@/auth"`
 - `src/lib/auth-client.ts` exports `authClient` as **named export**
+- `src/lib/forgejo.ts` exports `forgejoFetch` as **named export** -- call Forgejo API on behalf of signed-in user
 - Path alias: `@/*` maps to `./src/*`
 - Schema: `schema.sql` (applied via psql in CI). Auth tables (user, session, account, verification) are managed by better-auth — do not modify their column names.
 - Seed data: `seed/sql/*.sql` (applied once on first deploy)
 - Session: 30-day expiry with daily sliding window, 5-min cookie cache. Cookie prefix derived from app hostname. See `src/auth.ts`.
+
+## Workflow
+
+- Create a branch for each change: `git checkout -b feat/description`
+- Open a PR against `main` -- this triggers a preview environment at `pr-N-{app}.{domain}`
+- Reference issues: `Closes #N` in PR descriptions
+- Keep PRs focused -- one feature or fix per PR
+- Run `npm run typecheck` before pushing
+- Merge PRs via Forgejo (direct push to main is blocked)
 
 ## Quality
 

@@ -216,45 +216,45 @@ create_app_auth_secret "Console" "console-auth" "op-system-console"
 
 # ── Jitsi OIDC secret ──────────────────────────────────────────────────────────
 
-if [ -n "${CLIENT_SECRETS[Jitsi]}" ]; then
-  echo "Creating Jitsi OIDC secret..."
-  apply_secret jitsi-oidc -n jitsi \
-    --from-literal=client-id="${CLIENT_IDS[Jitsi]}" \
-    --from-literal=client-secret="${CLIENT_SECRETS[Jitsi]}"
-else
-  if kubectl get secret jitsi-oidc -n jitsi >/dev/null 2>&1; then
+if kubectl get ns jitsi >/dev/null 2>&1; then
+  if [ -n "${CLIENT_SECRETS[Jitsi]}" ]; then
+    echo "Creating Jitsi OIDC secret..."
+    apply_secret jitsi-oidc -n jitsi \
+      --from-literal=client-id="${CLIENT_IDS[Jitsi]}" \
+      --from-literal=client-secret="${CLIENT_SECRETS[Jitsi]}"
+  elif kubectl get secret jitsi-oidc -n jitsi >/dev/null 2>&1; then
     echo "Jitsi OIDC secret already exists."
-  else
-    echo "Skipping Jitsi OIDC secret (namespace may not exist)."
   fi
+else
+  echo "Skipping Jitsi OIDC secret (jitsi not enabled)."
 fi
 
 # ── Zulip OIDC secret ─────────────────────────────────────────────────────────
 
-if [ -n "${CLIENT_SECRETS[Zulip]}" ]; then
-  echo "Creating Zulip OIDC secret..."
-  # Preserve existing rabbitmq/secret-key if the secret already exists
-  ZULIP_ARGS=(zulip-secrets -n zulip
-    --from-literal=oidc-client-id="${CLIENT_IDS[Zulip]}"
-    --from-literal=oidc-client-secret="${CLIENT_SECRETS[Zulip]}"
-  )
-  if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
-    EXISTING_RMQ=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.rabbitmq-password}' 2>/dev/null | base64 -d || true)
-    EXISTING_SK=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || true)
-    if [ -n "$EXISTING_RMQ" ]; then
-      ZULIP_ARGS+=(--from-literal=rabbitmq-password="${EXISTING_RMQ}")
+if kubectl get ns zulip >/dev/null 2>&1; then
+  if [ -n "${CLIENT_SECRETS[Zulip]}" ]; then
+    echo "Creating Zulip OIDC secret..."
+    # Preserve existing rabbitmq/secret-key if the secret already exists
+    ZULIP_ARGS=(zulip-secrets -n zulip
+      --from-literal=oidc-client-id="${CLIENT_IDS[Zulip]}"
+      --from-literal=oidc-client-secret="${CLIENT_SECRETS[Zulip]}"
+    )
+    if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+      EXISTING_RMQ=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.rabbitmq-password}' 2>/dev/null | base64 -d || true)
+      EXISTING_SK=$(kubectl get secret zulip-secrets -n zulip -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || true)
+      if [ -n "$EXISTING_RMQ" ]; then
+        ZULIP_ARGS+=(--from-literal=rabbitmq-password="${EXISTING_RMQ}")
+      fi
+      if [ -n "$EXISTING_SK" ]; then
+        ZULIP_ARGS+=(--from-literal=secret-key="${EXISTING_SK}")
+      fi
     fi
-    if [ -n "$EXISTING_SK" ]; then
-      ZULIP_ARGS+=(--from-literal=secret-key="${EXISTING_SK}")
-    fi
-  fi
-  apply_secret "${ZULIP_ARGS[@]}"
-else
-  if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+    apply_secret "${ZULIP_ARGS[@]}"
+  elif kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
     echo "Zulip OIDC secret already exists."
-  else
-    echo "Skipping Zulip OIDC secret (namespace may not exist)."
   fi
+else
+  echo "Skipping Zulip OIDC secret (zulip not enabled)."
 fi
 
 echo "OAuth2 setup complete."

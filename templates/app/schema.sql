@@ -48,8 +48,14 @@ CREATE TABLE IF NOT EXISTS verification (
 );
 
 -- App tables below
-CREATE TABLE IF NOT EXISTS example (
-  id SERIAL PRIMARY KEY,
-  name TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+CREATE TABLE IF NOT EXISTS posts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  content TEXT,
+  author_id TEXT NOT NULL REFERENCES "user"(id),
+  published BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author_id);

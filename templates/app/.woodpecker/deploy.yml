@@ -9,6 +9,11 @@ when:
     branch: main
 
 steps:
+  - name: prepare
+    image: node:20-alpine
+    commands:
+      - sed -i "s/PROJECT_NAME/${CI_REPO_NAME}/g" package.json 2>/dev/null || true
+
   - name: typecheck
     image: node:20-alpine
     commands:
@@ -77,6 +82,33 @@ steps:
         kubectl run minio-provision-$${CI_COMMIT_SHA:0:8} --rm -i --restart=Never \
           --image=minio/mc:latest -n minio \
           --overrides='{"spec":{"containers":[{"name":"minio-provision-'$${CI_COMMIT_SHA:0:8}'","image":"minio/mc:latest","command":["sh","-c"],"args":["mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc mb --ignore-existing minio/'$APP_NS' && mc anonymous set download minio/'$APP_NS'"],"volumeMounts":[{"name":"creds","mountPath":"/minio"}]}],"volumes":[{"name":"creds","secret":{"secretName":"minio-credentials"}}]}}'
+      - |
+        APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
+        SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
+        APP_HOST="$${SP}${CI_REPO_NAME}.$PLATFORM_DOMAIN"
+        AUTH_SECRET_NAME="${CI_REPO_NAME}-auth"
+        if kubectl get secret $$AUTH_SECRET_NAME -n $$APP_NS 2>/dev/null; then
+          echo "Auth secret exists — skipping OAuth2 app creation"
+        else
+          echo "Creating OAuth2 app and auth secret for ${CI_REPO_NAME}..."
+          FORGEJO_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.username}' | base64 -d)
+          FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
+          REDIRECT_URI="https://$$APP_HOST/api/auth/oauth2/callback/forgejo"
+          RESPONSE=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
+            -X POST "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"$$APP_NS\", \"redirect_uris\": [\"$$REDIRECT_URI\"], \"confidential_client\": false}")
+          CLIENT_ID=$(echo "$$RESPONSE" | grep -o '"client_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+          CLIENT_SECRET=$(echo "$$RESPONSE" | grep -o '"client_secret":"[^"]*"' | head -1 | cut -d'"' -f4)
+          AUTH_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+          kubectl create secret generic $$AUTH_SECRET_NAME \
+            -n $$APP_NS \
+            --from-literal=client-id="$$CLIENT_ID" \
+            --from-literal=client-secret="$$CLIENT_SECRET" \
+            --from-literal=secret="$$AUTH_SECRET" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          echo "Created OAuth2 app with redirect to $$REDIRECT_URI"
+        fi
     environment:
       REGISTRY_USER:
         from_secret: registry_username
@@ -86,6 +118,8 @@ steps:
         from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
+      SERVICE_PREFIX:
+        from_secret: service_prefix
 
   - name: schema
     image: bitnami/kubectl:latest

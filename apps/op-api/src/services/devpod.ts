@@ -282,6 +282,7 @@ function buildDeploymentSpec(
             {
               name: "dev",
               image,
+              imagePullPolicy: "IfNotPresent",
               tty: true,
               stdin: true,
               env: [...baseEnv, ...extraEnv],
