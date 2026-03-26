@@ -451,6 +451,18 @@ export const instancesPlugin = new Elysia({ prefix: "/instances" })
       }
 
       const pod = result.rows[0];
+
+      // Verify ownership or admin
+      const userResult = await pool.query(
+        `SELECT id FROM "user" WHERE name = $1`,
+        [user.login],
+      );
+      const userId = userResult.rows[0]?.id;
+      if (pod.user_id !== userId && !access.isAdmin) {
+        set.status = 403;
+        return { error: "Forbidden" };
+      }
+
       let liveStatus = pod.status;
 
       try {

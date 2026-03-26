@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authPlugin } from "../auth.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
+import { ForgejoClient } from "../services/forgejo.js";
 
 const woodpecker = new WoodpeckerClient();
 const repoParams = t.Object({ org: t.String(), repo: t.String() });
@@ -14,6 +15,16 @@ async function getRepoId(org: string, repo: string): Promise<number> {
   const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
   if (!wp) throw new Error(`CI repository not found: ${org}/${repo}`);
   return wp.id;
+}
+
+/** Verify the user has at least read access to the repo via Forgejo. */
+async function verifyRepoAccess(
+  token: string,
+  org: string,
+  repo: string,
+): Promise<void> {
+  const client = new ForgejoClient(token);
+  await client.getRepo(org, repo); // throws on 403/404
 }
 
 /** Parse and validate a pipeline number param. Returns the integer or a 400 error response. */
@@ -37,7 +48,8 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   .use(authPlugin)
   .get(
     "/:org/:repo",
-    async ({ params: { org, repo } }) => {
+    async ({ params: { org, repo }, user }) => {
+      await verifyRepoAccess(user.token, org, repo);
       const repoId = await getRepoId(org, repo);
       return woodpecker.listPipelines(repoId);
     },
@@ -48,7 +60,8 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   )
   .post(
     "/:org/:repo",
-    async ({ params: { org, repo }, body, set }) => {
+    async ({ params: { org, repo }, body, user, set }) => {
+      await verifyRepoAccess(user.token, org, repo);
       const repoId = await getRepoId(org, repo);
       const branch = body.branch || "main";
       try {
@@ -78,9 +91,10 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   )
   .get(
     "/:org/:repo/:number",
-    async ({ params: { org, repo, number }, set }) => {
+    async ({ params: { org, repo, number }, user, set }) => {
       const parsed = parsePipelineNumber(number, set);
       if (typeof parsed !== "number") return parsed;
+      await verifyRepoAccess(user.token, org, repo);
       const repoId = await getRepoId(org, repo);
       return woodpecker.getPipeline(repoId, parsed);
     },
@@ -91,9 +105,10 @@ export const pipelinesPlugin = new Elysia({ prefix: "/pipelines" })
   )
   .get(
     "/:org/:repo/:number/logs",
-    async ({ params: { org, repo, number }, query, set }) => {
+    async ({ params: { org, repo, number }, query, user, set }) => {
       const parsedNumber = parsePipelineNumber(number, set);
       if (typeof parsedNumber !== "number") return parsedNumber;
+      await verifyRepoAccess(user.token, org, repo);
 
       // Validate step query param
       let step = 2;

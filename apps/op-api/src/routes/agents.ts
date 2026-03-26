@@ -111,16 +111,9 @@ export const agentRoutes = new Elysia({ prefix: "/agents" })
         set.status = 404;
         return { error: "Agent not found" };
       }
-      // Internal calls (e.g., chat endpoint) need the token
-      if (query.internal === "true") {
-        return { agent };
-      }
       return { agent: stripToken(agent) };
     },
     {
-      query: t.Object({
-        internal: t.Optional(t.String()),
-      }),
       detail: { tags: ["Agents"], summary: "Get agent by slug" },
     },
   )

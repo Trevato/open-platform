@@ -139,6 +139,19 @@ ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_EN
 # Provisioner (optional)
 PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
 
+# Network mode (optional — defaults to host)
+NETWORK_MODE=$(yaml_get "$CONFIG_FILE" "network.mode" 2>/dev/null) || NETWORK_MODE="host"
+METALLB_TRAEFIK_IP=$(yaml_get "$CONFIG_FILE" "network.traefik_ip" 2>/dev/null) || METALLB_TRAEFIK_IP=""
+METALLB_ADDRESS_POOL=$(yaml_get "$CONFIG_FILE" "network.address_pool" 2>/dev/null) || METALLB_ADDRESS_POOL=""
+METALLB_INTERFACE=$(yaml_get "$CONFIG_FILE" "network.interface" 2>/dev/null) || METALLB_INTERFACE=""
+
+# Validate loadbalancer mode requirements
+if [ "$NETWORK_MODE" = "loadbalancer" ]; then
+  [ -z "$METALLB_TRAEFIK_IP" ] && { echo "Error: network.traefik_ip required for loadbalancer mode"; exit 1; }
+  [ -z "$METALLB_ADDRESS_POOL" ] && { echo "Error: network.address_pool required for loadbalancer mode"; exit 1; }
+  [ -z "$METALLB_INTERFACE" ] && { echo "Error: network.interface required for loadbalancer mode"; exit 1; }
+fi
+
 echo "Generating config for: ${DOMAIN}"
 echo "  Admin: ${ADMIN_USER} <${ADMIN_EMAIL}>"
 echo "  TLS:   ${TLS_MODE}"
@@ -159,6 +172,7 @@ fi
 if [ "$PROVISIONER_ENABLED" = "true" ]; then
   echo "  Provisioner: enabled"
 fi
+echo "  Network: ${NETWORK_MODE}"
 
 # ── Generate / Load Secrets ─────────────────────────────────────────────────
 
@@ -257,6 +271,10 @@ template_file() {
     -e "s|\${JITSI_ALLOW_GUESTS}|${JITSI_ALLOW_GUESTS}|g" \
     -e "s|\${JITSI_JVB_ADVERTISE_IP}|${JITSI_JVB_ADVERTISE_IP}|g" \
     -e "s|\${ZULIP_RABBITMQ_PASSWORD}|${ZULIP_RABBITMQ_PASSWORD}|g" \
+    -e "s|\${NETWORK_MODE}|${NETWORK_MODE}|g" \
+    -e "s|\${METALLB_TRAEFIK_IP}|${METALLB_TRAEFIK_IP}|g" \
+    -e "s|\${METALLB_ADDRESS_POOL}|${METALLB_ADDRESS_POOL}|g" \
+    -e "s|\${METALLB_INTERFACE}|${METALLB_INTERFACE}|g" \
     "$src" > "$dest"
 }
 
@@ -306,6 +324,14 @@ if [ "$PROVISIONER_ENABLED" = "true" ]; then
   echo "  provisioner-values.yaml"
 else
   rm -f "$ROOT_DIR/provisioner-values.yaml"
+fi
+
+# MetalLB: only when using loadbalancer mode
+if [ "$NETWORK_MODE" = "loadbalancer" ]; then
+  template_file "$TEMPLATES_DIR/metallb-values.yaml.tmpl" "$ROOT_DIR/metallb-values.yaml"
+  echo "  metallb-values.yaml"
+else
+  rm -f "$ROOT_DIR/metallb-values.yaml"
 fi
 
 # ── Template: Flux Platform Directory ────────────────────────────────────────
@@ -383,6 +409,15 @@ else
   rm -f "$ROOT_DIR/platform/infrastructure/configs/cluster-issuer.yaml"
 fi
 
+# MetalLB: only generate if network.mode == loadbalancer
+if [ "$NETWORK_MODE" = "loadbalancer" ]; then
+  template_platform "infrastructure/controllers/metallb.yaml"
+  template_platform "infrastructure/configs/metallb-config.yaml"
+else
+  rm -f "$ROOT_DIR/platform/infrastructure/controllers/metallb.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/configs/metallb-config.yaml"
+fi
+
 # Regenerate kustomization.yaml files based on what YAML files exist in each directory
 for kdir in \
   "$ROOT_DIR/platform/infrastructure/configs" \
@@ -440,6 +475,13 @@ else
   rm -f "$ROOT_DIR/manifests/jitsi-oidc-adapter.yaml"
 fi
 
+if [ "$NETWORK_MODE" = "loadbalancer" ]; then
+  template_file "$TEMPLATES_DIR/manifests/metallb-config.yaml.tmpl" "$ROOT_DIR/manifests/metallb-config.yaml"
+  echo "  manifests/metallb-config.yaml"
+else
+  rm -f "$ROOT_DIR/manifests/metallb-config.yaml"
+fi
+
 # ── Template: helmfile.yaml ───────────────────────────────────────────────────
 
 echo ""
@@ -487,6 +529,30 @@ else
   echo "  provisioner included"
 fi
 
+# Conditional: remove metallb blocks if not using loadbalancer
+if [ "$NETWORK_MODE" != "loadbalancer" ]; then
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  echo "  metallb excluded (network.mode=${NETWORK_MODE})"
+fi
+
+# Conditional: remove inapplicable traefik mode blocks
+if [ "$NETWORK_MODE" = "loadbalancer" ]; then
+  sed_i '/# BEGIN host-network/,/# END host-network/d' "$ROOT_DIR/traefik-values.yaml"
+  sed_i '/# BEGIN host-network/,/# END host-network/d' "$ROOT_DIR/platform/infrastructure/controllers/traefik.yaml"
+  echo "  traefik: loadbalancer mode (VIP: ${METALLB_TRAEFIK_IP})"
+else
+  sed_i '/# BEGIN loadbalancer/,/# END loadbalancer/d' "$ROOT_DIR/traefik-values.yaml"
+  sed_i '/# BEGIN loadbalancer/,/# END loadbalancer/d' "$ROOT_DIR/platform/infrastructure/controllers/traefik.yaml"
+  echo "  traefik: host-network mode"
+fi
+
+# Clean up surviving mode markers from the active block
+for f in "$ROOT_DIR/traefik-values.yaml" "$ROOT_DIR/platform/infrastructure/controllers/traefik.yaml"; do
+  [ -f "$f" ] && sed_i '/# BEGIN host-network/d; /# END host-network/d; /# BEGIN loadbalancer/d; /# END loadbalancer/d' "$f"
+done
+
 # ── Generate .env (backward compatibility) ──────────────────────────────────
 
 echo ""
@@ -509,6 +575,7 @@ BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
 SMTP_HOST=${SMTP_HOST}
 SMTP_PORT=${SMTP_PORT}
 SMTP_FROM=${SMTP_FROM}
+NETWORK_MODE=${NETWORK_MODE}
 EOF
 
 # External SMTP credentials

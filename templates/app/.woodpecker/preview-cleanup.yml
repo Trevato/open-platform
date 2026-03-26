@@ -42,7 +42,7 @@ steps:
         FORGEJO_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d)
         APP_ID=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
           "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" | \
-          grep -o '"id":[0-9]*,"name":"'$$PREVIEW_NAME'"' | grep -o '"id":[0-9]*' | cut -d: -f2)
+          sed 's/},{/}\n{/g' | grep '"name":"'$$PREVIEW_NAME'"' | grep -o '"id":[0-9]*' | head -1 | cut -d: -f2)
         if [ -n "$$APP_ID" ]; then
           curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
             -X DELETE "https://$REGISTRY_HOST/api/v1/user/applications/oauth2/$$APP_ID"

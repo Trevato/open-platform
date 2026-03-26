@@ -210,9 +210,49 @@ export const devPodsPlugin = new Elysia({ prefix: "/dev-pods" })
 
       const podNameVal = toPodName(username);
       const pvcNameVal = toPvcName(username);
+
+      // Validate and cap resource limits
+      const MAX_CPU_MILLICORES = 4000;
+      const MAX_MEMORY_GI = 16;
+      const MAX_STORAGE_GI = 100;
+
+      const parseCpu = (v: string): number => {
+        if (v.endsWith("m")) return parseInt(v);
+        return parseFloat(v) * 1000;
+      };
+      const parseGi = (v: string): number => {
+        if (v.endsWith("Gi")) return parseInt(v);
+        if (v.endsWith("Mi")) return parseInt(v) / 1024;
+        if (v.endsWith("Ti")) return parseInt(v) * 1024;
+        return parseFloat(v) / (1024 * 1024 * 1024);
+      };
+
       const cpuLimit = body.cpuLimit || "2000m";
       const memoryLimit = body.memoryLimit || "4Gi";
       const storageSize = body.storageSize || "20Gi";
+
+      const cpuVal = parseCpu(cpuLimit);
+      const memVal = parseGi(memoryLimit);
+      const storageVal = parseGi(storageSize);
+
+      if (isNaN(cpuVal) || cpuVal <= 0 || cpuVal > MAX_CPU_MILLICORES) {
+        set.status = 400;
+        return {
+          error: `cpuLimit must be between 1m and ${MAX_CPU_MILLICORES}m`,
+        };
+      }
+      if (isNaN(memVal) || memVal <= 0 || memVal > MAX_MEMORY_GI) {
+        set.status = 400;
+        return {
+          error: `memoryLimit must be between 1Mi and ${MAX_MEMORY_GI}Gi`,
+        };
+      }
+      if (isNaN(storageVal) || storageVal <= 0 || storageVal > MAX_STORAGE_GI) {
+        set.status = 400;
+        return {
+          error: `storageSize must be between 1Gi and ${MAX_STORAGE_GI}Gi`,
+        };
+      }
 
       // Ensure K8s infrastructure
       await ensureHostInfrastructure();

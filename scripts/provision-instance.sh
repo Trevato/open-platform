@@ -60,6 +60,12 @@ ADMIN_USERNAME="$3"
 ADMIN_EMAIL="$4"
 INSTANCE_ID="${5:-}"
 
+# Validate instance ID if provided (must be a UUID)
+if [ -n "$INSTANCE_ID" ] && ! echo "$INSTANCE_ID" | grep -Eq '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'; then
+  echo "Error: instance_id must be a valid UUID."
+  exit 1
+fi
+
 # Validate slug: alphanumeric + hyphens, 3-32 chars, no leading/trailing hyphens
 if ! echo "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'; then
   echo "Error: slug must be 3-32 lowercase alphanumeric characters or hyphens (no leading/trailing hyphens)."

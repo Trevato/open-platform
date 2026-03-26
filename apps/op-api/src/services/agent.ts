@@ -503,12 +503,18 @@ export async function activateAgent(
   const result = await pool.query(
     `UPDATE agents
      SET status = 'running', last_activity_at = NOW(), error_message = NULL, updated_at = NOW()
-     WHERE slug = $1
+     WHERE slug = $1 AND status != 'running'
      RETURNING *`,
     [slug],
   );
 
-  if (result.rows.length === 0) return null;
+  if (result.rows.length === 0) {
+    logger.info(
+      { slug },
+      "Agent activation skipped — already running or not found",
+    );
+    return null;
+  }
   const agent = result.rows[0] as Agent;
 
   logger.info(
@@ -686,9 +692,10 @@ async function executeAgent(
   // Write prompt to a file, run claude, capture output to file — avoids
   // WebSocket stream race conditions and shell escaping edge cases.
   const repoDir = (context as Record<string, unknown>)?.repo || "";
-  const promptFile = "/tmp/agent-prompt.txt";
-  const outputFile = "/tmp/agent-output.txt";
-  const stderrFile = "/tmp/agent-stderr.txt";
+  const runSuffix = crypto.randomUUID().slice(0, 8);
+  const promptFile = `/tmp/agent-prompt-${runSuffix}.txt`;
+  const outputFile = `/tmp/agent-output-${runSuffix}.txt`;
+  const stderrFile = `/tmp/agent-stderr-${runSuffix}.txt`;
 
   // Pull latest changes so agent picks up CLAUDE.md and .claude/ config
   if (repoDir) {
@@ -699,11 +706,11 @@ async function executeAgent(
     ]);
   }
 
-  // Write prompt to file in the pod
+  // Write prompt to file in the pod (use printf + shellEscape to avoid heredoc injection)
   await execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
     "bash",
     "-c",
-    `cat > ${promptFile} << 'AGENT_PROMPT_EOF'\n${fullPrompt}\nAGENT_PROMPT_EOF`,
+    `printf '%s' ${shellEscape(fullPrompt)} > ${promptFile}`,
   ]);
 
   const systemPromptExtra = [
@@ -748,6 +755,15 @@ async function executeAgent(
 
   const output = outputResult.stdout.trim();
   const errorOutput = stderrResult.stdout.trim();
+
+  // Clean up temp files
+  execInPod(kc, DEVPOD_NAMESPACE, runningPod, "dev", [
+    "rm",
+    "-f",
+    promptFile,
+    outputFile,
+    stderrFile,
+  ]).catch(() => {});
 
   if (errorOutput) {
     logger.warn(

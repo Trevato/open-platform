@@ -1,10 +1,10 @@
 import { streamText, UIMessage, convertToModelMessages, stepCountIs } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
 import { createMCPClient } from "@ai-sdk/mcp";
-import { opApiGet } from "@/lib/op-api";
 import { auth } from "@/auth";
 import { headers } from "next/headers";
 import pool from "@/lib/db";
+import { checkIsAdmin } from "@/lib/roles";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -27,17 +27,31 @@ export async function POST(request: Request, { params }: Params) {
         headers: { "Content-Type": "application/json" },
       });
     }
+    if (!(await checkIsAdmin(session.user.name))) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
     const userId = session.user.id;
 
     const body = await request.json();
     const messages: UIMessage[] = body.messages ?? [];
     const chatId: string | undefined = body.chatId;
 
-    // Fetch agent config including the internal token
-    const data = await opApiGet(
-      `/api/v1/agents/${encodeURIComponent(slug)}?internal=true`,
+    // Fetch agent config directly from DB (avoids exposing token via public API)
+    const agentResult = await pool.query(
+      `SELECT name, slug, model, instructions, allowed_tools, max_steps, forgejo_token
+       FROM agents WHERE slug = $1`,
+      [slug],
     );
-    const agent = data.agent;
+    if (agentResult.rows.length === 0) {
+      return new Response(JSON.stringify({ error: "Agent not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const agent = agentResult.rows[0];
 
     // Connect to the MCP server using the agent's Forgejo PAT
     mcpClient = await createMCPClient({

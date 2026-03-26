@@ -12,7 +12,7 @@ HOST_NETWORK=$(kubectl get ds traefik -n kube-system \
   -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null || echo "false")
 
 if [ "$HOST_NETWORK" = "true" ]; then
-  # JSONPath may return both IPv4 and IPv6 — extract only IPv4
+  # hostNetwork DaemonSet: resolve to node IP (IPv4 only)
   TRAEFIK_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
     | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
   if [ -z "$TRAEFIK_IP" ]; then
@@ -20,7 +20,14 @@ if [ "$HOST_NETWORK" = "true" ]; then
     TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
   fi
 else
-  TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  # Deployment mode: prefer LoadBalancer external IP, fall back to ClusterIP
+  LB_IP=$(kubectl get svc traefik -n kube-system \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+  if [ -n "$LB_IP" ]; then
+    TRAEFIK_IP="$LB_IP"
+  else
+    TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+  fi
 fi
 
 if [ -z "$TRAEFIK_IP" ]; then

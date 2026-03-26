@@ -19,6 +19,19 @@ tls:
   mode: letsencrypt
   email: admin@example.com
 
+# Network mode: how Traefik receives external traffic
+# host:         DaemonSet with hostNetwork (default — binds ports 80/443 on node)
+# loadbalancer: Deployment behind MetalLB L2 VIP (for dedicated edge VLAN with DNAT)
+#
+# When using loadbalancer mode, k3s servicelb must be disabled (handled by NixOS module,
+# or manually add --disable servicelb to k3s config for non-NixOS hosts).
+#
+# network:
+#   mode: loadbalancer
+#   traefik_ip: 10.0.16.10          # Pinned VIP (must match firewall DNAT rule)
+#   address_pool: 10.0.16.0/24      # MetalLB shared-infra pool (CIDR or range)
+#   interface: eno3                  # NIC for L2 ARP (VLAN 101 edge interface)
+
 # Optional: Cloudflare tunnel (only used when tls.mode == cloudflare)
 # cloudflare:
 #   account_tag: ""

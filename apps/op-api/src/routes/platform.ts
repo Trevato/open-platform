@@ -26,17 +26,28 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
   .get(
     "/users",
     async ({ user }) => {
-      const resp = await fetch(`${FORGEJO_URL}/api/v1/admin/users?limit=50`, {
-        headers: {
-          Authorization: `token ${user.token}`,
-          Accept: "application/json",
-        },
-      });
-      if (!resp.ok) {
-        const body = await resp.text();
-        throw new Error(`Forgejo API ${resp.status}: ${body}`);
+      const users: unknown[] = [];
+      let page = 1;
+      while (true) {
+        const resp = await fetch(
+          `${FORGEJO_URL}/api/v1/admin/users?limit=50&page=${page}`,
+          {
+            headers: {
+              Authorization: `token ${user.token}`,
+              Accept: "application/json",
+            },
+          },
+        );
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error(`Forgejo API ${resp.status}: ${body}`);
+        }
+        const batch = await resp.json();
+        if (!Array.isArray(batch) || batch.length === 0) break;
+        users.push(...batch);
+        if (batch.length < 50) break;
+        page++;
       }
-      const users = await resp.json();
       return { users };
     },
     {

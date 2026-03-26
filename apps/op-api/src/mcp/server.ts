@@ -31,7 +31,7 @@ export function createMcpServer(user: AuthenticatedUser): McpServer {
   registerIssueTools(server, forgejo);
   registerBranchTools(server, forgejo);
   registerFileTools(server, forgejo);
-  registerPipelineTools(server, woodpecker);
+  registerPipelineTools(server, woodpecker, forgejo);
   registerAppTools(server);
   registerUserTools(server, user);
   registerPlatformTools(server, forgejo, user);

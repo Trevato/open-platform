@@ -261,7 +261,7 @@ export class ForgejoClient {
     if (opts?.state) params.set("state", opts.state);
     if (opts?.labels) params.set("labels", opts.labels);
     if (opts?.milestone) params.set("milestone", opts.milestone);
-    if (opts?.assignee) params.set("assignedBy", opts.assignee);
+    if (opts?.assignee) params.set("assigned_by", opts.assignee);
     params.set("type", opts?.type || "issues");
     const qs = params.toString();
     return this.fetchAllPages(
@@ -441,8 +441,9 @@ export class ForgejoClient {
     ref?: string,
   ): Promise<ForgejoContent> {
     const qs = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
     return this.fetchJSON(
-      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}${qs}`,
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}${qs}`,
     );
   }
 
@@ -459,8 +460,9 @@ export class ForgejoClient {
   ): Promise<ForgejoFileResponse> {
     // Forgejo: POST to create new files, PUT (with sha) to update existing
     const method = opts.sha ? "PUT" : "POST";
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
     return this.fetchJSON(
-      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${path}`,
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodedPath}`,
       {
         method,
         body: JSON.stringify({

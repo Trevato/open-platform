@@ -21,6 +21,7 @@ export interface ForgejoRepo {
   stars_count: number;
   forks_count: number;
   open_issues_count: number;
+  permissions?: { admin: boolean; push: boolean; pull: boolean };
 }
 
 export interface ForgejoPR {

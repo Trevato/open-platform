@@ -91,11 +91,12 @@ log_event "cleanup" "ok" "Checking for orphaned resources"
 kubectl delete clusterrolebinding -l "open-platform.sh/slug=${SLUG}" 2>/dev/null || true
 kubectl delete clusterrole -l "open-platform.sh/slug=${SLUG}" 2>/dev/null || true
 
-# Clean up provision log if it exists
-if [ -f "/tmp/provision-${SLUG}.log" ]; then
-  rm -f "/tmp/provision-${SLUG}.log"
-  log_event "cleanup" "ok" "Removed provision log"
-fi
+# Clean up provision artifacts (log, credentials, kubeconfig)
+rm -f "/tmp/provision-${SLUG}.log" \
+      "/tmp/provision-${SLUG}.password" \
+      "/tmp/provision-${SLUG}.kubeconfig" \
+      "/tmp/provision-${SLUG}.clusterip"
+log_event "cleanup" "ok" "Removed provision artifacts"
 
 log_event "cleanup" "ok" "Orphaned resource cleanup complete"
 

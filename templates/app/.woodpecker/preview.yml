@@ -115,7 +115,7 @@ steps:
           RESPONSE=$(curl -fsSk -u "$$FORGEJO_USER:$$FORGEJO_PASS" \
             -X POST "https://$REGISTRY_HOST/api/v1/user/applications/oauth2" \
             -H "Content-Type: application/json" \
-            -d "{\"name\": \"$$PREVIEW_NAME\", \"redirect_uris\": [\"$$REDIRECT_URI\"], \"confidential_client\": false}")
+            -d "{\"name\": \"$$PREVIEW_NAME\", \"redirect_uris\": [\"$$REDIRECT_URI\"], \"confidential_client\": true}")
           CLIENT_ID=$(echo "$$RESPONSE" | grep -o '"client_id":"[^"]*"' | head -1 | cut -d'"' -f4)
           CLIENT_SECRET=$(echo "$$RESPONSE" | grep -o '"client_secret":"[^"]*"' | head -1 | cut -d'"' -f4)
           AUTH_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)

@@ -91,6 +91,10 @@ async function triggerAgent(slug: string): Promise<void> {
         "Scheduled agent not found — removing from scheduler",
       );
       unscheduleAgent(slug);
+      await pool.query(
+        `UPDATE agent_runs SET status = 'error', completed_at = NOW(), error_message = $1 WHERE id = $2`,
+        ["Agent not found", runId],
+      );
       return;
     }
 

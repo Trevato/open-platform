@@ -17,7 +17,7 @@ ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath
 echo "Creating Flux git credentials..."
 
 if [ -f "${CA_CERT}" ]; then
-  CA_CERT_DATA=$(base64 < "${CA_CERT}")
+  CA_CERT_DATA=$(base64 -w 0 < "${CA_CERT}" 2>/dev/null || base64 < "${CA_CERT}" | tr -d '\n')
   kubectl apply -f - <<EOF
 apiVersion: v1
 kind: Secret

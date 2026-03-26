@@ -10,6 +10,7 @@ import { Elysia } from "elysia";
 interface SessionEntry {
   transport: { handleRequest: (req: Request) => Response; close: () => void };
   lastAccessedAt: number;
+  userLogin: string;
 }
 
 function createMcpApp() {
@@ -87,7 +88,7 @@ function createMcpApp() {
       // Simulate session creation
       const newSessionId = crypto.randomUUID();
       const mockTransport = {
-        handleRequest: () =>
+        handleRequest: (_req: Request) =>
           new Response(JSON.stringify({ sessionId: newSessionId }), {
             status: 200,
             headers: {
@@ -100,6 +101,7 @@ function createMcpApp() {
       transports.set(newSessionId, {
         transport: mockTransport,
         lastAccessedAt: Date.now(),
+        userLogin: "test-user",
       });
       return mockTransport.handleRequest(request);
     })
@@ -324,10 +326,11 @@ describe("MCP idle session cleanup", () => {
   function mockEntry(lastAccessedAt: number): SessionEntry {
     return {
       transport: {
-        handleRequest: () => new Response(),
+        handleRequest: (_req: Request) => new Response(),
         close: mock(() => {}),
       },
       lastAccessedAt,
+      userLogin: "test-user",
     };
   }
 

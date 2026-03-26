@@ -13,6 +13,7 @@ const FORGEJO_INTERNAL_URL =
   "https://forgejo.dev.test";
 
 const TOKEN_VALIDATION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const TOKEN_CACHE_MAX_SIZE = 500;
 
 /** Maps token to last successful validation timestamp */
 const tokenValidationCache = new Map<string, number>();
@@ -31,6 +32,10 @@ async function validateForgejoToken(token: string): Promise<boolean> {
     });
 
     if (res.ok) {
+      if (tokenValidationCache.size >= TOKEN_CACHE_MAX_SIZE) {
+        const oldest = tokenValidationCache.keys().next().value;
+        if (oldest !== undefined) tokenValidationCache.delete(oldest);
+      }
       tokenValidationCache.set(cacheKey, Date.now());
       return true;
     }

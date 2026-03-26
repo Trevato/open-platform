@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WoodpeckerClient } from "../../services/woodpecker.js";
+import type { ForgejoClient } from "../../services/forgejo.js";
 
 const text = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
@@ -9,6 +10,7 @@ const text = (data: unknown) => ({
 export function registerPipelineTools(
   server: McpServer,
   woodpecker: WoodpeckerClient,
+  forgejo: ForgejoClient,
 ) {
   server.tool(
     "trigger_deploy",
@@ -19,6 +21,7 @@ export function registerPipelineTools(
       branch: z.string().default("main").describe("Branch to deploy"),
     },
     async ({ org, repo, branch }) => {
+      await forgejo.getRepo(org, repo); // verify access
       const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
       if (!wp)
         return text({ error: `Repo ${org}/${repo} not found in Woodpecker` });
@@ -44,6 +47,7 @@ export function registerPipelineTools(
         .describe("Sequential pipeline number from list (latest if omitted)"),
     },
     async ({ org, repo, pipeline_number }) => {
+      await forgejo.getRepo(org, repo); // verify access
       const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
       if (!wp) return text({ error: "Repo not found" });
 
@@ -61,13 +65,20 @@ export function registerPipelineTools(
     {
       org: z.string().describe("Organization name"),
       repo: z.string().describe("Repository name"),
-      pipeline_number: z.number().describe("Sequential pipeline number from list"),
+      pipeline_number: z
+        .number()
+        .describe("Sequential pipeline number from list"),
       step: z.number().describe("Step number"),
     },
     async ({ org, repo, pipeline_number, step }) => {
+      await forgejo.getRepo(org, repo); // verify access
       const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
       if (!wp) return text({ error: "Repo not found" });
-      const logs = await woodpecker.getPipelineLogs(wp.id, pipeline_number, step);
+      const logs = await woodpecker.getPipelineLogs(
+        wp.id,
+        pipeline_number,
+        step,
+      );
       return text({ logs });
     },
   );

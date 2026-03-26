@@ -74,16 +74,40 @@ kind: ClusterRole
 metadata:
   name: devpod-explorer
 rules:
-  # Read everything — k9s queries many resource types on startup
+  # Read most resources — k9s queries many resource types on startup
   - apiGroups: ["*"]
     resources: ["*"]
-    verbs: ["get", "list", "watch"]
-  # Manage workloads
+    verbs: ["list", "watch"]
+  # Allow get on non-sensitive resources (exclude secrets from cluster-wide get)
+  - apiGroups: [""]
+    resources:
+      [
+        "pods",
+        "services",
+        "configmaps",
+        "namespaces",
+        "nodes",
+        "persistentvolumeclaims",
+        "events",
+        "endpoints",
+        "serviceaccounts",
+      ]
+    verbs: ["get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get"]
+  # Manage workloads in dev pod namespaces
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["create", "update", "patch", "delete"]
   - apiGroups: [""]
-    resources: ["services", "configmaps", "secrets"]
+    resources: ["services", "configmaps"]
     verbs: ["create", "update", "patch", "delete"]
   # Exec + port-forward + logs
   - apiGroups: [""]

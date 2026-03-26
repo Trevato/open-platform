@@ -116,7 +116,8 @@ if [ -n "$PENDING_ROW" ]; then
     CLUSTERIP_FILE="/tmp/provision-${SLUG}.clusterip"
     if [ -f "$CLUSTERIP_FILE" ]; then
       CLUSTER_IP=$(cat "$CLUSTERIP_FILE")
-      db_exec "UPDATE instances SET cluster_ip = '${CLUSTER_IP}' WHERE id = '${INSTANCE_ID}'"
+      CLUSTER_IP_ESC="${CLUSTER_IP//\'/\'\'}"
+      db_exec "UPDATE instances SET cluster_ip = '${CLUSTER_IP_ESC}' WHERE id = '${INSTANCE_ID}'"
       rm -f "$CLUSTERIP_FILE"
     fi
 
@@ -163,7 +164,7 @@ if [ -n "$TERMINATING_ROW" ]; then
   fi
 
   if [ "$TEARDOWN_EXIT" -eq 0 ]; then
-    db_exec "UPDATE instances SET status = 'terminated', updated_at = '$(timestamp)' WHERE id = '${INSTANCE_ID}'"
+    db_exec "UPDATE instances SET status = 'terminated', admin_password = NULL, kubeconfig = NULL, cluster_ip = NULL, updated_at = '$(timestamp)' WHERE id = '${INSTANCE_ID}'"
     insert_event "$INSTANCE_ID" "teardown_complete" "Instance ${SLUG} terminated"
     echo "[$(timestamp)] Instance ${SLUG} terminated successfully"
   else
@@ -175,11 +176,11 @@ fi
 
 # ── Process Password Resets ─────────────────────────────────────────────────
 
-RESET_ROWS=$(db_query "SELECT id, slug, admin_username, admin_password FROM instances WHERE password_reset_at IS NOT NULL AND status = 'ready'" || echo "")
+RESET_ROWS=$(psql -tA --field-separator=$'\x01' -c "SELECT id, slug, admin_username, admin_password FROM instances WHERE password_reset_at IS NOT NULL AND status = 'ready'" 2>/dev/null || echo "")
 
 if [ -n "$RESET_ROWS" ]; then
   FOUND_WORK=true
-  while IFS='|' read -r INSTANCE_ID SLUG ADMIN_USER NEW_PASS; do
+  while IFS=$'\x01' read -r INSTANCE_ID SLUG ADMIN_USER NEW_PASS; do
     [ -z "$INSTANCE_ID" ] && continue
     echo "[$(timestamp)] Applying password reset for ${SLUG}"
 

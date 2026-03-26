@@ -83,10 +83,9 @@ function textResponse(body: string, status: number): Response {
 
 // ── Fetch interceptor ──────────────────────────────────────────────────────
 
-let fetchImpl: (
-  url: string | URL | Request,
-  init?: RequestInit,
-) => Promise<Response>;
+// The globalThis.fetch wrapper below normalizes input to a string before
+// calling fetchImpl, so url is always string at runtime despite the wider type.
+let fetchImpl: (url: string, init?: RequestInit) => Promise<Response>;
 
 const originalFetch = globalThis.fetch;
 

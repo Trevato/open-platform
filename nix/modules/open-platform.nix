@@ -26,8 +26,8 @@ in
     k3s = {
       disable = lib.mkOption {
         type = lib.types.listOf lib.types.str;
-        default = [ "traefik" ];
-        description = "k3s components to disable. Traefik is managed by Helm.";
+        default = [ "traefik" ] ++ lib.optionals (cfg.network.mode == "loadbalancer") [ "servicelb" ];
+        description = "k3s components to disable. Traefik is managed by Helm. servicelb disabled when using MetalLB.";
       };
 
       extraFlags = lib.mkOption {
@@ -61,6 +61,23 @@ in
           default = null;
           description = "Path to CA cert for OIDC issuer verification (self-signed TLS only).";
         };
+      };
+    };
+
+    network = {
+      mode = lib.mkOption {
+        type = lib.types.enum [
+          "host"
+          "loadbalancer"
+        ];
+        default = "host";
+        description = "Traefik networking: 'host' (DaemonSet+hostNetwork) or 'loadbalancer' (MetalLB L2 VIP).";
+      };
+
+      edgeInterface = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "NIC for MetalLB L2 advertisements (e.g., eno3 for VLAN 101).";
       };
     };
 
@@ -114,6 +131,20 @@ in
             ];
         in
         disableFlags ++ flannelFlags ++ oidcFlags ++ cfg.k3s.extraFlags;
+    };
+
+    # --- k3s registry config (trust self-signed CA for container pulls) ---
+    environment.etc."rancher/k3s/registries.yaml" = lib.mkIf (cfg.k3s.oidc.caFile != null) {
+      text = ''
+        mirrors:
+          forgejo.${cfg.domain}:
+            endpoint:
+              - "https://forgejo.${cfg.domain}"
+        configs:
+          "forgejo.${cfg.domain}":
+            tls:
+              ca_file: "${cfg.k3s.oidc.caFile}"
+      '';
     };
 
     # --- System packages ---

@@ -31,6 +31,7 @@ const transports = new Map<
   {
     transport: WebStandardStreamableHTTPServerTransport;
     lastAccessedAt: number;
+    userLogin: string;
   }
 >();
 
@@ -152,6 +153,13 @@ const app = new Elysia()
 
     // DELETE — close session
     if (method === "DELETE") {
+      const user = await authenticateRequest(request);
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       const sessionId = request.headers.get("mcp-session-id");
       if (sessionId) {
         const entry = transports.get(sessionId);
@@ -180,6 +188,12 @@ const app = new Elysia()
           headers: { "Content-Type": "application/json" },
         });
       }
+      if (entry.userLogin !== user.login) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       entry.lastAccessedAt = Date.now();
       return entry.transport.handleRequest(request);
     }
@@ -198,6 +212,12 @@ const app = new Elysia()
     // Existing session
     if (sessionId && transports.has(sessionId)) {
       const entry = transports.get(sessionId)!;
+      if (entry.userLogin !== user.login) {
+        return new Response(JSON.stringify({ error: "Forbidden" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
       entry.lastAccessedAt = Date.now();
       return entry.transport.handleRequest(request);
     }
@@ -218,7 +238,11 @@ const app = new Elysia()
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
     });
-    transports.set(newSessionId, { transport, lastAccessedAt: Date.now() });
+    transports.set(newSessionId, {
+      transport,
+      lastAccessedAt: Date.now(),
+      userLogin: user.login,
+    });
 
     const server = createMcpServer(user);
     await server.connect(transport);

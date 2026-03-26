@@ -289,6 +289,16 @@ export async function createInstance(
       };
     }
 
+    // Non-admins cannot request a tier higher than their customer tier
+    const tierRank: Record<string, number> = { free: 0, pro: 1, team: 2 };
+    if (!isAdmin && tierRank[tier] > (tierRank[cust.tier] ?? 0)) {
+      await client.query("ROLLBACK");
+      return {
+        error: `Your plan (${cust.tier}) does not allow ${tier}-tier instances. Upgrade for higher tiers.`,
+        status: 403,
+      };
+    }
+
     const instance = await client.query(
       `INSERT INTO instances (customer_id, slug, display_name, tier, admin_email, admin_username)
        VALUES ($1, $2, $3, $4, $5, $6)
@@ -366,6 +376,13 @@ export async function getCredentials(
   const access = await getInstanceAccess(slug, user);
   if (!access) {
     return { error: "Not found", status: 404 };
+  }
+
+  if (access.instance.status !== "ready") {
+    return {
+      error: "Credentials are only available for ready instances",
+      status: 400,
+    };
   }
 
   return {

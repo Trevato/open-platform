@@ -19,6 +19,10 @@ repositories:
     url: https://jouve.github.io/charts
   - name: jitsi
     url: https://jitsi-contrib.github.io/jitsi-helm/
+  # BEGIN metallb
+  - name: metallb
+    url: https://metallb.github.io/metallb
+  # END metallb
 
 helmDefaults:
   wait: true
@@ -28,11 +32,34 @@ helmDefaults:
 releases:
   # ─── Layer 0: Infrastructure ───────────────────────────────────────────
 
+  # BEGIN metallb
+  - name: metallb
+    namespace: metallb-system
+    chart: metallb/metallb
+    labels:
+      tier: infra
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            echo "Waiting for MetalLB controller..."
+            kubectl wait --for=condition=available deployment/metallb-controller \
+              -n metallb-system --timeout=120s
+            kubectl apply -f manifests/metallb-config.yaml
+  # END metallb
+
   - name: traefik
     namespace: kube-system
     chart: traefik/traefik
     values:
       - traefik-values.yaml
+    # BEGIN metallb
+    needs:
+      - metallb-system/metallb
+    # END metallb
     labels:
       tier: infra
     hooks:
