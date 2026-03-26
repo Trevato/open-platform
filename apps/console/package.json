@@ -7,7 +7,8 @@
     "build": "next build",
     "build:ws": "npx esbuild ws-server.ts --bundle --platform=node --external:node-pty --outfile=ws-server.js",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test src/"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.63",

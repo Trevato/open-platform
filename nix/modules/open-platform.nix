@@ -160,6 +160,13 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      path = [
+        pkgs.git
+        pkgs.bash
+        pkgs.coreutils
+        pkgs.gnutar
+        pkgs.gzip
+      ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

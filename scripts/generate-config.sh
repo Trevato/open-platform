@@ -203,10 +203,10 @@ minio_root_password: ${MINIO_ROOT_PASSWORD}
 woodpecker_agent_secret: ${WOODPECKER_AGENT_SECRET}
 oauth2_proxy_cookie_secret: ${OAUTH2_PROXY_COOKIE_SECRET}
 better_auth_secret: ${BETTER_AUTH_SECRET}
-jitsi_jwt_secret: ${JITSI_JWT_SECRET}
-zulip_secret_key: ${ZULIP_SECRET_KEY}
-zulip_rabbitmq_password: ${ZULIP_RABBITMQ_PASSWORD}
-zulip_db_password: ${ZULIP_DB_PASSWORD}
+jitsi_jwt_secret: ${JITSI_JWT_SECRET:-}
+zulip_secret_key: ${ZULIP_SECRET_KEY:-}
+zulip_rabbitmq_password: ${ZULIP_RABBITMQ_PASSWORD:-}
+zulip_db_password: ${ZULIP_DB_PASSWORD:-}
 EOF
   echo "  State: saved to open-platform.state.yaml"
 fi
