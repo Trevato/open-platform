@@ -178,6 +178,12 @@ echo "  Network: ${NETWORK_MODE}"
 
 generate_secret() { openssl rand -hex 32; }
 
+# Initialize optional service secrets (populated from state or generated below)
+JITSI_JWT_SECRET=""
+ZULIP_SECRET_KEY=""
+ZULIP_RABBITMQ_PASSWORD=""
+ZULIP_DB_PASSWORD=""
+
 if [ -f "$STATE_FILE" ]; then
   echo "  State: loading from open-platform.state.yaml"
   FORGEJO_ADMIN_PASSWORD=$(yaml_get "$STATE_FILE" "forgejo_admin_password") || FORGEJO_ADMIN_PASSWORD=""
