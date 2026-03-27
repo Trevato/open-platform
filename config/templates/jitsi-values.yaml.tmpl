@@ -18,6 +18,19 @@ web:
   extraEnvs:
     TOKEN_AUTH_URL: "https://${SERVICE_PREFIX}meet-auth.${DOMAIN}/room/{room}"
 
+  initContainers:
+    - name: build-ca-bundle
+      image: alpine:3.22
+      command: [sh, -c]
+      args:
+        - cat /etc/ssl/certs/ca-certificates.crt /platform-ca/ca.crt > /custom-certs/ca-certificates.crt 2>/dev/null || cp /etc/ssl/certs/ca-certificates.crt /custom-certs/ca-certificates.crt
+      volumeMounts:
+        - name: platform-ca
+          mountPath: /platform-ca
+          readOnly: true
+        - name: custom-certs
+          mountPath: /custom-certs
+
   extraContainers:
     - name: jitsi-oidc
       image: ghcr.io/marcelcoding/jitsi-openid:latest
@@ -51,6 +64,12 @@ web:
               key: client-secret
         - name: VERIFY_ACCESS_TOKEN_HASH
           value: "false"
+        - name: SSL_CERT_FILE
+          value: /custom-certs/ca-certificates.crt
+      volumeMounts:
+        - name: custom-certs
+          mountPath: /custom-certs
+          readOnly: true
       resources:
         requests:
           cpu: 25m
@@ -58,6 +77,14 @@ web:
         limits:
           cpu: 200m
           memory: 128Mi
+
+  extraVolumes:
+    - name: platform-ca
+      configMap:
+        name: platform-ca
+        optional: true
+    - name: custom-certs
+      emptyDir: {}
 
   resources:
     requests:

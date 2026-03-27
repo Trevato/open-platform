@@ -36,6 +36,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: cloudflare
 ---
 apiVersion: v1
@@ -127,8 +132,32 @@ metadata:
   labels:
     open-platform.sh/managed: "true"
     open-platform.sh/tier: "dev"
-# BEGIN metallb
 ---
+# BEGIN jitsi
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jitsi
+# END jitsi
+---
+# BEGIN zulip
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zulip
+# END zulip
+---
+# BEGIN provisioner
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: provisioner
+  labels:
+    open-platform.sh/managed: "true"
+    open-platform.sh/tier: "platform"
+# END provisioner
+---
+# BEGIN metallb
 apiVersion: v1
 kind: Namespace
 metadata:

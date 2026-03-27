@@ -106,6 +106,15 @@ releases:
             kubectl wait --for=condition=available deployment/cnpg-cloudnative-pg \
               -n cnpg-system --timeout=120s
             kubectl apply -f manifests/postgres-cluster.yaml
+            echo "Waiting for postgres cluster to be ready..."
+            kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s || true
+            # BEGIN zulip
+            # Set zulip role password from K8s secret (role created by postInitSQL)
+            ZULIP_PW=$(kubectl get secret zulip-db-credentials -n postgres -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+            if [ -n "$ZULIP_PW" ]; then
+              kubectl exec -n postgres postgres-1 -- psql -U postgres -c "ALTER ROLE zulip WITH PASSWORD '$ZULIP_PW'" 2>/dev/null || true
+            fi
+            # END zulip
 
   # BEGIN cert-manager
   - name: cert-manager

@@ -471,6 +471,13 @@ template_flux "infrastructure/configs/minio.yaml"
 echo ""
 echo "Templating manifests..."
 
+# Regenerate namespaces.yaml from template (includes conditional blocks for optional services)
+template_file "$TEMPLATES_DIR/platform/infrastructure/configs/namespaces.yaml.tmpl" "$ROOT_DIR/manifests/namespaces.yaml"
+echo "  manifests/namespaces.yaml"
+
+template_file "$TEMPLATES_DIR/platform/infrastructure/configs/postgres-cluster.yaml.tmpl" "$ROOT_DIR/manifests/postgres-cluster.yaml"
+echo "  manifests/postgres-cluster.yaml"
+
 template_file "$TEMPLATES_DIR/manifests/oidc-rbac.yaml.tmpl" "$ROOT_DIR/manifests/oidc-rbac.yaml"
 echo "  manifests/oidc-rbac.yaml"
 
@@ -522,6 +529,8 @@ if [ "$ZULIP_ENABLED" != "true" ]; then
   sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/helmfile.yaml"
   sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/manifests/namespaces.yaml"
   sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/manifests/postgres-cluster.yaml"
+  sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/platform/infrastructure/configs/postgres-cluster.yaml"
   echo "  zulip excluded"
 fi
 
