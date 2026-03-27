@@ -16,13 +16,17 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        op-cli = pkgs.callPackage ./nix/packages/op-cli.nix { };
       in
       {
-        packages.op-cli = pkgs.callPackage ./nix/packages/op-cli.nix { };
+        packages = {
+          inherit op-cli;
+          default = op-cli;
+          deploy = pkgs.callPackage ./nix/packages/deploy.nix { };
+        };
 
         devShells.default = import ./nix/shells/default.nix {
-          inherit pkgs;
-          op-cli = self.packages.${system}.op-cli;
+          inherit pkgs op-cli;
         };
       }
     )
