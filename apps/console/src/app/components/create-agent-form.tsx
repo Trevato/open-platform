@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ToolPicker } from "./tool-picker";
 
 export function CreateAgentForm() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export function CreateAgentForm() {
   const [organizations, setOrganizations] = useState("");
   const [maxSteps, setMaxSteps] = useState(25);
   const [schedule, setSchedule] = useState("");
+  const [allowedTools, setAllowedTools] = useState<string[] | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -38,6 +40,7 @@ export function CreateAgentForm() {
           .filter(Boolean);
       }
       if (schedule.trim()) body.schedule = schedule.trim();
+      if (allowedTools) body.allowed_tools = allowedTools;
 
       const res = await fetch("/api/agents", {
         method: "POST",
@@ -180,6 +183,9 @@ export function CreateAgentForm() {
               member.
             </span>
           </div>
+
+          {/* Tools */}
+          <ToolPicker value={allowedTools} onChange={setAllowedTools} />
 
           {/* Max Steps */}
           <div className="form-group">

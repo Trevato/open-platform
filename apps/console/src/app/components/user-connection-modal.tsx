@@ -2,19 +2,14 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-interface ClaudeCodeModalProps {
-  agentSlug: string;
-  agentName: string;
+interface UserConnectionModalProps {
   onClose: () => void;
-  allowedTools?: string[] | null;
-  orgs?: string[];
 }
 
 interface ConnectionInfo {
   mcp_url: string;
   token: string;
-  agent_slug: string;
-  instructions: string | null;
+  username: string;
 }
 
 const monoFont = "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";
@@ -56,23 +51,14 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function ClaudeCodeModal({
-  agentSlug,
-  agentName,
-  onClose,
-  allowedTools,
-  orgs,
-}: ClaudeCodeModalProps) {
+export function UserConnectionModal({ onClose }: UserConnectionModalProps) {
   const [connection, setConnection] = useState<ConnectionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
 
   const fetchConnection = useCallback(async () => {
     try {
-      const res = await fetch(
-        `/api/agents/${encodeURIComponent(agentSlug)}/connection`,
-      );
+      const res = await fetch("/api/users/me/connection");
       if (!res.ok) {
         const data = await res.json();
         setError(data.error || "Failed to load connection info");
@@ -85,7 +71,7 @@ export function ClaudeCodeModal({
     } finally {
       setLoading(false);
     }
-  }, [agentSlug]);
+  }, []);
 
   useEffect(() => {
     fetchConnection();
@@ -104,7 +90,7 @@ export function ClaudeCodeModal({
   }
 
   const mcpCommand = connection
-    ? `claude mcp add --transport http --scope user op-${connection.agent_slug} ${connection.mcp_url} --header "Authorization: Bearer ${connection.token}"`
+    ? `claude mcp add --transport http --scope user op-${connection.username} ${connection.mcp_url} --header "Authorization: Bearer ${connection.token}"`
     : "";
 
   return (
@@ -143,7 +129,7 @@ export function ClaudeCodeModal({
           }}
         >
           <h2 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
-            Connect as {agentName}
+            Connect to Claude Code
           </h2>
           <button
             className="btn btn-ghost btn-sm"
@@ -223,8 +209,7 @@ export function ClaudeCodeModal({
                 3. Start using
               </h3>
               <p className="text-sm" style={{ lineHeight: 1.6 }}>
-                Open Claude Code in any project directory. The platform{"'"}s
-                MCP tools will be available under the{" "}
+                The platform{"'"}s MCP tools will be available under the{" "}
                 <code
                   style={{
                     fontFamily: monoFont,
@@ -234,115 +219,19 @@ export function ClaudeCodeModal({
                     borderRadius: 3,
                   }}
                 >
-                  op-{connection.agent_slug}
+                  op-{connection.username}
                 </code>{" "}
                 server.
               </p>
             </div>
-
-            {/* Agent context */}
-            <div
-              style={{
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                borderRadius: 6,
-                padding: 12,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div style={{ display: "flex", gap: 8 }}>
-                <span
-                  className="text-xs text-muted"
-                  style={{ width: 90, flexShrink: 0 }}
-                >
-                  Identity
-                </span>
-                <span className="text-xs">
-                  Actions will be attributed to agent-{agentSlug} on Forgejo
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <span
-                  className="text-xs text-muted"
-                  style={{ width: 90, flexShrink: 0 }}
-                >
-                  Organizations
-                </span>
-                <span className="text-xs">
-                  {orgs?.length ? orgs.join(", ") : "None"}
-                </span>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <span
-                  className="text-xs text-muted"
-                  style={{ width: 90, flexShrink: 0 }}
-                >
-                  Tools
-                </span>
-                <span className="text-xs">
-                  {allowedTools?.length
-                    ? `${allowedTools.length} tools enabled`
-                    : "All 61 tools"}
-                </span>
-              </div>
-            </div>
-
-            {/* Instructions (collapsible) */}
-            {connection.instructions && (
-              <div>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setShowInstructions(!showInstructions)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "4px 0",
-                    fontSize: 13,
-                    fontWeight: 600,
-                  }}
-                >
-                  <span
-                    style={{
-                      display: "inline-block",
-                      transform: showInstructions
-                        ? "rotate(90deg)"
-                        : "rotate(0deg)",
-                      transition: "transform 0.15s ease",
-                      fontSize: 10,
-                    }}
-                  >
-                    &#9654;
-                  </span>
-                  Agent Instructions
-                </button>
-                {showInstructions && (
-                  <pre
-                    style={{
-                      ...codeBlockStyle,
-                      marginTop: 8,
-                      maxHeight: 200,
-                      overflowY: "auto",
-                      whiteSpace: "pre-wrap",
-                      wordBreak: "break-word",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    {connection.instructions}
-                  </pre>
-                )}
-              </div>
-            )}
 
             {/* Security note */}
             <p
               className="text-xs text-muted"
               style={{ lineHeight: 1.5, marginTop: 4 }}
             >
-              This command contains the agent{"'"}s access token. It will be
-              stored in your Claude Code config (~/.claude.json).
+              This command contains your Forgejo access token. It will be stored
+              in your Claude Code config (~/.claude.json).
             </p>
           </div>
         )}

@@ -21,6 +21,7 @@ import { instancesPlugin } from "./routes/instances.js";
 import { devPodsPlugin } from "./routes/dev-pods.js";
 import { agentRoutes } from "./routes/agents.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { mcpToolsPlugin } from "./routes/mcp-tools.js";
 import { models } from "./models.js";
 import { logger } from "./logger.js";
 import { initScheduler } from "./services/scheduler.js";
@@ -77,6 +78,7 @@ const app = new Elysia()
           { name: "Instances", description: "vCluster instances" },
           { name: "Dev Pods", description: "Development environments" },
           { name: "Agents", description: "AI agent management" },
+          { name: "MCP", description: "MCP tool catalog" },
           { name: "Webhooks", description: "Forgejo webhook receiver" },
         ],
         components: {
@@ -144,7 +146,8 @@ const app = new Elysia()
       .use(platformPlugin)
       .use(instancesPlugin)
       .use(devPodsPlugin)
-      .use(agentRoutes),
+      .use(agentRoutes)
+      .use(mcpToolsPlugin),
   )
 
   // MCP endpoint — Streamable HTTP with session management

@@ -47,6 +47,9 @@ export function AgentDetail({
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [showClaudeCode, setShowClaudeCode] = useState(false);
+  const [showRunPrompt, setShowRunPrompt] = useState(false);
+  const [runPrompt, setRunPrompt] = useState("");
+  const [activating, setActivating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [runs, setRuns] = useState<
     Array<{
@@ -104,6 +107,33 @@ export function AgentDetail({
     const interval = setInterval(fetchRuns, 10000);
     return () => clearInterval(interval);
   }, [fetchRuns]);
+
+  async function handleActivate() {
+    if (!runPrompt.trim()) return;
+    setActivating(true);
+    try {
+      const res = await fetch(
+        `/api/agents/${encodeURIComponent(slug)}/activate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: runPrompt }),
+        },
+      );
+      if (res.ok) {
+        setRunPrompt("");
+        setShowRunPrompt(false);
+        fetchRuns();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to activate");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setActivating(false);
+    }
+  }
 
   async function handleDelete() {
     if (
@@ -258,26 +288,64 @@ export function AgentDetail({
                 <span className="text-xs">{agent.max_steps}</span>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <span className="text-xs text-muted" style={{ width: 120 }}>
+                <span
+                  className="text-xs text-muted"
+                  style={{ width: 120, flexShrink: 0 }}
+                >
                   Tools
                 </span>
-                <span className="text-xs">
-                  {agent.allowed_tools?.length
-                    ? `${agent.allowed_tools.length} allowed`
-                    : "All tools"}
-                </span>
+                {agent.allowed_tools?.length ? (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {agent.allowed_tools.map((tool) => (
+                      <span
+                        key={tool}
+                        className="text-xs"
+                        style={{
+                          background: "var(--surface)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 4,
+                          padding: "1px 6px",
+                          fontFamily:
+                            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                          fontSize: 11,
+                        }}
+                      >
+                        {tool}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-xs">All tools</span>
+                )}
               </div>
               {agent.schedule && (
                 <div style={{ display: "flex", gap: 8 }}>
-                  <span className="text-xs text-muted" style={{ width: 120 }}>
+                  <span
+                    className="text-xs text-muted"
+                    style={{ width: 120, flexShrink: 0 }}
+                  >
                     Schedule
                   </span>
-                  <span
-                    className="text-xs"
-                    style={{ fontFamily: "var(--font-mono)" }}
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 2 }}
                   >
-                    {agent.schedule}
-                  </span>
+                    <span
+                      className="text-xs"
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                      }}
+                    >
+                      {agent.schedule}
+                    </span>
+                    <span
+                      className="text-xs text-muted"
+                      style={{ fontSize: 11 }}
+                    >
+                      Server-side (uses API credits). Use /loop in Claude Code
+                      for subscription-based scheduling.
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -378,15 +446,21 @@ export function AgentDetail({
         >
           <button
             className="btn btn-accent"
+            onClick={() => setShowClaudeCode(true)}
+          >
+            Connect as {agent.name}
+          </button>
+          <button
+            className="btn btn-ghost"
             onClick={() => router.push(`/dashboard/agents/${agent.slug}/chat`)}
           >
             Chat
           </button>
           <button
             className="btn btn-ghost"
-            onClick={() => setShowClaudeCode(true)}
+            onClick={() => setShowRunPrompt(!showRunPrompt)}
           >
-            Claude Code
+            Run Now
           </button>
           <button
             className="btn btn-ghost"
@@ -409,12 +483,46 @@ export function AgentDetail({
             {deleting ? "Deleting..." : "Delete Agent"}
           </button>
         </div>
+
+        {/* Run Now prompt */}
+        {showRunPrompt && (
+          <div className="card" style={{ marginTop: 8 }}>
+            <div
+              className="card-body"
+              style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
+            >
+              <textarea
+                className="input"
+                placeholder="Enter a prompt for the agent..."
+                value={runPrompt}
+                onChange={(e) => setRunPrompt(e.target.value)}
+                rows={2}
+                style={{
+                  flex: 1,
+                  resize: "vertical",
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                  fontSize: 13,
+                }}
+              />
+              <button
+                className="btn btn-accent"
+                disabled={activating || !runPrompt.trim()}
+                onClick={handleActivate}
+              >
+                {activating ? "Running..." : "Run"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       {showClaudeCode && agent && (
         <ClaudeCodeModal
           agentSlug={agent.slug}
           agentName={agent.name}
           onClose={() => setShowClaudeCode(false)}
+          allowedTools={agent.allowed_tools}
+          orgs={agent.orgs}
         />
       )}
     </>

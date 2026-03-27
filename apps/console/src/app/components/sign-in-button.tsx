@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { UserConnectionModal } from "./user-connection-modal";
 
 export function SignInButton({
   className,
@@ -47,15 +49,14 @@ export function SignOutButton({ className }: { className?: string }) {
 
 export function UserMenu() {
   const { data: session, isPending } = authClient.useSession();
+  const [showConnect, setShowConnect] = useState(false);
 
   if (isPending) {
     return <div className="spinner spinner-sm" />;
   }
 
   if (!session?.user) {
-    return (
-      <SignInButton className="" size="default" />
-    );
+    return <SignInButton className="" size="default" />;
   }
 
   const initial = (session.user.name || session.user.email || "?")
@@ -66,17 +67,23 @@ export function UserMenu() {
     <div className="nav-actions">
       <div className="nav-user">
         {session.user.image ? (
-          <img
-            src={session.user.image}
-            alt=""
-            className="nav-avatar"
-          />
+          <img src={session.user.image} alt="" className="nav-avatar" />
         ) : (
           <span className="nav-avatar-placeholder">{initial}</span>
         )}
         <span className="nav-username">{session.user.name}</span>
       </div>
+      <button
+        className="btn btn-ghost btn-sm"
+        onClick={() => setShowConnect(true)}
+        style={{ fontSize: 12 }}
+      >
+        Claude Code
+      </button>
       <SignOutButton />
+      {showConnect && (
+        <UserConnectionModal onClose={() => setShowConnect(false)} />
+      )}
     </div>
   );
 }

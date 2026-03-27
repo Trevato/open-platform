@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ToolPicker } from "./tool-picker";
 
 interface Agent {
   id: string;
@@ -13,6 +14,7 @@ interface Agent {
   orgs: string[];
   max_steps: number;
   schedule: string | null;
+  allowed_tools: string[] | null;
 }
 
 interface AgentEditFormProps {
@@ -33,6 +35,10 @@ export function AgentEditForm({ agent }: AgentEditFormProps) {
   );
   const [maxSteps, setMaxSteps] = useState(agent.max_steps);
   const [schedule, setSchedule] = useState(agent.schedule || "");
+  // Normalize [] from DB (means "all tools") to null (ToolPicker sentinel for all tools)
+  const [allowedTools, setAllowedTools] = useState<string[] | null>(
+    agent.allowed_tools?.length ? agent.allowed_tools : null,
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,6 +54,8 @@ export function AgentEditForm({ agent }: AgentEditFormProps) {
         instructions: instructions.trim() || null,
         schedule: schedule.trim() || null,
       };
+
+      body.allowed_tools = allowedTools ?? [];
 
       body.orgs = organizations.trim()
         ? organizations
@@ -188,6 +196,9 @@ export function AgentEditForm({ agent }: AgentEditFormProps) {
               Comma-separated. Changing orgs will update Forgejo memberships.
             </span>
           </div>
+
+          {/* Tools */}
+          <ToolPicker value={allowedTools} onChange={setAllowedTools} />
 
           {/* Max Steps */}
           <div className="form-group">
