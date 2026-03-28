@@ -20,10 +20,29 @@ if [ -f "$ROOT_DIR/open-platform.yaml" ]; then
   "${SCRIPT_DIR}/generate-config.sh"
   echo ""
 elif [ ! -f "$ROOT_DIR/.env" ]; then
-  echo "Error: No open-platform.yaml or .env found."
-  echo ""
-  echo "Quick start:  cp open-platform.yaml.example open-platform.yaml"
-  exit 1
+  if [ -t 0 ]; then
+    echo ""
+    echo "  Open Platform"
+    echo ""
+    printf "  ? Domain: "
+    read -r DOMAIN_INPUT
+    if [ -z "${DOMAIN_INPUT}" ]; then
+      echo "Error: Domain cannot be empty."
+      exit 1
+    fi
+    cat > "$ROOT_DIR/open-platform.yaml" <<EOF
+domain: "${DOMAIN_INPUT}"
+EOF
+    echo ""
+    echo "Phase 0: Generating config from open-platform.yaml..."
+    "${SCRIPT_DIR}/generate-config.sh"
+    echo ""
+  else
+    echo "Error: No open-platform.yaml or .env found."
+    echo ""
+    echo "Quick start:  cp open-platform.yaml.example open-platform.yaml"
+    exit 1
+  fi
 fi
 
 # Load config
@@ -59,14 +78,20 @@ echo "Phase 3: Woodpecker repo setup + pipeline triggers..."
 # ── Done ─────────────────────────────────────────────────────────────────────
 
 END=$(date +%s)
+PREFIX="${SERVICE_PREFIX:-}"
 echo ""
 echo "=== Deploy complete in $((END - START))s ==="
 echo ""
-echo "Services:"
-echo "  Forgejo:    https://forgejo.${DOMAIN}"
-echo "  Woodpecker: https://ci.${DOMAIN}"
-echo "  Headlamp:   https://headlamp.${DOMAIN}"
-echo "  MinIO:      https://minio.${DOMAIN}"
+echo "  Console:  https://${PREFIX}console.${DOMAIN}"
+echo "  Forgejo:  https://${PREFIX}forgejo.${DOMAIN}"
+echo "  CI/CD:    https://${PREFIX}ci.${DOMAIN}"
 echo ""
-echo "Admin: ${FORGEJO_ADMIN_USER}"
-echo "Password: see open-platform.state.yaml"
+echo "  Admin:    ${FORGEJO_ADMIN_USER}"
+echo "  Password: ${FORGEJO_ADMIN_PASSWORD:-see open-platform.state.yaml}"
+echo ""
+echo "  Configure: https://${PREFIX}console.${DOMAIN}/dashboard/settings"
+echo ""
+echo "  If DNS isn't configured yet:"
+echo "    kubectl port-forward -n op-system-console svc/console 3000:80"
+echo "    → http://localhost:3000/dashboard/settings"
+echo ""

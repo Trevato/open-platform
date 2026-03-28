@@ -3,6 +3,7 @@ import { randomBytes } from "crypto";
 import { requireAdminPlugin } from "../auth.js";
 import { ForgejoClient } from "../services/forgejo.js";
 import { getServiceStatuses, getApps } from "../services/k8s.js";
+import { PlatformConfigService } from "../services/platform-config.js";
 
 const FORGEJO_URL =
   process.env.FORGEJO_INTERNAL_URL || process.env.FORGEJO_URL || "";
@@ -126,5 +127,73 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         description: t.Optional(t.String()),
       }),
       detail: { tags: ["Platform"], summary: "Create app from template" },
+    },
+  )
+
+  // GET /config — read current platform configuration
+  .get(
+    "/config",
+    async ({ user }) => {
+      const configService = new PlatformConfigService(user.token);
+      const config = await configService.getConfig();
+      return { config };
+    },
+    {
+      detail: { tags: ["Platform"], summary: "Read platform configuration" },
+    },
+  )
+
+  // PATCH /config — update platform configuration
+  .patch(
+    "/config",
+    async ({ body, user }) => {
+      const configService = new PlatformConfigService(user.token);
+      const result = await configService.updateConfig(body);
+      return result;
+    },
+    {
+      body: t.Object({
+        tls: t.Optional(
+          t.Object({
+            mode: t.Optional(
+              t.Union([
+                t.Literal("selfsigned"),
+                t.Literal("letsencrypt"),
+                t.Literal("cloudflare"),
+              ]),
+            ),
+          }),
+        ),
+        network: t.Optional(
+          t.Object({
+            mode: t.Optional(
+              t.Union([t.Literal("host"), t.Literal("loadbalancer")]),
+            ),
+            traefikIp: t.Optional(t.String()),
+            addressPool: t.Optional(t.String()),
+            interface: t.Optional(t.String()),
+          }),
+        ),
+        services: t.Optional(
+          t.Object({
+            jitsi: t.Optional(
+              t.Object({
+                enabled: t.Optional(t.Boolean()),
+              }),
+            ),
+            zulip: t.Optional(
+              t.Object({
+                enabled: t.Optional(t.Boolean()),
+              }),
+            ),
+            mailpit: t.Optional(
+              t.Object({
+                enabled: t.Optional(t.Boolean()),
+              }),
+            ),
+          }),
+        ),
+      }),
+      detail: { tags: ["Platform"], summary: "Update platform configuration" },
     },
   );
