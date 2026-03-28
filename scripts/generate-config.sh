@@ -643,7 +643,7 @@ if [ "$TLS_MODE" != "letsencrypt" ]; then
   CERTS_DIR="$ROOT_DIR/certs"
   # Regenerate if no cert exists or if existing cert doesn't cover this domain
   NEED_CERTS=false
-  if [ ! -f "$CERTS_DIR/ca.crt" ] || [ ! -f "$CERTS_DIR/wildcard.crt" ]; then
+  if [ ! -f "$CERTS_DIR/ca.crt" ] || [ ! -f "$CERTS_DIR/wildcard.crt" ] || [ ! -f "$CERTS_DIR/ca.key" ] || [ ! -f "$CERTS_DIR/wildcard.key" ]; then
     NEED_CERTS=true
   elif ! openssl x509 -in "$CERTS_DIR/wildcard.crt" -noout -text 2>/dev/null | grep -q "*.${DOMAIN}"; then
     echo "  Existing cert doesn't cover *.${DOMAIN} — regenerating"
