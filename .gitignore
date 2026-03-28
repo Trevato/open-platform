@@ -1,6 +1,6 @@
 TODO
 .env
-certs/*.key
+certs/
 .DS_Store
 .claude/
 scripts/.git-askpass
