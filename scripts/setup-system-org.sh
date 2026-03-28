@@ -37,7 +37,7 @@ git_push() {
   GIT_ASKPASS="${SCRIPT_DIR}/.git-askpass" \
   GIT_USERNAME="${ADMIN_USER}" \
   GIT_PASSWORD="${ADMIN_PASS}" \
-    git push -q "${REPO_URL}" "${BRANCH}" 2>/dev/null
+    git push -q "${REPO_URL}" "${BRANCH}"
 }
 
 # Create askpass helper (git calls this for username and password)
