@@ -36,7 +36,7 @@ writeShellApplication {
 
   text = ''
     if [ ! -f scripts/deploy.sh ]; then
-      CLONE_DIR="''${HOME}/open-platform"
+      CLONE_DIR="''${PWD}/open-platform"
       if [ -d "$CLONE_DIR/.git" ]; then
         echo "Updating $CLONE_DIR..."
         git -C "$CLONE_DIR" pull --ff-only
