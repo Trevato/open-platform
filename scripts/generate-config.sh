@@ -112,7 +112,7 @@ for reserved in $RESERVED_NAMES; do
     exit 1
   fi
 done
-TLS_MODE=$(yaml_get "$CONFIG_FILE" "tls.mode" 2>/dev/null) || TLS_MODE="letsencrypt"
+TLS_MODE=$(yaml_get "$CONFIG_FILE" "tls.mode" 2>/dev/null) || TLS_MODE="selfsigned"
 TLS_EMAIL=$(yaml_get "$CONFIG_FILE" "tls.email" 2>/dev/null) || TLS_EMAIL="$ADMIN_EMAIL"
 SERVICE_PREFIX=$(yaml_get "$CONFIG_FILE" "service_prefix" 2>/dev/null) || SERVICE_PREFIX=""
 
