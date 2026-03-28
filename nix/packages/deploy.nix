@@ -36,13 +36,15 @@ writeShellApplication {
 
   text = ''
     if [ ! -f scripts/deploy.sh ]; then
-      echo "Error: must run from an open-platform checkout (scripts/deploy.sh not found)"
-      echo ""
-      echo "Quickstart:"
-      echo "  git clone https://github.com/trevato/open-platform && cd open-platform"
-      echo "  cp open-platform.yaml.example open-platform.yaml"
-      echo "  nix run .#deploy"
-      exit 1
+      CLONE_DIR="''${HOME}/open-platform"
+      if [ -d "$CLONE_DIR/.git" ]; then
+        echo "Updating $CLONE_DIR..."
+        git -C "$CLONE_DIR" pull --ff-only
+      else
+        echo "Cloning open-platform to $CLONE_DIR..."
+        git clone https://github.com/trevato/open-platform "$CLONE_DIR"
+      fi
+      cd "$CLONE_DIR"
     fi
 
     exec bash scripts/deploy.sh "$@"
