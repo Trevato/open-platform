@@ -16,11 +16,6 @@ spec:
       postInitSQL:
         - CREATE DATABASE platform_ledger
         - CREATE DATABASE product_garden
-        # BEGIN zulip
-        - CREATE DATABASE zulip
-        - CREATE ROLE zulip WITH LOGIN
-        - ALTER DATABASE zulip OWNER TO zulip
-        # END zulip
   postgresql:
     parameters:
       max_connections: "200"

@@ -77,7 +77,7 @@ spec:
   sourceRef:
     kind: GitRepository
     name: open-platform
-  path: ./
+  path: ./platform
   prune: true
   wait: true
 EOF
