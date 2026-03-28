@@ -42,7 +42,7 @@ writeShellApplication {
         git -C "$CLONE_DIR" pull --ff-only
       else
         echo "Cloning open-platform to $CLONE_DIR..."
-        git clone https://github.com/trevato/open-platform "$CLONE_DIR"
+        git clone https://github.com/Trevato/open-platform "$CLONE_DIR"
       fi
       cd "$CLONE_DIR"
     fi
