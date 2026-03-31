@@ -2,6 +2,7 @@ import * as k8s from "@kubernetes/client-node";
 import pool from "./db.js";
 import type {
   AppInfo,
+  PreviewInfo,
   ServiceStatus,
   InstanceServiceStatus,
   InstanceAppInfo,
@@ -201,6 +202,96 @@ export async function getAppStatus(
   } catch {
     return null;
   }
+}
+
+export async function getPreviewStatus(
+  org: string,
+  repo: string,
+  pr: number,
+): Promise<PreviewInfo | null> {
+  const namespace = `op-${org}-${repo}-pr-${pr}`;
+  try {
+    const [depList, url] = await Promise.all([
+      appsV1.listNamespacedDeployment({ namespace }),
+      getIngressUrl(namespace),
+    ]);
+    const dep = depList.items?.[0];
+    if (!dep) return null;
+
+    const ready = dep.status?.readyReplicas || 0;
+    const desired = dep.spec?.replicas || 0;
+    const isReady = ready >= desired && desired > 0;
+
+    return {
+      org,
+      repo,
+      pr,
+      namespace,
+      ready: isReady,
+      status: isReady ? "running" : ready > 0 ? "degraded" : "stopped",
+      replicas: { ready, desired, total: desired },
+      url: url || `https://pr-${pr}-${repo}.${PLATFORM_DOMAIN}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function listPreviews(
+  org: string,
+  repo: string,
+): Promise<PreviewInfo[]> {
+  const previews: PreviewInfo[] = [];
+
+  try {
+    const nsList = await coreV1.listNamespace({
+      labelSelector: `open-platform.sh/tier=workload,open-platform.sh/org=${org},open-platform.sh/repo=${repo},open-platform.sh/pr`,
+    });
+
+    for (const ns of nsList.items || []) {
+      const namespace = ns.metadata?.name || "";
+      const prLabel = ns.metadata?.labels?.["open-platform.sh/pr"];
+      const pr = prLabel ? parseInt(prLabel, 10) : 0;
+      if (!pr) continue;
+
+      try {
+        const [depList, url] = await Promise.all([
+          appsV1.listNamespacedDeployment({ namespace }),
+          getIngressUrl(namespace),
+        ]);
+        const dep = depList.items?.[0];
+        const ready = dep?.status?.readyReplicas || 0;
+        const desired = dep?.spec?.replicas || 0;
+        const isReady = ready >= desired && desired > 0;
+
+        previews.push({
+          org,
+          repo,
+          pr,
+          namespace,
+          ready: isReady,
+          status: isReady ? "running" : ready > 0 ? "degraded" : "stopped",
+          replicas: { ready, desired, total: desired },
+          url: url || `https://pr-${pr}-${repo}.${PLATFORM_DOMAIN}`,
+        });
+      } catch {
+        previews.push({
+          org,
+          repo,
+          pr,
+          namespace,
+          ready: false,
+          status: "stopped",
+          replicas: { ready: 0, desired: 0, total: 0 },
+          url: `https://pr-${pr}-${repo}.${PLATFORM_DOMAIN}`,
+        });
+      }
+    }
+  } catch {
+    // namespace listing failed
+  }
+
+  return previews;
 }
 
 // ─── Instance-scoped K8s clients ───

@@ -90,8 +90,14 @@ export function UserConnectionModal({ onClose }: UserConnectionModalProps) {
   }
 
   const mcpCommand = connection
+    ? `claude mcp add --transport http --scope user op-${connection.username} ${connection.mcp_url}`
+    : "";
+
+  const mcpCommandWithToken = connection
     ? `claude mcp add --transport http --scope user op-${connection.username} ${connection.mcp_url} --header "Authorization: Bearer ${connection.token}"`
     : "";
+
+  const [showFallback, setShowFallback] = useState(false);
 
   return (
     <div
@@ -173,6 +179,12 @@ export function UserConnectionModal({ onClose }: UserConnectionModalProps) {
               >
                 1. Add MCP Server
               </h3>
+              <p
+                className="text-xs text-muted"
+                style={{ lineHeight: 1.5, marginBottom: 8 }}
+              >
+                A browser window will open for authentication.
+              </p>
               <div style={{ position: "relative" }}>
                 <div style={codeBlockStyle}>{mcpCommand}</div>
                 <div
@@ -221,18 +233,43 @@ export function UserConnectionModal({ onClose }: UserConnectionModalProps) {
                 >
                   op-{connection.username}
                 </code>{" "}
-                server.
+                server. Tokens refresh automatically.
               </p>
             </div>
 
-            {/* Security note */}
-            <p
-              className="text-xs text-muted"
-              style={{ lineHeight: 1.5, marginTop: 4 }}
-            >
-              This command contains your Forgejo access token. It will be stored
-              in your Claude Code config (~/.claude.json).
-            </p>
+            {/* Fallback */}
+            <div>
+              <button
+                className="btn btn-ghost btn-sm text-xs text-muted"
+                onClick={() => setShowFallback(!showFallback)}
+                style={{ padding: "2px 0" }}
+              >
+                {showFallback ? "Hide" : "Show"} token-based fallback
+              </button>
+              {showFallback && (
+                <div style={{ marginTop: 8 }}>
+                  <p
+                    className="text-xs text-muted"
+                    style={{ lineHeight: 1.5, marginBottom: 8 }}
+                  >
+                    If OAuth isn{"'"}t working, use this command with an
+                    embedded token (expires in ~1 hour):
+                  </p>
+                  <div style={{ position: "relative" }}>
+                    <div style={codeBlockStyle}>{mcpCommandWithToken}</div>
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                      }}
+                    >
+                      <CopyButton text={mcpCommandWithToken} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

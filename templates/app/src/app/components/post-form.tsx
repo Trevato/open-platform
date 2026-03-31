@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CreatePostSchema } from "@/lib/schemas";
 
 export function PostForm() {
   const [title, setTitle] = useState("");
@@ -10,17 +11,24 @@ export function PostForm() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || submitting) return;
+    if (submitting) return;
+
+    const parsed = CreatePostSchema.safeParse({
+      title: title.trim(),
+      content: content.trim() || null,
+    });
+    if (!parsed.success) {
+      setError(parsed.error.errors[0]?.message || "Validation failed");
+      return;
+    }
+
     setSubmitting(true);
     setError("");
     try {
       const res = await fetch("/api/posts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: title.trim(),
-          content: content.trim() || null,
-        }),
+        body: JSON.stringify(parsed.data),
       });
       if (res.ok) {
         setTitle("");
@@ -28,7 +36,11 @@ export function PostForm() {
         window.location.reload();
       } else {
         const data = await res.json().catch(() => null);
-        setError(data?.error || `Failed to create post (${res.status})`);
+        setError(
+          data?.error?.message ||
+            data?.error ||
+            `Failed to create post (${res.status})`,
+        );
       }
     } finally {
       setSubmitting(false);
@@ -46,31 +58,16 @@ export function PostForm() {
         placeholder="Title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        style={{
-          width: "100%",
-          padding: "8px 12px",
-          background: "var(--bg-inset)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-btn)",
-          color: "var(--text-primary)",
-          marginBottom: 12,
-        }}
+        className="input"
+        style={{ width: "100%", marginBottom: 12 }}
       />
       <textarea
         placeholder="Write something..."
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={3}
-        style={{
-          width: "100%",
-          padding: "8px 12px",
-          background: "var(--bg-inset)",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius-btn)",
-          color: "var(--text-primary)",
-          resize: "vertical",
-          marginBottom: 12,
-        }}
+        className="input"
+        style={{ width: "100%", resize: "vertical", marginBottom: 12 }}
       />
       {error && (
         <p

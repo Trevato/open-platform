@@ -21,6 +21,7 @@ OAUTH2_APPS=(
   "Console|https://${PREFIX}console.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
   "Jitsi|https://${PREFIX}meet-auth.${DOMAIN}/callback|true"
   "Zulip|https://${PREFIX}chat.${DOMAIN}/complete/oidc/|true"
+  "MCP-Auth|https://${PREFIX}api.${DOMAIN}/oauth/callback|true"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -263,6 +264,21 @@ if kubectl get ns zulip >/dev/null 2>&1; then
   fi
 else
   echo "Skipping Zulip OIDC secret (zulip not enabled)."
+fi
+
+# ── MCP-Auth OAuth2 secret (op-api) ──────────────────────────────────────────
+
+if [ -n "${CLIENT_SECRETS[MCP-Auth]}" ]; then
+  echo "Creating MCP-Auth OAuth2 secret..."
+  apply_secret op-api-oauth -n op-system-op-api \
+    --from-literal=client-id="${CLIENT_IDS[MCP-Auth]}" \
+    --from-literal=client-secret="${CLIENT_SECRETS[MCP-Auth]}"
+elif kubectl get secret op-api-oauth -n op-system-op-api -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+  echo "MCP-Auth OAuth2 secret already exists."
+else
+  echo "Warning: MCP-Auth OAuth2 app exists but 'op-api-oauth' secret is missing."
+  echo "Delete the app in Forgejo and re-run, or create the secret manually."
+  exit 1
 fi
 
 echo "OAuth2 setup complete."

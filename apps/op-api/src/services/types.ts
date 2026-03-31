@@ -184,6 +184,17 @@ export interface AppInfo {
   url: string;
 }
 
+export interface PreviewInfo {
+  org: string;
+  repo: string;
+  pr: number;
+  namespace: string;
+  ready: boolean;
+  status: "running" | "degraded" | "stopped";
+  replicas: { ready: number; desired: number; total: number };
+  url: string;
+}
+
 export interface ServiceStatus {
   name: string;
   namespace: string;

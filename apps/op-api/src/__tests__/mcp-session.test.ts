@@ -312,7 +312,7 @@ describe("MCP session idle tracking", () => {
 // in index.ts, but invoked directly rather than waiting for the timer).
 
 describe("MCP idle session cleanup", () => {
-  const SESSION_TTL = 30 * 60 * 1000; // 30 minutes
+  const SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours — matches index.ts maxAge
 
   function runCleanup(transports: Map<string, SessionEntry>) {
     for (const [id, entry] of transports) {

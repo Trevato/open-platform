@@ -7,14 +7,9 @@ const text = (data: unknown) => ({
 });
 
 export function registerAppTools(server: McpServer) {
-  server.tool(
-    "list_apps",
-    "List all deployed applications",
-    {},
-    async () => {
-      return text(await k8sService.getApps());
-    },
-  );
+  server.tool("list_apps", "List all deployed applications", {}, async () => {
+    return text(await k8sService.getApps());
+  });
 
   server.tool(
     "get_app_status",
@@ -43,6 +38,32 @@ export function registerAppTools(server: McpServer) {
         services,
         apps,
       });
+    },
+  );
+
+  server.tool(
+    "get_preview_status",
+    "Get the deployment status of a PR preview environment. Returns URL, readiness, and replica info.",
+    {
+      org: z.string().describe("Organization name"),
+      repo: z.string().describe("Repository / app name"),
+      pr: z.number().describe("Pull request number"),
+    },
+    async ({ org, repo, pr }) => {
+      const preview = await k8sService.getPreviewStatus(org, repo, pr);
+      return text(preview || { error: "Preview not found" });
+    },
+  );
+
+  server.tool(
+    "list_previews",
+    "List all active preview environments for a repository",
+    {
+      org: z.string().describe("Organization name"),
+      repo: z.string().describe("Repository / app name"),
+    },
+    async ({ org, repo }) => {
+      return text(await k8sService.listPreviews(org, repo));
     },
   );
 }

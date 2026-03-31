@@ -22,6 +22,7 @@ import { devPodsPlugin } from "./routes/dev-pods.js";
 import { agentRoutes } from "./routes/agents.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { mcpToolsPlugin } from "./routes/mcp-tools.js";
+import { oauthRoutes } from "./auth/oauth-routes.js";
 import { models } from "./models.js";
 import { logger } from "./logger.js";
 import { initScheduler } from "./services/scheduler.js";
@@ -39,7 +40,7 @@ const transports = new Map<
 // Clean up idle sessions every 5 minutes
 setInterval(
   () => {
-    const maxAge = 30 * 60 * 1000; // 30 minutes of inactivity
+    const maxAge = 4 * 60 * 60 * 1000; // 4 hours of inactivity
     for (const [id, entry] of transports) {
       if (Date.now() - entry.lastAccessedAt > maxAge) {
         entry.transport.close();
@@ -129,6 +130,31 @@ const app = new Elysia()
     detail: { tags: ["Health"], security: [] },
   })
 
+  // OAuth2 Protected Resource Metadata (RFC 9728)
+  .get(
+    "/.well-known/oauth-protected-resource",
+    () => {
+      const domain = process.env.PLATFORM_DOMAIN || "";
+      const prefix = process.env.SERVICE_PREFIX || "";
+      return {
+        resource: `https://${prefix}api.${domain}/mcp`,
+        authorization_servers: [`https://${prefix}api.${domain}`],
+        scopes_supported: [
+          "read:user",
+          "write:repository",
+          "read:repository",
+          "read:organization",
+          "write:issue",
+          "read:issue",
+        ],
+      };
+    },
+    { detail: { hide: true } },
+  )
+
+  // OAuth 2.1 routes (register, authorize, callback, token)
+  .use(oauthRoutes)
+
   // REST API routes (all require Bearer token, except webhooks)
   .group("/api/v1", (app) =>
     app
@@ -153,6 +179,9 @@ const app = new Elysia()
   // MCP endpoint — Streamable HTTP with session management
   .all("/mcp", async ({ request }) => {
     const method = request.method;
+    const _mcpDomain = process.env.PLATFORM_DOMAIN || "";
+    const _mcpPrefix = process.env.SERVICE_PREFIX || "";
+    const _wwwAuth = `Bearer resource_metadata="https://${_mcpPrefix}api.${_mcpDomain}/.well-known/oauth-protected-resource"`;
 
     // DELETE — close session
     if (method === "DELETE") {
@@ -160,13 +189,22 @@ const app = new Elysia()
       if (!user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "WWW-Authenticate": _wwwAuth,
+          },
         });
       }
       const sessionId = request.headers.get("mcp-session-id");
       if (sessionId) {
         const entry = transports.get(sessionId);
         if (entry) {
+          if (entry.userLogin !== user.login) {
+            return new Response(JSON.stringify({ error: "Forbidden" }), {
+              status: 403,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
           entry.transport.close();
           transports.delete(sessionId);
         }
@@ -180,7 +218,10 @@ const app = new Elysia()
       if (!user) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
           status: 401,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "WWW-Authenticate": _wwwAuth,
+          },
         });
       }
       const sessionId = request.headers.get("mcp-session-id");
@@ -206,7 +247,10 @@ const app = new Elysia()
     if (!user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": _wwwAuth,
+        },
       });
     }
 
@@ -225,9 +269,11 @@ const app = new Elysia()
       return entry.transport.handleRequest(request);
     }
 
-    // New session — must be initialize request
+    // New or stale session — parse body to determine handling
     const body = await request.json();
-    if (!isInitializeRequest(body)) {
+
+    // No session ID and not an initialize request — client error
+    if (!sessionId && !isInitializeRequest(body)) {
       return new Response(
         JSON.stringify({
           error:
@@ -237,6 +283,7 @@ const app = new Elysia()
       );
     }
 
+    // Create a fresh session (handles both new and stale/expired sessions)
     const newSessionId = randomUUID();
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
@@ -249,6 +296,10 @@ const app = new Elysia()
 
     const server = createMcpServer(user);
     await server.connect(transport);
+
+    // For stale sessions with non-initialize requests, the new session
+    // handles the request transparently — each tool call is self-contained
+    // since the user's Forgejo token arrives in the bearer header every time.
     return transport.handleRequest(request, { parsedBody: body });
   })
 

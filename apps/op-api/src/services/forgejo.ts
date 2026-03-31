@@ -475,6 +475,38 @@ export class ForgejoClient {
     );
   }
 
+  async changeFiles(
+    owner: string,
+    repo: string,
+    opts: {
+      message: string;
+      branch?: string;
+      files: Array<{
+        operation: "create" | "update" | "upload" | "delete";
+        path: string;
+        content?: string;
+      }>;
+    },
+  ): Promise<ForgejoFileResponse> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          message: opts.message,
+          branch: opts.branch,
+          files: opts.files.map((f) => ({
+            operation: f.operation,
+            path: f.path,
+            ...(f.content != null
+              ? { content: Buffer.from(f.content).toString("base64") }
+              : {}),
+          })),
+        }),
+      },
+    );
+  }
+
   // PR Reviews
 
   async approvePR(

@@ -1,4 +1,5 @@
 import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { NextRequest } from "next/server";
 
 // --- Mocks must be declared before importing the modules under test ---
 
@@ -33,6 +34,16 @@ const {
 } = await import("@/app/api/posts/[id]/route");
 
 // --- Helpers ---
+
+function listRequest(params?: Record<string, string>): NextRequest {
+  const url = new URL("http://localhost/api/posts");
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
+    }
+  }
+  return new NextRequest(url);
+}
 
 function postRequest(body?: unknown): Request {
   if (body === undefined) {
@@ -83,7 +94,7 @@ describe("POST /api/posts", () => {
     const res = await createPost(postRequest({ title: "Hello" }));
     expect(res.status).toBe(401);
     const body = await res.json();
-    expect(body.error).toBe("Unauthorized");
+    expect(body.error.message).toBe("Unauthorized");
   });
 
   it("rejects invalid JSON with 400", async () => {
@@ -91,14 +102,14 @@ describe("POST /api/posts", () => {
     const res = await createPost(postRequest());
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe("Invalid JSON");
+    expect(body.error.message).toBe("Invalid JSON");
   });
 
   it("rejects empty title with 400", async () => {
     mockSession = testSession;
     const res = await createPost(postRequest({ title: "", content: "body" }));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("Title required");
+    expect((await res.json()).error.message).toBe("Title required");
   });
 
   it("rejects title > 200 chars with 400", async () => {
@@ -107,7 +118,7 @@ describe("POST /api/posts", () => {
       postRequest({ title: "x".repeat(201), content: "body" }),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("Title too long");
+    expect((await res.json()).error.message).toContain("Title too long");
   });
 
   it("rejects content > 10000 chars with 400", async () => {
@@ -116,7 +127,7 @@ describe("POST /api/posts", () => {
       postRequest({ title: "Valid", content: "x".repeat(10001) }),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("Content too long");
+    expect((await res.json()).error.message).toContain("Content too long");
   });
 
   it("inserts with parameterized query and returns 201", async () => {
@@ -129,7 +140,7 @@ describe("POST /api/posts", () => {
     );
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.id).toBe("new-id");
+    expect(body.data.id).toBe("new-id");
 
     // Verify parameterized query — SQL must use $1/$2/$3 placeholders
     const [sql, params] = mockQuery.mock.calls[0];
@@ -142,13 +153,19 @@ describe("POST /api/posts", () => {
 
 describe("GET /api/posts", () => {
   it("returns only public fields (no author_id)", async () => {
-    mockQuery.mockImplementation(() =>
+    // Count query
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [{ count: 1 }], rowCount: 1 }),
+    );
+    // Select query
+    mockQuery.mockImplementationOnce(() =>
       Promise.resolve({
         rows: [
           {
             id: "1",
             title: "Post",
             content: "Body",
+            published: true,
             created_at: "2026-01-01",
             author: "Alice",
             author_image: null,
@@ -157,14 +174,72 @@ describe("GET /api/posts", () => {
         rowCount: 1,
       }),
     );
-    const res = await listPosts();
+    const res = await listPosts(listRequest());
     const body = await res.json();
-    expect(body).toHaveLength(1);
-    expect(body[0]).not.toHaveProperty("author_id");
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0]).not.toHaveProperty("author_id");
+    expect(body.meta).toEqual({ total: 1, limit: 20, offset: 0 });
     // The SELECT clause should not expose author_id — it's used in JOIN but not returned
-    const [sql] = mockQuery.mock.calls[0] as [string];
-    const selectClause = sql.slice(0, sql.indexOf("FROM"));
+    const [, [selectSql]] = [mockQuery.mock.calls[0], mockQuery.mock.calls[1]];
+    const selectClause = (selectSql as string).slice(
+      0,
+      (selectSql as string).indexOf("FROM"),
+    );
     expect(selectClause).not.toContain("author_id");
+  });
+
+  it("filters by search query with ILIKE", async () => {
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [{ count: 0 }], rowCount: 1 }),
+    );
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [], rowCount: 0 }),
+    );
+    await listPosts(listRequest({ q: "hello" }));
+
+    // Both count and select queries should contain ILIKE
+    const [countSql, countParams] = mockQuery.mock.calls[0] as [
+      string,
+      unknown[],
+    ];
+    expect(countSql).toContain("ILIKE");
+    expect(countParams).toContain("%hello%");
+
+    const [selectSql, selectParams] = mockQuery.mock.calls[1] as [
+      string,
+      unknown[],
+    ];
+    expect(selectSql).toContain("ILIKE");
+    expect(selectParams[0]).toBe("%hello%");
+  });
+
+  it("returns all posts when status=all (no published filter)", async () => {
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [{ count: 0 }], rowCount: 1 }),
+    );
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [], rowCount: 0 }),
+    );
+    await listPosts(listRequest({ status: "all" }));
+
+    const [countSql] = mockQuery.mock.calls[0] as [string];
+    expect(countSql).not.toContain("published");
+  });
+
+  it("calculates correct offset for page=2", async () => {
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [{ count: 25 }], rowCount: 1 }),
+    );
+    mockQuery.mockImplementationOnce(() =>
+      Promise.resolve({ rows: [], rowCount: 0 }),
+    );
+    const res = await listPosts(listRequest({ page: "2" }));
+    const body = await res.json();
+
+    expect(body.meta.offset).toBe(20);
+    // Select query params should include offset=20
+    const [, selectParams] = mockQuery.mock.calls[1] as [string, unknown[]];
+    expect(selectParams).toContain(20);
   });
 });
 
@@ -184,7 +259,7 @@ describe("PATCH /api/posts/:id", () => {
     );
     const res = await updatePost(patchRequest({ title: "New" }), idParams);
     expect(res.status).toBe(403);
-    expect((await res.json()).error).toBe("Forbidden");
+    expect((await res.json()).error.message).toBe("Forbidden");
   });
 
   it("rejects empty string title with 400", async () => {
@@ -197,7 +272,7 @@ describe("PATCH /api/posts/:id", () => {
     );
     const res = await updatePost(patchRequest({ title: "" }), idParams);
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe("Title required");
+    expect((await res.json()).error.message).toBe("Title required");
   });
 
   it("rejects title > 200 chars with 400", async () => {
@@ -213,7 +288,7 @@ describe("PATCH /api/posts/:id", () => {
       idParams,
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("Title too long");
+    expect((await res.json()).error.message).toContain("Title too long");
   });
 });
 
@@ -243,6 +318,7 @@ describe("DELETE /api/posts/:id", () => {
       idParams,
     );
     expect(res.status).toBe(403);
+    expect((await res.json()).error.message).toBe("Forbidden");
   });
 });
 
@@ -255,6 +331,7 @@ describe("GET /api/posts/:id", () => {
             id: "1",
             title: "Post",
             content: "Body",
+            published: true,
             created_at: "2026-01-01",
             author: "Alice",
             author_image: null,
@@ -268,10 +345,24 @@ describe("GET /api/posts/:id", () => {
       idParams,
     );
     const body = await res.json();
-    expect(body).not.toHaveProperty("author_id");
+    expect(body.data).not.toHaveProperty("author_id");
     // The SELECT clause should not expose author_id
     const [sql] = mockQuery.mock.calls[0] as [string];
     const selectClause = sql.slice(0, sql.indexOf("FROM"));
     expect(selectClause).not.toContain("author_id");
+  });
+
+  it("returns 404 for missing post", async () => {
+    mockQuery.mockImplementation(() =>
+      Promise.resolve({ rows: [], rowCount: 0 }),
+    );
+    const res = await getPost(
+      new Request("http://localhost/api/posts/missing"),
+      idParams,
+    );
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error.code).toBe("NOT_FOUND");
+    expect(body.error.message).toBe("Not found");
   });
 });

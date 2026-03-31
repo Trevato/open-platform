@@ -1,11 +1,4 @@
-interface Post {
-  id: string;
-  title: string;
-  content: string | null;
-  author: string;
-  author_image: string | null;
-  created_at: string;
-}
+import type { Post } from "@/lib/schemas";
 
 function timeAgo(date: string) {
   const seconds = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
@@ -42,9 +35,19 @@ export function PostCard({ post }: { post: Post }) {
         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {timeAgo(post.created_at)}
         </span>
+        {!post.published && (
+          <span
+            className="badge"
+            style={{ background: "var(--accent-bg)", color: "var(--accent)" }}
+          >
+            Draft
+          </span>
+        )}
       </div>
       <h2 style={{ fontSize: 17, fontWeight: 600, marginBottom: 8 }}>
-        {post.title}
+        <a href={`/posts/${post.id}`} style={{ color: "inherit" }}>
+          {post.title}
+        </a>
       </h2>
       {post.content && (
         <p

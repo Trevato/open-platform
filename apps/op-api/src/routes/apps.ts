@@ -1,6 +1,11 @@
 import { Elysia, t } from "elysia";
 import { authPlugin } from "../auth.js";
-import { getApps, getAppStatus } from "../services/k8s.js";
+import {
+  getApps,
+  getAppStatus,
+  getPreviewStatus,
+  listPreviews,
+} from "../services/k8s.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
 import { ForgejoClient } from "../services/forgejo.js";
 
@@ -31,6 +36,31 @@ export const appsPlugin = new Elysia({ prefix: "/apps" })
     {
       params: repoParams,
       detail: { tags: ["Apps"], summary: "Get app status" },
+    },
+  )
+  .get(
+    "/:org/:repo/previews",
+    async ({ params: { org, repo } }) => {
+      return listPreviews(org, repo);
+    },
+    {
+      params: repoParams,
+      detail: { tags: ["Apps"], summary: "List preview environments" },
+    },
+  )
+  .get(
+    "/:org/:repo/previews/:pr",
+    async ({ params: { org, repo, pr }, set }) => {
+      const preview = await getPreviewStatus(org, repo, parseInt(pr, 10));
+      if (!preview) {
+        set.status = 404;
+        return { error: "Preview not found" };
+      }
+      return preview;
+    },
+    {
+      params: t.Object({ org: t.String(), repo: t.String(), pr: t.String() }),
+      detail: { tags: ["Apps"], summary: "Get preview environment status" },
     },
   )
   .post(

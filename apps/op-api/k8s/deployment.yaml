@@ -81,6 +81,18 @@ spec:
                   name: anthropic-api-key
                   key: api-key
                   optional: true
+            - name: MCP_OAUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: op-api-oauth
+                  key: client-id
+                  optional: true
+            - name: MCP_OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: op-api-oauth
+                  key: client-secret
+                  optional: true
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/certs/ca-bundle.crt"
             - name: NODE_TLS_REJECT_UNAUTHORIZED
