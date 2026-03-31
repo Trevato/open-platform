@@ -13,6 +13,16 @@ interface SessionEntry {
   userLogin: string;
 }
 
+// Map Bearer tokens to usernames for testing
+function getUserLogin(request: Request): string | null {
+  const auth = request.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) return null;
+  const token = auth.slice(7);
+  // Simple mapping: "user-alice-token" → "alice", "user-bob-token" → "bob"
+  if (token.startsWith("user-")) return token.slice(5).replace("-token", "");
+  return "default-user";
+}
+
 function createMcpApp() {
   const transports = new Map<string, SessionEntry>();
 
@@ -23,10 +33,24 @@ function createMcpApp() {
 
       // DELETE — close session
       if (method === "DELETE") {
+        const authHeader = request.headers.get("authorization");
+        if (!authHeader?.startsWith("Bearer ")) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const userLogin = getUserLogin(request);
         const sessionId = request.headers.get("mcp-session-id");
         if (sessionId) {
           const entry = transports.get(sessionId);
           if (entry) {
+            if (entry.userLogin !== userLogin) {
+              return new Response(JSON.stringify({ error: "Forbidden" }), {
+                status: 403,
+                headers: { "Content-Type": "application/json" },
+              });
+            }
             entry.transport.close();
             transports.delete(sessionId);
           }
@@ -43,11 +67,18 @@ function createMcpApp() {
             headers: { "Content-Type": "application/json" },
           });
         }
+        const userLogin = getUserLogin(request);
         const sessionId = request.headers.get("mcp-session-id");
         const entry = sessionId ? transports.get(sessionId) : undefined;
         if (!entry) {
           return new Response(JSON.stringify({ error: "Session not found" }), {
             status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        if (entry.userLogin !== userLogin) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
             headers: { "Content-Type": "application/json" },
           });
         }
@@ -64,18 +95,27 @@ function createMcpApp() {
         });
       }
 
+      const userLogin = getUserLogin(request)!;
       const sessionId = request.headers.get("mcp-session-id");
 
       // Existing session
       if (sessionId && transports.has(sessionId)) {
         const entry = transports.get(sessionId)!;
+        if (entry.userLogin !== userLogin) {
+          return new Response(JSON.stringify({ error: "Forbidden" }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         entry.lastAccessedAt = Date.now();
         return entry.transport.handleRequest(request);
       }
 
       // New session — must be initialize request (simplified check)
       const body = await request.json();
-      if (body?.method !== "initialize") {
+
+      // No session ID and not initialize — client error
+      if (!sessionId && body?.method !== "initialize") {
         return new Response(
           JSON.stringify({
             error:
@@ -85,7 +125,7 @@ function createMcpApp() {
         );
       }
 
-      // Simulate session creation
+      // Create a fresh session (handles both new and stale/expired sessions)
       const newSessionId = crypto.randomUUID();
       const mockTransport = {
         handleRequest: (_req: Request) =>
@@ -101,7 +141,7 @@ function createMcpApp() {
       transports.set(newSessionId, {
         transport: mockTransport,
         lastAccessedAt: Date.now(),
-        userLogin: "test-user",
+        userLogin,
       });
       return mockTransport.handleRequest(request);
     })
@@ -120,6 +160,27 @@ function authedRequest(
     method,
     headers: {
       Authorization: "Bearer test-token",
+      "Content-Type": "application/json",
+      ...headers,
+    },
+  };
+  if (body !== undefined) {
+    opts.body = JSON.stringify(body);
+  }
+  return new Request(`http://localhost${path}`, opts);
+}
+
+function userRequest(
+  user: string,
+  method: string,
+  path: string,
+  headers?: Record<string, string>,
+  body?: unknown,
+): Request {
+  const opts: RequestInit = {
+    method,
+    headers: {
+      Authorization: `Bearer user-${user}-token`,
       "Content-Type": "application/json",
       ...headers,
     },
@@ -170,10 +231,12 @@ describe("MCP auth enforcement", () => {
     expect(body.error).toBe("Unauthorized");
   });
 
-  test("DELETE /mcp without auth → 200 (graceful no-op)", async () => {
+  test("DELETE /mcp without auth → 401", async () => {
     const { app } = createMcpApp();
     const res = await app.handle(unauthRequest("DELETE", "/mcp"));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
   });
 });
 
@@ -235,9 +298,9 @@ describe("MCP session lifecycle", () => {
 
     const entry = transports.get(sessionId)!;
 
-    // Delete session
+    // Delete session (same user)
     const res = await app.handle(
-      unauthRequest("DELETE", "/mcp", { "mcp-session-id": sessionId }),
+      authedRequest("DELETE", "/mcp", { "mcp-session-id": sessionId }),
     );
     expect(res.status).toBe(200);
     expect(transports.size).toBe(0);
@@ -247,7 +310,7 @@ describe("MCP session lifecycle", () => {
   test("DELETE with unknown session ID → 200 (no-op)", async () => {
     const { app, transports } = createMcpApp();
     const res = await app.handle(
-      unauthRequest("DELETE", "/mcp", { "mcp-session-id": "bogus" }),
+      authedRequest("DELETE", "/mcp", { "mcp-session-id": "bogus" }),
     );
     expect(res.status).toBe(200);
     expect(transports.size).toBe(0);
@@ -391,5 +454,176 @@ describe("MCP idle session cleanup", () => {
     const transports = new Map<string, SessionEntry>();
     runCleanup(transports);
     expect(transports.size).toBe(0);
+  });
+});
+
+// ── Cross-user session isolation ──────────────────────────────────────
+
+describe("MCP cross-user session isolation", () => {
+  async function createSessionForUser(
+    app: ReturnType<typeof createMcpApp>["app"],
+    user: string,
+  ): Promise<string> {
+    const res = await app.handle(
+      userRequest(user, "POST", "/mcp", {}, { method: "initialize" }),
+    );
+    expect(res.status).toBe(200);
+    return res.headers.get("mcp-session-id")!;
+  }
+
+  test("POST to existing session with different user → 403", async () => {
+    const { app } = createMcpApp();
+    const sessionId = await createSessionForUser(app, "alice");
+
+    // Bob tries to POST to Alice's session
+    const res = await app.handle(
+      userRequest(
+        "bob",
+        "POST",
+        "/mcp",
+        { "mcp-session-id": sessionId },
+        {
+          method: "tools/list",
+        },
+      ),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
+  });
+
+  test("GET to existing session with different user → 403", async () => {
+    const { app } = createMcpApp();
+    const sessionId = await createSessionForUser(app, "alice");
+
+    // Bob tries to GET Alice's session
+    const res = await app.handle(
+      userRequest("bob", "GET", "/mcp", { "mcp-session-id": sessionId }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
+  });
+
+  test("DELETE to existing session with different user → 403", async () => {
+    const { app, transports } = createMcpApp();
+    const sessionId = await createSessionForUser(app, "alice");
+
+    // Bob tries to DELETE Alice's session
+    const res = await app.handle(
+      userRequest("bob", "DELETE", "/mcp", { "mcp-session-id": sessionId }),
+    );
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.error).toBe("Forbidden");
+
+    // Session should still exist
+    expect(transports.size).toBe(1);
+    expect(transports.has(sessionId)).toBe(true);
+  });
+
+  test("Same user accessing own session → 200", async () => {
+    const { app } = createMcpApp();
+    const sessionId = await createSessionForUser(app, "alice");
+
+    // Alice accesses her own session via GET
+    const getRes = await app.handle(
+      userRequest("alice", "GET", "/mcp", { "mcp-session-id": sessionId }),
+    );
+    expect(getRes.status).toBe(200);
+
+    // Alice accesses her own session via POST
+    const postRes = await app.handle(
+      userRequest(
+        "alice",
+        "POST",
+        "/mcp",
+        { "mcp-session-id": sessionId },
+        {
+          method: "tools/list",
+        },
+      ),
+    );
+    expect(postRes.status).toBe(200);
+
+    // Alice deletes her own session
+    const deleteRes = await app.handle(
+      userRequest("alice", "DELETE", "/mcp", { "mcp-session-id": sessionId }),
+    );
+    expect(deleteRes.status).toBe(200);
+  });
+});
+
+// ── DELETE auth enforcement ───────────────────────────────────────────
+
+describe("MCP DELETE auth enforcement", () => {
+  test("DELETE without Authorization header → 401", async () => {
+    const { app } = createMcpApp();
+    const res = await app.handle(unauthRequest("DELETE", "/mcp"));
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe("Unauthorized");
+  });
+
+  test("DELETE with valid auth and valid session → 200", async () => {
+    const { app, transports } = createMcpApp();
+
+    // Create session as alice
+    const initRes = await app.handle(
+      userRequest("alice", "POST", "/mcp", {}, { method: "initialize" }),
+    );
+    const sessionId = initRes.headers.get("mcp-session-id")!;
+    expect(transports.size).toBe(1);
+
+    // Alice deletes her session with valid auth
+    const res = await app.handle(
+      userRequest("alice", "DELETE", "/mcp", { "mcp-session-id": sessionId }),
+    );
+    expect(res.status).toBe(200);
+    expect(transports.size).toBe(0);
+  });
+});
+
+// ── Stale session recovery ────────────────────────────────────────────
+
+describe("MCP stale session recovery", () => {
+  test("POST with nonexistent session ID creates new session", async () => {
+    const { app, transports } = createMcpApp();
+    const staleSessionId = "stale-session-that-no-longer-exists";
+
+    // POST with a stale session ID and initialize body — should create new session
+    const res = await app.handle(
+      authedRequest(
+        "POST",
+        "/mcp",
+        { "mcp-session-id": staleSessionId },
+        { method: "initialize" },
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(transports.size).toBe(1);
+
+    // The new session ID should be present in the response
+    const newSessionId = res.headers.get("mcp-session-id");
+    expect(newSessionId).toBeTruthy();
+  });
+
+  test("new session ID differs from stale one", async () => {
+    const { app } = createMcpApp();
+    const staleSessionId = "stale-session-that-expired";
+
+    const res = await app.handle(
+      authedRequest(
+        "POST",
+        "/mcp",
+        { "mcp-session-id": staleSessionId },
+        { method: "initialize" },
+      ),
+    );
+    expect(res.status).toBe(200);
+
+    const newSessionId = res.headers.get("mcp-session-id");
+    expect(newSessionId).toBeTruthy();
+    expect(newSessionId).not.toBe(staleSessionId);
   });
 });

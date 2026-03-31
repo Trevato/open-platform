@@ -205,6 +205,16 @@ export class ForgejoClient {
     );
     if (!res.ok) {
       const body = await res.text();
+      if (res.status === 405) {
+        throw new Error(
+          `Cannot merge PR #${index}: merge conflict or branch is not mergeable. Resolve conflicts and try again.`,
+        );
+      }
+      if (res.status === 409) {
+        throw new Error(
+          `Cannot merge PR #${index}: head branch is out of date. Update the branch and try again.`,
+        );
+      }
       throw new Error(`Forgejo merge PR ${res.status}: ${body}`);
     }
   }
@@ -488,6 +498,32 @@ export class ForgejoClient {
       }>;
     },
   ): Promise<ForgejoFileResponse> {
+    // Resolve "upload" (upsert) to "create" or "update" by checking existence
+    const resolvedFiles = await Promise.all(
+      opts.files.map(async (f) => {
+        let operation = f.operation;
+        if (operation === "upload") {
+          try {
+            const ref = opts.branch || "";
+            const refParam = ref ? `?ref=${encodeURIComponent(ref)}` : "";
+            await this.fetchJSON(
+              `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${f.path}${refParam}`,
+            );
+            operation = "update";
+          } catch {
+            operation = "create";
+          }
+        }
+        return {
+          operation,
+          path: f.path,
+          ...(f.content != null
+            ? { content: Buffer.from(f.content).toString("base64") }
+            : {}),
+        };
+      }),
+    );
+
     return this.fetchJSON(
       `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`,
       {
@@ -495,13 +531,7 @@ export class ForgejoClient {
         body: JSON.stringify({
           message: opts.message,
           branch: opts.branch,
-          files: opts.files.map((f) => ({
-            operation: f.operation,
-            path: f.path,
-            ...(f.content != null
-              ? { content: Buffer.from(f.content).toString("base64") }
-              : {}),
-          })),
+          files: resolvedFiles,
         }),
       },
     );
