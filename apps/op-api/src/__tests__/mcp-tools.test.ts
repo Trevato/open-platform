@@ -148,7 +148,7 @@ describe("MCP tool catalog", () => {
     const { client, cleanup } = await createTestClient(testUser);
     try {
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(64);
+      expect(tools.length).toBe(39);
     } finally {
       await cleanup();
     }
@@ -169,7 +169,6 @@ describe("MCP tool catalog", () => {
       expect(names).toContain("create_pr");
       expect(names).toContain("list_issues");
       expect(names).toContain("list_apps");
-      expect(names).toContain("list_agents");
     } finally {
       await cleanup();
     }

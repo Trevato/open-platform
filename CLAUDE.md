@@ -14,16 +14,14 @@ Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ──�
                                               ├── s3 ─────────► MinIO S3 API
                                               ├── oauth2 ─────► OAuth2-Proxy (preview auth)
                                               ├── mail ───────► Mailpit (SMTP catch-all, dev mode)
-                                              ├── meet ───────► Jitsi Meet (video conferencing, optional)
-                                              ├── chat ───────► Zulip (team messaging, optional)
-                                              ├── console ────► Console (dashboard, instance mgmt)
+                                              ├── meet ───────► Jitsi Meet (video conferencing)
+                                              ├── chat ───────► Zulip (team messaging)
+                                              ├── console ────► Console (platform control panel)
                                               ├── api ────────► Platform API (REST + MCP)
                                               └── <app> ──────► Apps (from template)
 
 Console ──► op-api (REST) ──► Forgejo API + K8s API
-op-api ──► MCP Server (61 tools across 13 categories)
-op-api ──► DevPods (K8s-native dev environments with Claude Code)
-op-api ──► Agents (managed AI identities triggered via @mentions in issues/PRs)
+op-api ──► MCP Server (~39 tools across 9 categories)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -77,27 +75,6 @@ PR previews deploy at `pr-N-<app>.open-platform.sh`, protected by OAuth2-Proxy (
 - **Flux** manages the platform. `platform/` directory contains HelmReleases + manifests, pushed to `system/open-platform` on Forgejo. Changes auto-apply via Flux reconciliation.
 - **Woodpecker CI** deploys apps. App template includes 4 workflows: deploy (main branch), preview (PR — isolated DB/bucket per PR), preview-cleanup (PR close), and reset (manual data wipe).
 
-### Multi-Tenant Hosting (vCluster)
-
-For hosting multiple customers on a single k3s cluster, each customer gets an isolated vCluster instance:
-
-```
-Host k3s (VxRail)
-├── provisioner ns     ─── CronJob polls console DB, runs provision/teardown
-├── op-system-console  ─── Management console (create instances, view credentials)
-├── cloudflare ns      ─── Cloudflared tunnel (*.open-platform.sh)
-├── vc-{slug} ns       ─── Customer vCluster (full open-platform inside)
-│   ├── forgejo, woodpecker, headlamp, minio, postgres, flux
-│   ├── op-system-{app} namespaces (apps deployed by Woodpecker)
-│   └── Ingresses synced to host → host Traefik routes via {slug}-{service}.{domain}
-└── vc-{slug2} ns      ─── Another customer...
-```
-
-- **Provisioning flow**: Console creates DB record (status: pending) → Reconciler CronJob picks up → `provision-instance.sh` creates vCluster + bootstraps open-platform → status: ready
-- **Teardown flow**: Console sets status: terminating → Reconciler runs `teardown-instance.sh` → deletes vCluster namespace (cascades everything)
-- **Resource tiers**: free (500m/2Gi/10Gi), pro (2CPU/8Gi/50Gi), team (4CPU/16Gi/100Gi)
-- **Domain isolation**: `service_prefix: "{slug}-"` ensures unique subdomains per customer
-
 ## Services
 
 | Service      | Namespace           | Domain                                             | Role                                                                                   |
@@ -109,10 +86,10 @@ Host k3s (VxRail)
 | PostgreSQL   | `postgres`          | internal only                                      | CNPG cluster. Databases: `forgejo`, `platform_ledger`, `zulip`.                        |
 | OAuth2-Proxy | `oauth2-proxy`      | `oauth2.{PLATFORM_DOMAIN}`                         | Protects PR preview environments via Traefik ForwardAuth.                              |
 | Mailpit      | `mailpit`           | `mail.{PLATFORM_DOMAIN}`                           | SMTP catch-all (dev mode). Skipped when external SMTP configured.                      |
-| Jitsi Meet   | `jitsi`             | `meet.{PLATFORM_DOMAIN}`                           | Video conferencing. JWT auth via OIDC adapter. Optional (`jitsi.enabled`).             |
-| Zulip        | `zulip`             | `chat.{PLATFORM_DOMAIN}`                           | Team messaging. OIDC via Forgejo. Optional (`zulip.enabled`).                          |
-| Console      | `op-system-console` | `console.{PLATFORM_DOMAIN}`                        | Management dashboard. Instance provisioning, dev pods, admin panel.                    |
-| Platform API | `op-system-op-api`  | `api.{PLATFORM_DOMAIN}`                            | REST API + MCP server. Forgejo PAT auth. 61 MCP tools across 13 categories.            |
+| Jitsi Meet   | `jitsi`             | `meet.{PLATFORM_DOMAIN}`                           | Video conferencing. JWT auth via OIDC adapter. Enabled by default.                     |
+| Zulip        | `zulip`             | `chat.{PLATFORM_DOMAIN}`                           | Team messaging. OIDC via Forgejo. Enabled by default.                                  |
+| Console      | `op-system-console` | `console.{PLATFORM_DOMAIN}`                        | Platform control panel. App directory, MCP connector, service control, settings.       |
+| Platform API | `op-system-op-api`  | `api.{PLATFORM_DOMAIN}`                            | REST API + MCP server. Forgejo PAT auth. ~39 MCP tools across 9 categories.            |
 | Flux         | `flux-system`       | n/a                                                | GitOps — watches `system/open-platform`, reconciles all HelmReleases.                  |
 
 For full config details (Helm charts, secrets, RBAC, env vars), see [docs/services.md](docs/services.md).
@@ -124,85 +101,26 @@ For full config details (Helm charts, secrets, RBAC, env vars), see [docs/servic
 - **Domain**: `api.{PLATFORM_DOMAIN}`
 - **Runtime**: Elysia on Bun
 - **Auth**: Bearer token (Forgejo PAT) validated against Forgejo API. Admin check via `system` org membership.
-- **REST API**: 15 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, agents, webhooks, platform (admin), instances, dev-pods. Swagger docs at `/swagger`.
-- **MCP Server**: 61 tools across 13 categories — orgs (2), repos (5), PRs (5), issues (7), branches (3), files (2), pipelines (3), apps (3), agents (6), users (1), platform (5), instances (9), dev-pods (10). Streamable HTTP transport at `/mcp` via `@modelcontextprotocol/sdk`. Per-session `McpServer` instances via `createMcpServer(user)`. Session-based with 30-min TTL, stale cleanup every 5 min.
-- **Agents**: Managed AI identities with Forgejo users, PATs, org webhooks. Triggered by `@agent-{slug}` mentions in issues/PRs. Execute in dev pods via Claude Code with quality gates (CLAUDE.md, pre-commit typecheck hooks, `--append-system-prompt`).
-- **Database**: `platform_ledger` (shared with console) — `agents`, `agent_runs`, `conversations`, `dev_pods` tables.
-- **K8s access**: ServiceAccount `op-api` with ClusterRole for managing dev pod deployments, PVCs, secrets, RBAC, and ingresses. Instance-scoped clients include `appsV1`, `coreV1`, `networkingV1`, and `rbacV1`.
-- **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`, `WEBHOOK_SECRET`, `ANTHROPIC_API_KEY`.
+- **REST API**: 10 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, platform (admin), mcp-tools. Swagger docs at `/swagger`.
+- **MCP Server**: ~39 tools across 9 categories — orgs (2), repos (5), PRs (5), issues (7), branches (3), files (2), pipelines (3), apps (3), users (1), platform (5). Streamable HTTP transport at `/mcp` via `@modelcontextprotocol/sdk`. Per-session `McpServer` instances via `createMcpServer(user)`. Session-based with 30-min TTL, stale cleanup every 5 min.
+- **Database**: `platform_ledger` (shared with console) — `platform` table.
+- **K8s access**: ServiceAccount `op-api` with ClusterRole for reading platform service statuses, namespaces, and deployments.
+- **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`.
 
-### Console (Management Dashboard)
+### Console (Platform Control Panel)
 
 - **Source**: `apps/console/`
-- **Namespace**: `op-system-console` (host cluster)
+- **Namespace**: `op-system-console`
 - **Domain**: `console.{PLATFORM_DOMAIN}`
 - **Runtime**: Next.js 15 (App Router)
 - **Database**: `platform_ledger` on host PostgreSQL
 - **Auth**: Forgejo OAuth2 via better-auth
 - **Backend**: Calls op-api via internal HTTP (`http://op-api.op-system-op-api.svc:80`)
-- **Role**: Management dashboard for platform admin and developers. Instance management (create, monitor, credentials, kubeconfig). Agent management (create, configure, chat, activate). Dev pod management, service/app viewer, admin panel.
-- **Schema**: `customers` (user mapping), `instances` (slug, tier, status, credentials, kubeconfig), `dev_pods` (pod state), `provision_events` (audit log)
-- **Pages**: Landing (`/`), dashboard (`/dashboard`), instance detail (`/dashboard/[slug]`), dev pods (`/dashboard/[slug]/dev-pods`), agents (`/dashboard/agents`), agent detail (`/dashboard/agents/[slug]`), agent chat (`/dashboard/agents/[slug]/chat/[conversationId]`), agent create/edit, admin users/services/apps/settings
-- **Permission model**: Binary admin/user. Admin = Forgejo `is_admin` or `system` org member. Developers see own instances/devpods only.
-- **Agent Chat**: AI SDK v6 `useChat` + `DefaultChatTransport`. Server route at `/api/agents/[slug]/chat` creates MCP client per request using agent's Forgejo PAT. Streams via `streamText` + `consumeStream` (ensures `onFinish` fires even if client disconnects). Conversations upserted to `conversations` table (JSONB messages) on finish.
-- **Key env vars**: `DATABASE_URL`, `BETTER_AUTH_URL`, `AUTH_FORGEJO_URL`, `AUTH_FORGEJO_INTERNAL_URL`, `OP_API_URL`, `PLATFORM_DOMAIN`, `NEXT_PUBLIC_PLATFORM_DOMAIN`, `NEXT_PUBLIC_PROVISIONER_ENABLED`.
-
-### Dev Pods (AI-Native Dev Environments)
-
-- **Service**: `apps/op-api/src/services/devpod.ts` (K8s operations), `apps/op-api/src/routes/dev-pods.ts` (REST endpoints)
-- **Namespace**: `op-dev-pods` (host-level pods), or inside vCluster instances
-- **Image**: `apps/devpod/Dockerfile` — Ubuntu 24.04 + Nix + nixvim + Claude Code + op-cli + Docker-in-Docker
-- **Access**: Console UI, CLI (`op devpod`), MCP tools (`create_dev_pod`, `control_dev_pod`, etc.)
-- **Architecture**: K8s Deployment with 2 containers — dev (Nix environment) + dind (Docker-in-Docker sidecar). Persistent home via PVC (20Gi default). Forgejo PAT auto-injected as secret.
-- **Lifecycle**: `POST /api/v1/dev-pods` creates Deployment + PVC + Secret + RBAC. `PATCH .../start` scales to 1, `PATCH .../stop` scales to 0. `DELETE` removes all resources.
-- **Resources**: Default 2 CPU / 4Gi memory (dev) + 1 CPU / 2Gi (dind). Configurable per pod.
-- **Pre-installed tools**: Nix, nixvim, op-cli, Claude Code, Node.js 20, git, zsh, curl, k9s, starship prompt, Docker CLI.
-
-### Agent System
-
-Managed AI identities with real Forgejo users, org-level webhook triggers, cron scheduling, and console chat.
-
-- **Source**: `apps/op-api/src/services/agent.ts` (lifecycle + execution), `apps/op-api/src/services/scheduler.ts` (cron), `apps/op-api/src/routes/webhooks.ts` (trigger)
-- **Namespace**: agents run in `op-dev-pods` via dev pod infrastructure
-- **REST**: `apps/op-api/src/routes/agents.ts` — CRUD, activation, runs, connection info
-
-#### Data Model
-
-- **`agents`**: id, user_id (creator), name, slug (unique), description, model (default: `claude-sonnet-4-6`), instructions, allowed_tools[], forgejo_username (`agent-{slug}`), forgejo_token (PAT), orgs[], schedule (cron expression), status (`idle`|`running`|`error`), max_steps (default: 50), last_activity_at, error_message
-- **`agent_runs`**: id, agent_slug, trigger (`manual`|`cron`|`webhook`), status, prompt, output, error_message, started_at, completed_at, duration_ms
-- **`conversations`**: id, agent_slug, user_id, title (first user message), messages (JSONB array of UIMessages), created_at, updated_at
-
-#### Activation Pipeline
-
-1. **Create**: Forgejo user (`agent-{slug}@{PLATFORM_DOMAIN}`) + PAT (scopes: read:user, write:repository, read:repository, read:organization, write:issue, read:issue, read:package, write:package) + org team memberships (prefers "Owners" team) + org-level webhooks (issue_comment, pull_request, issues events)
-2. **Trigger**: Webhook HMAC validation (`x-forgejo-signature` + `WEBHOOK_SECRET`). Extracts `@agent-{slug}` mentions from comment/PR/issue body. Self-mention loop prevention (skips if author is the agent). Posts acknowledgment comment, then fire-and-forget async execution.
-3. **Execute**: Ensure dev pod exists and running (create if missing, wait up to 5 min for pod + `.devpod-initialized` marker) → `git pull --ff-only` → make hooks executable → write prompt to `/tmp/agent-prompt.txt` → `cat prompt | claude -p --model {model} --dangerously-skip-permissions --max-turns {max_steps} --append-system-prompt {quality_instructions}` → read `/tmp/agent-output.txt` → post result as issue/PR comment → set status idle.
-4. **Delete**: Unschedule cron → delete Forgejo user (cascades PATs) → delete DB record.
-
-#### Execution Modes
-
-- **Webhook**: Forgejo org-level hooks → `POST /api/v1/webhooks/forgejo`. Events: `issue_comment` (created), `pull_request` (opened/edited), `issues` (opened). Runs Claude Code CLI in dev pod. Returns 200 immediately, execution is async.
-- **Cron**: `cron` npm package in op-api process. `initScheduler()` on startup loads all agents with non-null schedule. Skip-if-running guard prevents concurrent executions. 10-min polling timeout for completion. Trigger prompt: `agent.instructions` or fallback "Execute your scheduled tasks."
-- **Chat**: Real-time streaming via Console UI. AI SDK v6 `streamText` with per-request MCP client (agent's PAT). No dev pod — tools execute server-side. `allowed_tools` constrains available MCP tools. Model configurable per agent. `stopWhen: stepCountIs(max_steps || 25)`.
-- **Manual**: `POST /api/v1/agents/:slug/activate` with `{ prompt, context? }`. Same execution pipeline as webhook.
-
-#### Quality Gates
-
-Layered enforcement for webhook/cron/manual executions:
-
-1. **CLAUDE.md** — per-repo conventions file read by Claude Code before making changes
-2. **`.claude/hooks/pre-commit-check.sh`** — PreToolUse hook runs `npm run typecheck` before any `git commit`, denies on failure
-3. **`--append-system-prompt`** — injected: "run typecheck/lint before committing, read CLAUDE.md, keep changes focused and minimal"
-4. **`allowed_tools`** — chat mode only, constrains which MCP tools the agent can invoke via `experimental_activeTools`
-
-### Provisioner (Instance Lifecycle)
-
-- **Config**: `host/provisioner/cronjob.yaml` (CronJob + RBAC)
-- **Namespace**: `provisioner` (host cluster)
-- **Role**: Automated instance lifecycle management. Polls console DB every minute for pending/terminating instances.
-- **Scripts**: `provision-instance.sh` (8-phase create), `teardown-instance.sh` (cleanup)
-- **Health**: `health-check.sh` monitors all ready instances every 5 minutes via HTTPS probe
-- **Deploy**: `host/deploy-provisioner.sh` installs CronJob and supporting resources
+- **Role**: Platform control panel for admins. App directory (list, create, manage apps), MCP connector (connection info and config snippets for Claude Code, Cursor, VS Code, Continue.dev, Windsurf), service control (status, start/stop), platform settings (TLS, networking, service toggles).
+- **Schema**: `platform` (single-row config)
+- **Pages**: Landing (`/`), dashboard (`/dashboard`), apps (`/dashboard/apps`), services (`/dashboard/services`), MCP (`/dashboard/mcp`), users (`/dashboard/users`), settings (`/dashboard/settings`)
+- **Permission model**: Binary admin/user. Admin = Forgejo `is_admin` or `system` org member.
+- **Key env vars**: `DATABASE_URL`, `BETTER_AUTH_URL`, `AUTH_FORGEJO_URL`, `AUTH_FORGEJO_INTERNAL_URL`, `OP_API_URL`, `PLATFORM_DOMAIN`.
 
 ## System Org
 
@@ -212,21 +130,15 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services.                                                                                  |
 | `system/template`      | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
-| `system/console`       | Management dashboard — instance provisioning, dev pods, admin panel. Deployed at `console.{PLATFORM_DOMAIN}`.                                                                    |
-| `system/op-api`        | Platform API — REST (Elysia/Bun) + MCP server for repos, pipelines, apps, instances, dev-pods. Deployed at `api.{PLATFORM_DOMAIN}`.                                              |
-| `system/social`        | Example app — posts feed, image uploads, Forgejo OAuth2 auth. Includes `feat/markdown-posts` PR for preview environments.                                                        |
-| `system/minecraft`     | Example app — Minecraft server hosting via K8s API. Uses `itzg/minecraft-server` pods, NodePort services.                                                                        |
-| `system/arcade`        | Example app — generated from template.                                                                                                                                           |
-| `system/events`        | Example app — generated from template.                                                                                                                                           |
-| `system/hub`           | Example app — generated from template.                                                                                                                                           |
+| `system/console`       | Platform control panel — app directory, MCP connector, service control, settings. Deployed at `console.{PLATFORM_DOMAIN}`.                                                       |
+| `system/op-api`        | Platform API — REST (Elysia/Bun) + MCP server for repos, pipelines, apps, platform management. Deployed at `api.{PLATFORM_DOMAIN}`.                                              |
 
 ## Namespace Layout
 
 **Infrastructure**: `kube-system` (Traefik, CoreDNS), `cnpg-system`, `postgres`, `flux-system`, `cloudflare` (optional)
-**Services**: `forgejo`, `headlamp`, `woodpecker`, `minio`, `oauth2-proxy`, `mailpit`, `jitsi` (optional), `zulip` (optional)
-**Platform**: `op-system-console`, `op-system-op-api`, `op-dev-pods`, `provisioner` (host cluster only)
-**Apps**: `op-{org}-{repo}` convention (e.g., `op-system-social`, `op-system-minecraft`)
-**Instances**: `vc-{slug}` per customer vCluster
+**Services**: `forgejo`, `headlamp`, `woodpecker`, `minio`, `oauth2-proxy`, `mailpit`, `jitsi`, `zulip`
+**Platform**: `op-system-console`, `op-system-op-api`
+**Apps**: `op-{org}-{repo}` convention
 
 ## Deployment
 
@@ -271,13 +183,13 @@ Helmfile bootstraps in 5 tiers: infra (traefik, cnpg) → storage (minio) → id
 
 ### App Template (`templates/app/`)
 
-Next.js 15 App Router with PostgreSQL, S3/MinIO, Forgejo OAuth2 (better-auth), 4 Woodpecker CI workflows. Apps use `AUTH_FORGEJO_URL` for OAuth2 and `BETTER_AUTH_URL` as canonical callback URL. Includes `CLAUDE.md` (project conventions for AI agents), `.claude/settings.json` (Claude Code permissions + pre-commit typecheck hook), and `PLATFORM.md` (env var reference). See [docs/bootstrap.md](docs/bootstrap.md) for full file inventory.
+Next.js 15 App Router with PostgreSQL, S3/MinIO, Forgejo OAuth2 (better-auth), 4 Woodpecker CI workflows. Apps use `AUTH_FORGEJO_URL` for OAuth2 and `BETTER_AUTH_URL` as canonical callback URL. Includes `CLAUDE.md` (project conventions), `.claude/settings.json` (Claude Code permissions + pre-commit typecheck hook), and `PLATFORM.md` (env var reference). See [docs/bootstrap.md](docs/bootstrap.md) for full file inventory.
 
 ## Secrets Management
 
 All secrets are auto-generated during bootstrap and persisted in `open-platform.state.yaml` (gitignored). Three layers:
 
-- **Bootstrap secrets** (`ensure-secrets.sh`, traefik presync) — admin credentials, DB passwords, agent secrets from `.env`
+- **Bootstrap secrets** (`ensure-secrets.sh`, traefik presync) — admin credentials, DB passwords from `.env`
 - **OAuth2 secrets** (`setup-oauth2.sh`, forgejo postsync) — per-service OAuth2 client IDs/secrets, OIDC config
 - **Flux secrets** (`setup-flux.sh`, flux postsync) — git credentials for Forgejo access
 
@@ -321,22 +233,17 @@ Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, bet
 - **Deployment**: helmfile bootstraps, Flux manages ongoing; Makefile provides workflow targets
 - **CI/CD**: Woodpecker with `.woodpecker/` directory (deploy.yml for main, preview.yml for PRs, preview-cleanup.yml for PR close, reset.yml for manual data reset). Template changes must be synced to all apps.
 
-## Multi-Agent Development
-
-6-agent experiment (Foundry): 2 teams building 2 apps in parallel using real Forgejo workflows. File isolation per agent prevents merge conflicts. Foundation-first ordering ensures API routes exist before UI agents start. See [docs/multi-agent.md](docs/multi-agent.md) for full workflow, team structure, and setup checklist.
-
 ## Documentation Index
 
-| Doc                                                    | Purpose                                                              |
-| ------------------------------------------------------ | -------------------------------------------------------------------- |
-| [docs/getting-started.md](docs/getting-started.md)     | Golden path: install, deploy, first login, create app, create devpod |
-| [docs/api.md](docs/api.md)                             | REST API reference (endpoints, auth, error format)                   |
-| [docs/cli.md](docs/cli.md)                             | CLI command reference (`op` binary)                                  |
-| [docs/mcp.md](docs/mcp.md)                             | MCP server tool catalog for AI agents                                |
-| [docs/hosting.md](docs/hosting.md)                     | Multi-tenant hosting via vCluster                                    |
-| [docs/permissions.md](docs/permissions.md)             | Permission model, roles, managed agents, quality gates               |
-| [docs/services.md](docs/services.md)                   | Per-service config, secrets, env vars, OAuth2 details                |
-| [docs/bootstrap.md](docs/bootstrap.md)                 | Deploy pipeline, template inventory, scripts, manifests              |
-| [docs/known-issues.md](docs/known-issues.md)           | Implementation gotchas and debugging notes                           |
-| [docs/multi-agent.md](docs/multi-agent.md)             | Multi-agent development workflow and org setup                       |
-| [templates/app/PLATFORM.md](templates/app/PLATFORM.md) | Per-app platform conventions and env var reference                   |
+| Doc                                                    | Purpose                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------- |
+| [docs/getting-started.md](docs/getting-started.md)     | Golden path: install, deploy, first login, create app   |
+| [docs/api.md](docs/api.md)                             | REST API reference (endpoints, auth, error format)      |
+| [docs/cli.md](docs/cli.md)                             | CLI command reference (`op` binary)                     |
+| [docs/mcp.md](docs/mcp.md)                             | MCP server tool catalog for AI agents                   |
+| [docs/hosting.md](docs/hosting.md)                     | Multi-tenant hosting via vCluster                       |
+| [docs/permissions.md](docs/permissions.md)             | Permission model and roles                              |
+| [docs/services.md](docs/services.md)                   | Per-service config, secrets, env vars, OAuth2 details   |
+| [docs/bootstrap.md](docs/bootstrap.md)                 | Deploy pipeline, template inventory, scripts, manifests |
+| [docs/known-issues.md](docs/known-issues.md)           | Implementation gotchas and debugging notes              |
+| [templates/app/PLATFORM.md](templates/app/PLATFORM.md) | Per-app platform conventions and env var reference      |

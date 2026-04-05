@@ -69,18 +69,6 @@ spec:
                 secretKeyRef:
                   name: forgejo-admin-credentials
                   key: password
-            - name: WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: op-api-secrets
-                  key: webhook-secret
-                  optional: true
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: anthropic-api-key
-                  key: api-key
-                  optional: true
             - name: MCP_OAUTH_CLIENT_ID
               valueFrom:
                 secretKeyRef:

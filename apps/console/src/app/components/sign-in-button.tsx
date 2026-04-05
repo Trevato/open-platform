@@ -1,8 +1,6 @@
 "use client";
 
-import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { UserConnectionModal } from "./user-connection-modal";
 
 export function SignInButton({
   className,
@@ -49,7 +47,6 @@ export function SignOutButton({ className }: { className?: string }) {
 
 export function UserMenu() {
   const { data: session, isPending } = authClient.useSession();
-  const [showConnect, setShowConnect] = useState(false);
 
   if (isPending) {
     return <div className="spinner spinner-sm" />;
@@ -73,17 +70,7 @@ export function UserMenu() {
         )}
         <span className="nav-username">{session.user.name}</span>
       </div>
-      <button
-        className="btn btn-ghost btn-sm"
-        onClick={() => setShowConnect(true)}
-        style={{ fontSize: 12 }}
-      >
-        Claude Code
-      </button>
       <SignOutButton />
-      {showConnect && (
-        <UserConnectionModal onClose={() => setShowConnect(false)} />
-      )}
     </div>
   );
 }

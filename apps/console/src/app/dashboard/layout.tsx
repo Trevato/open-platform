@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { UserMenu } from "@/app/components/sign-in-button";
 import { getSessionWithRole } from "@/lib/session-role";
-import { ClusterSelector } from "@/app/components/cluster-selector";
 
 export default async function DashboardLayout({
   children,
@@ -11,7 +10,9 @@ export default async function DashboardLayout({
 }) {
   const result = await getSessionWithRole();
   if (!result) redirect("/");
+
   const isAdmin = result.role === "admin";
+  if (!isAdmin) redirect("/");
 
   return (
     <div>
@@ -36,20 +37,8 @@ export default async function DashboardLayout({
             </div>
             Open Platform
           </Link>
-          <ClusterSelector isAdmin={isAdmin} />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {process.env.NEXT_PUBLIC_PROVISIONER_ENABLED === "true" && (
-            <Link
-              href="/dashboard/new"
-              className="btn btn-accent btn-sm"
-              style={{ fontSize: 13 }}
-            >
-              New Instance
-            </Link>
-          )}
-          <UserMenu />
-        </div>
+        <UserMenu />
       </nav>
       {children}
     </div>

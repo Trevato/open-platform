@@ -6,13 +6,13 @@ import { usePathname } from "next/navigation";
 const navItems = [
   {
     href: "/dashboard",
-    label: "Instances",
+    label: "Overview",
     icon: (
       <>
-        <rect x="2" y="2" width="20" height="8" rx="2" />
-        <rect x="2" y="14" width="20" height="8" rx="2" />
-        <circle cx="7" cy="6" r="1" fill="currentColor" />
-        <circle cx="7" cy="18" r="1" fill="currentColor" />
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
       </>
     ),
   },
@@ -43,6 +43,23 @@ const navItems = [
     ),
   },
   {
+    href: "/dashboard/mcp",
+    label: "MCP",
+    icon: (
+      <>
+        <path d="M12 2v4" />
+        <path d="M12 18v4" />
+        <path d="M4.93 4.93l2.83 2.83" />
+        <path d="M16.24 16.24l2.83 2.83" />
+        <path d="M2 12h4" />
+        <path d="M18 12h4" />
+        <path d="M4.93 19.07l2.83-2.83" />
+        <path d="M16.24 7.76l2.83-2.83" />
+        <circle cx="12" cy="12" r="4" />
+      </>
+    ),
+  },
+  {
     href: "/dashboard/users",
     label: "Users",
     icon: (
@@ -51,40 +68,6 @@ const navItems = [
         <circle cx="9" cy="7" r="4" />
         <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </>
-    ),
-  },
-  {
-    href: "/dashboard/dev-pods",
-    label: "Dev Pods",
-    icon: (
-      <>
-        <rect x="2" y="3" width="20" height="14" rx="2" />
-        <line x1="8" y1="21" x2="16" y2="21" />
-        <line x1="12" y1="17" x2="12" y2="21" />
-        <polyline points="7 10 10 13 7 13" />
-      </>
-    ),
-  },
-  {
-    href: "/dashboard/agents",
-    label: "Agents",
-    icon: (
-      <>
-        <rect x="3" y="4" width="18" height="14" rx="2" />
-        <circle cx="9" cy="11" r="1.5" />
-        <circle cx="15" cy="11" r="1.5" />
-        <line x1="12" y1="1" x2="12" y2="4" />
-      </>
-    ),
-  },
-  {
-    href: "/dashboard/terminal",
-    label: "Terminal",
-    icon: (
-      <>
-        <polyline points="4 17 10 11 4 5" />
-        <line x1="12" y1="19" x2="20" y2="19" />
       </>
     ),
   },

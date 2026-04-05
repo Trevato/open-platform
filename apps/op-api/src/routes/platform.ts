@@ -2,8 +2,13 @@ import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
 import { requireAdminPlugin } from "../auth.js";
 import { ForgejoClient } from "../services/forgejo.js";
-import { getServiceStatuses, getApps } from "../services/k8s.js";
+import {
+  getServiceStatuses,
+  getApps,
+  deleteNamespace,
+} from "../services/k8s.js";
 import { PlatformConfigService } from "../services/platform-config.js";
+import { WoodpeckerClient } from "../services/woodpecker.js";
 
 const FORGEJO_URL =
   process.env.FORGEJO_INTERNAL_URL || process.env.FORGEJO_URL || "";
@@ -94,13 +99,81 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
     },
   )
 
-  // GET /apps — list deployed apps and orgs
+  // GET /apps — list deployed apps and orgs (includes undeployed repos as pending)
   .get(
     "/apps",
     async ({ user }) => {
       const client = new ForgejoClient(user.token);
-      const [apps, orgs] = await Promise.all([getApps(), client.listOrgs()]);
-      return { apps, orgs };
+      const [deployedApps, orgs] = await Promise.all([
+        getApps(),
+        client.listOrgs(),
+      ]);
+
+      // Infrastructure repos that should never appear in the apps list
+      const INFRA_REPOS = new Set([
+        "console",
+        "op-api",
+        "open-platform",
+        "template",
+      ]);
+
+      // Build a set of deployed app keys for fast lookup
+      const deployedKeys = new Set(
+        deployedApps.map((a) => `${a.org}/${a.repo}`),
+      );
+
+      // Fetch repos from all orgs to find undeployed apps
+      const orgRepoLists = await Promise.all(
+        orgs.map(async (org) => {
+          try {
+            return await client.listRepos(org.name);
+          } catch {
+            return [];
+          }
+        }),
+      );
+
+      const pendingApps = orgRepoLists
+        .flat()
+        .filter(
+          (repo) =>
+            !repo.template &&
+            !INFRA_REPOS.has(repo.name) &&
+            !deployedKeys.has(`${repo.owner.login}/${repo.name}`),
+        )
+        .map((repo) => ({
+          org: repo.owner.login,
+          repo: repo.name,
+          namespace: `op-${repo.owner.login}-${repo.name}`,
+          ready: false,
+          status: "pending" as const,
+          replicas: { ready: 0, desired: 0, total: 0 },
+          url: "",
+        }));
+
+      // Check Woodpecker for running pipelines on pending apps
+      const woodpecker = new WoodpeckerClient();
+      await Promise.all(
+        pendingApps.map(async (app) => {
+          try {
+            const wpRepo = await woodpecker.lookupRepo(
+              `${app.org}/${app.repo}`,
+            );
+            if (!wpRepo) return;
+            const pipelines = await woodpecker.listPipelines(wpRepo.id, 1);
+            if (pipelines.length > 0) {
+              const latest = pipelines[0];
+              if (latest.status === "running" || latest.status === "pending") {
+                (app as { status: string }).status = "deploying";
+              }
+            }
+          } catch {
+            // Keep as pending if lookup fails
+          }
+        }),
+      );
+
+      return { apps: [...deployedApps, ...pendingApps], orgs };
     },
     {
       detail: { tags: ["Platform"], summary: "List deployed apps and orgs" },
@@ -117,8 +190,24 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         name: body.name,
         description: body.description,
       });
+
+      let pipeline = null;
+      let activationError: string | undefined;
+      try {
+        const woodpecker = new WoodpeckerClient();
+        const activated = await woodpecker.activateRepo(repo.id);
+        pipeline = await woodpecker.triggerPipeline(activated.id);
+      } catch (err) {
+        activationError =
+          err instanceof Error ? err.message : "Woodpecker activation failed";
+      }
+
       set.status = 201;
-      return { repo };
+      return {
+        repo,
+        pipeline,
+        ...(activationError ? { error: activationError } : {}),
+      };
     },
     {
       body: t.Object({
@@ -127,6 +216,45 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         description: t.Optional(t.String()),
       }),
       detail: { tags: ["Platform"], summary: "Create app from template" },
+    },
+  )
+
+  // DELETE /apps/:org/:repo — delete an app
+  .delete(
+    "/apps/:org/:repo",
+    async ({ params, user }) => {
+      const { org, repo } = params;
+      const client = new ForgejoClient(user.token);
+
+      // Delete Forgejo repo (primary operation)
+      await client.deleteRepo(org, repo);
+
+      // Best-effort: deactivate/delete from Woodpecker
+      try {
+        const woodpecker = new WoodpeckerClient();
+        const wpRepo = await woodpecker.lookupRepo(`${org}/${repo}`);
+        if (wpRepo) {
+          await woodpecker.deleteRepo(wpRepo.id);
+        }
+      } catch {
+        // Woodpecker cleanup is best-effort
+      }
+
+      // Best-effort: delete K8s namespace
+      try {
+        await deleteNamespace(`op-${org}-${repo}`);
+      } catch {
+        // Namespace may not exist or already be deleted
+      }
+
+      return { deleted: true };
+    },
+    {
+      params: t.Object({
+        org: t.String(),
+        repo: t.String(),
+      }),
+      detail: { tags: ["Platform"], summary: "Delete an app" },
     },
   )
 

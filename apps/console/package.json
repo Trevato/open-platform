@@ -5,27 +5,19 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:ws": "npx esbuild ws-server.ts --bundle --platform=node --external:node-pty --outfile=ws-server.js",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "bun test src/"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.63",
-    "@ai-sdk/mcp": "^1.0.30",
-    "@ai-sdk/react": "^3.0.136",
-    "ai": "^6.0.134",
     "better-auth": "^1.5.0",
-    "ghostty-web": "^0.4.0",
     "next": "^15.0.0",
-    "node-pty": "^1.1.0",
     "pg": "^8.13.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
-    "remark-gfm": "^4.0.1",
-    "ws": "^8.19.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -33,9 +25,6 @@
     "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/ws": "^8.18.1",
-    "copy-webpack-plugin": "^14.0.0",
-    "esbuild": "^0.27.3",
     "typescript": "^5.0.0"
   }
 }

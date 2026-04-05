@@ -29,7 +29,7 @@ test.describe("Forgejo authentication", () => {
   });
 
   test("system repos exist", async ({ request }) => {
-    const expectedRepos = ["open-platform", "template", "social"];
+    const expectedRepos = ["open-platform", "template", "console", "op-api"];
     const auth = {
       Authorization: `Basic ${Buffer.from(`${admin.username}:${admin.password}`).toString("base64")}`,
     };
@@ -37,7 +37,7 @@ test.describe("Forgejo authentication", () => {
     for (const repo of expectedRepos) {
       const response = await request.get(
         `${urls.forgejo}/api/v1/repos/system/${repo}`,
-        { headers: auth }
+        { headers: auth },
       );
       expect(response.status(), `system/${repo} should exist`).toBe(200);
     }

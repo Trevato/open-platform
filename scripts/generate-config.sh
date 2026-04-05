@@ -129,12 +129,12 @@ SMTP_EXTERNAL_PASS=$(yaml_get "$CONFIG_FILE" "smtp.password" 2>/dev/null) || SMT
 SMTP_EXTERNAL_FROM=$(yaml_get "$CONFIG_FILE" "smtp.from" 2>/dev/null) || SMTP_EXTERNAL_FROM=""
 
 # Jitsi settings (optional)
-JITSI_ENABLED=$(yaml_get "$CONFIG_FILE" "jitsi.enabled" 2>/dev/null) || JITSI_ENABLED="false"
+JITSI_ENABLED=$(yaml_get "$CONFIG_FILE" "jitsi.enabled" 2>/dev/null) || JITSI_ENABLED="true"
 JITSI_ALLOW_GUESTS=$(yaml_get "$CONFIG_FILE" "jitsi.allow_guests" 2>/dev/null) || JITSI_ALLOW_GUESTS="true"
 JITSI_JVB_ADVERTISE_IP=$(yaml_get "$CONFIG_FILE" "jitsi.jvb_advertise_ip" 2>/dev/null) || JITSI_JVB_ADVERTISE_IP=""
 
 # Zulip settings (optional)
-ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_ENABLED="false"
+ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_ENABLED="true"
 
 # Provisioner (optional)
 PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"

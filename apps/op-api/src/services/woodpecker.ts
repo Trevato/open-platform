@@ -26,6 +26,12 @@ export class WoodpeckerClient {
     return res.json() as Promise<T>;
   }
 
+  async activateRepo(forgeRemoteId: number): Promise<WoodpeckerRepo> {
+    return this.fetchJSON(`/api/repos?forge_remote_id=${forgeRemoteId}`, {
+      method: "POST",
+    });
+  }
+
   async lookupRepo(fullName: string): Promise<WoodpeckerRepo | null> {
     try {
       return await this.fetchJSON(
@@ -47,9 +53,7 @@ export class WoodpeckerClient {
     repoId: number,
     pipelineNumber: number,
   ): Promise<WoodpeckerPipeline> {
-    return this.fetchJSON(
-      `/api/repos/${repoId}/pipelines/${pipelineNumber}`,
-    );
+    return this.fetchJSON(`/api/repos/${repoId}/pipelines/${pipelineNumber}`);
   }
 
   async triggerPipeline(
@@ -60,6 +64,10 @@ export class WoodpeckerClient {
       method: "POST",
       body: JSON.stringify({ branch }),
     });
+  }
+
+  async deleteRepo(repoId: number): Promise<void> {
+    await this.fetchJSON(`/api/repos/${repoId}`, { method: "DELETE" });
   }
 
   async getPipelineLogs(
@@ -82,7 +90,9 @@ export class WoodpeckerClient {
       }
     }
     if (!stepId) {
-      throw new Error(`Step ${stepPosition} not found in pipeline ${pipelineNumber}`);
+      throw new Error(
+        `Step ${stepPosition} not found in pipeline ${pipelineNumber}`,
+      );
     }
 
     const res = await fetch(

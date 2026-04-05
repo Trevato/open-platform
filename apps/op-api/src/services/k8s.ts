@@ -1,12 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
-import pool from "./db.js";
-import type {
-  AppInfo,
-  PreviewInfo,
-  ServiceStatus,
-  InstanceServiceStatus,
-  InstanceAppInfo,
-} from "./types.js";
+import type { AppInfo, PreviewInfo, ServiceStatus } from "./types.js";
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
@@ -130,10 +123,20 @@ export async function getApps(): Promise<AppInfo[]> {
       labelSelector: "open-platform.sh/tier=workload,!open-platform.sh/pr",
     });
 
+    // Infrastructure repos that should never appear in the apps list
+    const INFRA_REPOS = new Set([
+      "console",
+      "op-api",
+      "open-platform",
+      "template",
+    ]);
+
     for (const ns of nsList.items || []) {
       const org = ns.metadata?.labels?.["open-platform.sh/org"] || "";
       const repo = ns.metadata?.labels?.["open-platform.sh/repo"] || "";
       const namespace = ns.metadata?.name || "";
+
+      if (INFRA_REPOS.has(repo)) continue;
 
       try {
         const [depList, url] = await Promise.all([
@@ -294,189 +297,6 @@ export async function listPreviews(
   return previews;
 }
 
-// ─── Instance-scoped K8s clients ───
-
-const instanceClients = new Map<
-  string,
-  {
-    appsV1: k8s.AppsV1Api;
-    coreV1: k8s.CoreV1Api;
-    networkingV1: k8s.NetworkingV1Api;
-    rbacV1: k8s.RbacAuthorizationV1Api;
-    kc: k8s.KubeConfig;
-    cachedAt: number;
-  }
->();
-const CLIENT_TTL_MS = 60_000;
-
-export async function getClientsForInstance(slug: string) {
-  const cached = instanceClients.get(slug);
-  if (cached && Date.now() - cached.cachedAt < CLIENT_TTL_MS) {
-    return {
-      appsV1: cached.appsV1,
-      coreV1: cached.coreV1,
-      networkingV1: cached.networkingV1,
-      rbacV1: cached.rbacV1,
-      kc: cached.kc,
-    };
-  }
-
-  const result = await pool.query(
-    `SELECT kubeconfig, cluster_ip FROM instances WHERE slug = $1 AND status = 'ready'`,
-    [slug],
-  );
-  if (result.rows.length === 0 || !result.rows[0].kubeconfig) return null;
-
-  const instKc = new k8s.KubeConfig();
-  let kubeconfigStr: string = result.rows[0].kubeconfig;
-  if (result.rows[0].cluster_ip) {
-    kubeconfigStr = kubeconfigStr.replace(
-      /server:\s*https?:\/\/[^\s]+/,
-      `server: https://${result.rows[0].cluster_ip}:443`,
-    );
-  }
-  instKc.loadFromString(kubeconfigStr);
-
-  // Ensure TLS verification is skipped for vCluster connections (self-signed certs).
-  // The kubeconfig has insecure-skip-tls-verify: true but @kubernetes/client-node
-  // on Bun may not propagate it to the underlying fetch implementation.
-  // Mutate the cluster object directly since the property is readonly on the type.
-  const cluster = instKc.getCurrentCluster();
-  if (cluster) {
-    (cluster as { skipTLSVerify: boolean }).skipTLSVerify = true;
-  }
-
-  const instAppsV1 = instKc.makeApiClient(k8s.AppsV1Api);
-  const instCoreV1 = instKc.makeApiClient(k8s.CoreV1Api);
-  const instNetworkingV1 = instKc.makeApiClient(k8s.NetworkingV1Api);
-  const instRbacV1 = instKc.makeApiClient(k8s.RbacAuthorizationV1Api);
-  instanceClients.set(slug, {
-    appsV1: instAppsV1,
-    coreV1: instCoreV1,
-    networkingV1: instNetworkingV1,
-    rbacV1: instRbacV1,
-    kc: instKc,
-    cachedAt: Date.now(),
-  });
-  return {
-    appsV1: instAppsV1,
-    coreV1: instCoreV1,
-    networkingV1: instNetworkingV1,
-    rbacV1: instRbacV1,
-    kc: instKc,
-  };
-}
-
-function countReadyPods(pods: k8s.V1Pod[]): number {
-  return pods.filter((p) =>
-    p.status?.conditions?.some(
-      (c: k8s.V1PodCondition) => c.type === "Ready" && c.status === "True",
-    ),
-  ).length;
-}
-
-export async function getInstanceServiceStatuses(
-  slug: string,
-): Promise<InstanceServiceStatus[]> {
-  const clients = await getClientsForInstance(slug);
-  if (!clients) return [];
-
-  const statuses: InstanceServiceStatus[] = [];
-
-  for (const svc of PLATFORM_SERVICES) {
-    try {
-      const podList = await clients.coreV1.listNamespacedPod({
-        namespace: svc.namespace,
-        labelSelector: svc.labelSelector,
-      });
-      const pods = podList.items || [];
-      const ready = countReadyPods(pods);
-
-      statuses.push({
-        name: svc.name,
-        namespace: svc.namespace,
-        ready: ready > 0,
-        replicas: { ready, total: pods.length },
-        url: svc.subdomain
-          ? `https://${slug}-${svc.subdomain}.${PLATFORM_DOMAIN}`
-          : "",
-      });
-    } catch {
-      statuses.push({
-        name: svc.name,
-        namespace: svc.namespace,
-        ready: false,
-        replicas: { ready: 0, total: 0 },
-        url: svc.subdomain
-          ? `https://${slug}-${svc.subdomain}.${PLATFORM_DOMAIN}`
-          : "",
-      });
-    }
-  }
-
-  return statuses;
-}
-
-export async function getInstanceApps(
-  slug: string,
-): Promise<InstanceAppInfo[]> {
-  const clients = await getClientsForInstance(slug);
-  if (!clients) return [];
-
-  const apps: InstanceAppInfo[] = [];
-
-  try {
-    const nsList = await clients.coreV1.listNamespace({
-      labelSelector:
-        "open-platform.sh/tier=workload,open-platform.sh/environment=production",
-    });
-
-    for (const ns of nsList.items || []) {
-      const nsName = ns.metadata?.name || "";
-      const org = ns.metadata?.labels?.["open-platform.sh/org"] || "";
-      const repo = ns.metadata?.labels?.["open-platform.sh/repo"] || "";
-
-      let ready = false;
-      let totalReplicas = 0;
-      let readyReplicas = 0;
-
-      try {
-        const depList = await clients.appsV1.listNamespacedDeployment({
-          namespace: nsName,
-        });
-        for (const dep of depList.items) {
-          totalReplicas += dep.status?.replicas ?? 0;
-          readyReplicas += dep.status?.readyReplicas ?? 0;
-        }
-        ready = totalReplicas > 0 && readyReplicas === totalReplicas;
-      } catch {
-        // namespace exists but no deployments
-      }
-
-      let url = `https://${slug}-${repo || nsName}.${PLATFORM_DOMAIN}`;
-      try {
-        const ingList = await clients.networkingV1.listNamespacedIngress({
-          namespace: nsName,
-        });
-        const host = ingList.items?.[0]?.spec?.rules?.[0]?.host;
-        if (host) url = `https://${host}`;
-      } catch {
-        // fallback to label-based URL
-      }
-
-      apps.push({
-        name: repo || nsName.replace(/^op-[^-]+-/, ""),
-        namespace: nsName,
-        org,
-        repo,
-        ready,
-        replicas: { ready: readyReplicas, total: totalReplicas },
-        url,
-      });
-    }
-  } catch {
-    // namespace listing failed
-  }
-
-  return apps;
+export async function deleteNamespace(namespace: string): Promise<void> {
+  await coreV1.deleteNamespace({ name: namespace });
 }

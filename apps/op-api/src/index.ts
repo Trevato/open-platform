@@ -17,15 +17,10 @@ import { issuesPlugin } from "./routes/issues.js";
 import { branchesPlugin } from "./routes/branches.js";
 import { filesPlugin } from "./routes/files.js";
 import { platformPlugin } from "./routes/platform.js";
-import { instancesPlugin } from "./routes/instances.js";
-import { devPodsPlugin } from "./routes/dev-pods.js";
-import { agentRoutes } from "./routes/agents.js";
-import { webhookRoutes } from "./routes/webhooks.js";
 import { mcpToolsPlugin } from "./routes/mcp-tools.js";
 import { oauthRoutes } from "./auth/oauth-routes.js";
 import { models } from "./models.js";
 import { logger } from "./logger.js";
-import { initScheduler } from "./services/scheduler.js";
 
 // MCP session management
 const transports = new Map<
@@ -76,11 +71,7 @@ const app = new Elysia()
           { name: "Pipelines", description: "CI/CD pipelines" },
           { name: "Apps", description: "Deployed applications" },
           { name: "Platform", description: "Admin-only platform management" },
-          { name: "Instances", description: "vCluster instances" },
-          { name: "Dev Pods", description: "Development environments" },
-          { name: "Agents", description: "AI agent management" },
           { name: "MCP", description: "MCP tool catalog" },
-          { name: "Webhooks", description: "Forgejo webhook receiver" },
         ],
         components: {
           securitySchemes: {
@@ -155,10 +146,9 @@ const app = new Elysia()
   // OAuth 2.1 routes (register, authorize, callback, token)
   .use(oauthRoutes)
 
-  // REST API routes (all require Bearer token, except webhooks)
+  // REST API routes (all require Bearer token)
   .group("/api/v1", (app) =>
     app
-      .use(webhookRoutes)
       .use(statusPlugin)
       .use(reposPlugin)
       .use(prsPlugin)
@@ -170,9 +160,6 @@ const app = new Elysia()
       .use(branchesPlugin)
       .use(filesPlugin)
       .use(platformPlugin)
-      .use(instancesPlugin)
-      .use(devPodsPlugin)
-      .use(agentRoutes)
       .use(mcpToolsPlugin),
   )
 
@@ -308,10 +295,5 @@ const app = new Elysia()
 logger.info(`listening on :${app.server?.port}`);
 logger.info(`REST: http://localhost:${app.server?.port}/api/v1`);
 logger.info(`MCP:  http://localhost:${app.server?.port}/mcp`);
-
-// Initialize cron scheduler for agents
-initScheduler().catch((err) => {
-  logger.error({ err }, "Failed to initialize scheduler");
-});
 
 export type App = typeof app;

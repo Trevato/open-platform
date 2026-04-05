@@ -4,7 +4,7 @@
       "type": "http",
       "url": "https://api.dev.test/mcp",
       "env": {
-        "NODE_EXTRA_CA_CERTS": "./certs/ca.crt"
+        "NODE_EXTRA_CA_CERTS": "~/projects/open-platform/certs/ca.crt"
       }
     }
   }

@@ -179,7 +179,7 @@ export interface AppInfo {
   repo: string;
   namespace: string;
   ready: boolean;
-  status: "running" | "degraded" | "stopped";
+  status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; desired: number; total: number };
   url: string;
 }
@@ -202,22 +202,4 @@ export interface ServiceStatus {
   replicas: { ready: number; total: number };
   url: string;
   subdomain: string;
-}
-
-export interface InstanceServiceStatus {
-  name: string;
-  namespace: string;
-  ready: boolean;
-  replicas: { ready: number; total: number };
-  url: string;
-}
-
-export interface InstanceAppInfo {
-  name: string;
-  namespace: string;
-  org: string;
-  repo: string;
-  ready: boolean;
-  replicas: { ready: number; total: number };
-  url: string;
 }

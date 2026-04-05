@@ -46,61 +46,6 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: op-system-social
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "social"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-system-minecraft
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "minecraft"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-system-hub
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "hub"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-system-arcade
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "arcade"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"
----
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-system-events
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/org: "system"
-    open-platform.sh/repo: "events"
-    open-platform.sh/tier: "workload"
-    open-platform.sh/environment: "production"
----
-apiVersion: v1
-kind: Namespace
-metadata:
   name: op-system-console
   labels:
     open-platform.sh/managed: "true"
@@ -125,14 +70,6 @@ kind: Namespace
 metadata:
   name: mailpit
 ---
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: op-dev-pods
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/tier: "dev"
----
 # BEGIN jitsi
 apiVersion: v1
 kind: Namespace
@@ -146,16 +83,6 @@ kind: Namespace
 metadata:
   name: zulip
 # END zulip
----
-# BEGIN provisioner
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: provisioner
-  labels:
-    open-platform.sh/managed: "true"
-    open-platform.sh/tier: "platform"
-# END provisioner
 ---
 # BEGIN metallb
 apiVersion: v1

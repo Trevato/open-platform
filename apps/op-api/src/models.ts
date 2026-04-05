@@ -174,51 +174,6 @@ export const UserProfile = t.Object({
   avatarUrl: t.String(),
 });
 
-// ── Instance Types ──────────────────────────────────────────────────
-
-export const Instance = t.Object({
-  id: t.Number(),
-  slug: t.String(),
-  customer_id: t.Number(),
-  tier: t.String(),
-  status: t.Union([
-    t.Literal("pending"),
-    t.Literal("provisioning"),
-    t.Literal("ready"),
-    t.Literal("error"),
-    t.Literal("terminating"),
-  ]),
-  domain: t.String(),
-  admin_user: t.String(),
-  created_at: t.String(),
-  updated_at: t.String(),
-});
-
-export const InstanceCredentials = t.Object({
-  admin_user: t.String(),
-  admin_password: t.String(),
-  domain: t.String(),
-});
-
-export const InstanceEvent = t.Object({
-  id: t.Number(),
-  instance_id: t.Number(),
-  event_type: t.String(),
-  message: t.String(),
-  created_at: t.String(),
-});
-
-export const DevPod = t.Object({
-  username: t.String(),
-  status: t.Union([
-    t.Literal("running"),
-    t.Literal("stopped"),
-    t.Literal("not_found"),
-  ]),
-  replicas: t.Number(),
-  readyReplicas: t.Number(),
-});
-
 // ── Common ──────────────────────────────────────────────────────────
 
 export const ErrorResponse = t.Object({
@@ -243,9 +198,5 @@ export const models = {
   ServiceStatus,
   AppInfo,
   UserProfile,
-  Instance,
-  InstanceCredentials,
-  InstanceEvent,
-  DevPod,
   ErrorResponse,
 };

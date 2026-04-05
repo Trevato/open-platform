@@ -72,18 +72,10 @@ spec:
               value: "__PLATFORM_DOMAIN__"
             - name: NEXT_PUBLIC_PLATFORM_DOMAIN
               value: "__PLATFORM_DOMAIN__"
-            - name: NEXT_PUBLIC_PROVISIONER_ENABLED
-              value: "__PROVISIONER_ENABLED__"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
             - name: NODE_TLS_REJECT_UNAUTHORIZED
               value: "0"
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: anthropic-api-key
-                  key: api-key
-                  optional: true
           volumeMounts:
             - name: platform-ca
               mountPath: /etc/ssl/custom

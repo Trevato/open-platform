@@ -7,3 +7,10 @@ domain: myplatform.example.com
 # admin:
 #   username: opadmin
 #   email: admin@example.com
+
+# Jitsi (video conferencing) and Zulip (team messaging) are enabled by default.
+# Uncomment to disable:
+# jitsi:
+#   enabled: false
+# zulip:
+#   enabled: false
