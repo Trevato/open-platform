@@ -40,7 +40,7 @@ const PLATFORM_SERVICES = [
     name: "postgres",
     namespace: "postgres",
     labelSelector: "role=primary",
-    subdomain: "",
+    subdomain: "db",
   },
   {
     name: "pgadmin",
