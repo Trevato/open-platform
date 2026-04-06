@@ -18,6 +18,10 @@ interface ArchivedAppInfo {
   repo: string;
   namespace: string;
   archived_at: string;
+  status: "running" | "degraded" | "stopped";
+  ready: boolean;
+  replicas: { ready: number; desired: number; total: number };
+  url: string;
 }
 
 interface Org {
@@ -112,6 +116,41 @@ function RestoreIcon() {
     >
       <polyline points="1 4 1 10 7 10" />
       <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg
+      className="icon-sm"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polygon points="5 3 19 12 5 21 5 3" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg
+      className="icon-sm"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="6" y="4" width="4" height="16" />
+      <rect x="14" y="4" width="4" height="16" />
     </svg>
   );
 }
@@ -221,7 +260,7 @@ function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
   async function handleArchive() {
     if (
       !confirm(
-        `Archive ${app.org}/${app.repo}? The deployment will be torn down. You can restore within 30 days.`,
+        `Archive ${app.org}/${app.repo}? The code will become read-only. The deployment will keep running.`,
       )
     ) {
       return;
@@ -367,11 +406,13 @@ function ArchivedAppCard({
 }) {
   const [restoring, setRestoring] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [toggling, setToggling] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [error, setError] = useState("");
 
   const timeAgo = getTimeAgo(app.archived_at);
+  const isRunning = app.status === "running" || app.status === "degraded";
 
   async function handleRestore() {
     setRestoring(true);
@@ -387,6 +428,24 @@ function ArchivedAppCard({
       setError("Network error");
     } finally {
       setRestoring(false);
+    }
+  }
+
+  async function handleToggle() {
+    setToggling(true);
+    setError("");
+    const action = isRunning ? "stop" : "start";
+    try {
+      const res = await fetch(
+        `/api/platform/apps/${app.org}/${app.repo}/${action}`,
+        { method: "POST" },
+      );
+      if (res.ok) onRefresh();
+      else setError(`Failed to ${action}`);
+    } catch {
+      setError("Network error");
+    } finally {
+      setToggling(false);
     }
   }
 
@@ -406,6 +465,8 @@ function ArchivedAppCard({
       setDeleting(false);
     }
   }
+
+  const busy = restoring || deleting || toggling;
 
   return (
     <div className="card" style={{ opacity: 0.75, borderStyle: "dashed" }}>
@@ -429,104 +490,149 @@ function ArchivedAppCard({
                 {app.org} &middot; archived {timeAgo}
               </p>
             </div>
-            <span
-              className="badge"
-              style={{
-                background: "rgba(148, 163, 184, 0.15)",
-                color: "rgb(148, 163, 184)",
-              }}
-            >
-              Archived
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <StatusBadge status={app.status} />
+              <span
+                className="badge"
+                style={{
+                  background: "rgba(148, 163, 184, 0.15)",
+                  color: "rgb(148, 163, 184)",
+                }}
+              >
+                Archived
+              </span>
+            </div>
           </div>
         </div>
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
+            justifyContent: "space-between",
           }}
         >
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={handleRestore}
-            disabled={restoring || deleting}
-            style={{
-              color: "var(--accent)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 4,
-              fontSize: 12,
-            }}
-          >
-            <RestoreIcon />
-            {restoring ? "Restoring..." : "Restore"}
-          </button>
-          {!confirmDelete ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <button
               className="btn btn-ghost btn-sm"
-              onClick={() => setConfirmDelete(true)}
-              disabled={restoring || deleting}
+              onClick={handleToggle}
+              disabled={busy}
+              title={isRunning ? "Stop app" : "Start app"}
               style={{
-                color: "rgb(239, 68, 68)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+                color: isRunning ? "rgb(234, 179, 8)" : "var(--accent)",
+              }}
+            >
+              {isRunning ? <PauseIcon /> : <PlayIcon />}
+              {toggling
+                ? isRunning
+                  ? "Stopping..."
+                  : "Starting..."
+                : isRunning
+                  ? "Stop"
+                  : "Start"}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={handleRestore}
+              disabled={busy}
+              style={{
+                color: "var(--accent)",
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 4,
                 fontSize: 12,
               }}
             >
-              <TrashIcon />
-              Delete
+              <RestoreIcon />
+              {restoring ? "Restoring..." : "Restore"}
             </button>
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                flex: 1,
-              }}
-            >
-              <input
-                className="input"
-                type="text"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder={`Type "${app.repo}" to confirm`}
-                style={{ fontSize: 12, padding: "4px 8px", flex: 1 }}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") {
-                    setConfirmDelete(false);
-                    setConfirmText("");
-                  }
-                  if (e.key === "Enter") handleDelete();
-                }}
-              />
+            {!confirmDelete ? (
               <button
-                className="btn btn-sm"
-                onClick={handleDelete}
-                disabled={confirmText !== app.repo || deleting}
+                className="btn btn-ghost btn-sm"
+                onClick={() => setConfirmDelete(true)}
+                disabled={busy}
                 style={{
-                  background: "rgba(239, 68, 68, 0.1)",
                   color: "rgb(239, 68, 68)",
-                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
                   fontSize: 12,
                 }}
               >
-                {deleting ? "Deleting..." : "Confirm"}
+                <TrashIcon />
+                Delete
               </button>
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  setConfirmDelete(false);
-                  setConfirmText("");
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  flex: 1,
                 }}
-                style={{ fontSize: 12 }}
               >
-                Cancel
-              </button>
-            </div>
+                <input
+                  className="input"
+                  type="text"
+                  value={confirmText}
+                  onChange={(e) => setConfirmText(e.target.value)}
+                  placeholder={`Type "${app.repo}" to confirm`}
+                  style={{ fontSize: 12, padding: "4px 8px", flex: 1 }}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setConfirmDelete(false);
+                      setConfirmText("");
+                    }
+                    if (e.key === "Enter") handleDelete();
+                  }}
+                />
+                <button
+                  className="btn btn-sm"
+                  onClick={handleDelete}
+                  disabled={confirmText !== app.repo || deleting}
+                  style={{
+                    background: "rgba(239, 68, 68, 0.1)",
+                    color: "rgb(239, 68, 68)",
+                    border: "1px solid rgba(239, 68, 68, 0.2)",
+                    fontSize: 12,
+                  }}
+                >
+                  {deleting ? "Deleting..." : "Confirm"}
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setConfirmDelete(false);
+                    setConfirmText("");
+                  }}
+                  style={{ fontSize: 12 }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </div>
+          {isRunning && app.url && (
+            <a
+              href={app.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm"
+              style={{
+                color: "var(--accent)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {app.url.replace(/^https?:\/\//, "")}
+              <ExternalLinkIcon />
+            </a>
           )}
         </div>
         {error && (
@@ -697,16 +803,16 @@ export function AppList() {
     fetchApps();
   }, [fetchApps]);
 
-  // Adaptive polling: fast when deploying/pending, slow otherwise
+  // Adaptive polling: fast when deploying/pending/scaling, slow otherwise
   useEffect(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
 
-    const hasTransient = apps.some(
-      (a) => a.status === "deploying" || a.status === "pending",
-    );
+    const hasTransient =
+      apps.some((a) => a.status === "deploying" || a.status === "pending") ||
+      archivedApps.some((a) => a.status === "degraded");
     const pollMs = hasTransient ? 5000 : 30000;
 
     intervalRef.current = setInterval(fetchApps, pollMs);
@@ -716,7 +822,7 @@ export function AppList() {
         clearInterval(intervalRef.current);
       }
     };
-  }, [apps, fetchApps]);
+  }, [apps, archivedApps, fetchApps]);
 
   if (loading) {
     return (

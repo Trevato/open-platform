@@ -8,6 +8,7 @@ import {
   deleteNamespace,
   dropAppDatabase,
   deleteAppBucket,
+  scaleDeployment,
 } from "../services/k8s.js";
 import { PlatformConfigService } from "../services/platform-config.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
@@ -139,14 +140,37 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         .flat()
         .filter((repo) => !repo.template && !INFRA_REPOS.has(repo.name));
 
+      // Build set of archived repo keys to filter from main list
+      const archivedKeys = new Set(
+        allRepos
+          .filter((repo) => repo.archived)
+          .map((repo) => `${repo.owner.login}/${repo.name}`),
+      );
+
+      // Filter archived apps OUT of deployed apps
+      const activeApps = deployedApps.filter(
+        (a) => !archivedKeys.has(`${a.org}/${a.repo}`),
+      );
+
+      // Enrich archived apps with K8s status
       const archivedApps = allRepos
         .filter((repo) => repo.archived)
-        .map((repo) => ({
-          org: repo.owner.login,
-          repo: repo.name,
-          namespace: `op-${repo.owner.login}-${repo.name}`,
-          archived_at: repo.updated_at,
-        }));
+        .map((repo) => {
+          const key = `${repo.owner.login}/${repo.name}`;
+          const deployed = deployedApps.find(
+            (a) => `${a.org}/${a.repo}` === key,
+          );
+          return {
+            org: repo.owner.login,
+            repo: repo.name,
+            namespace: `op-${repo.owner.login}-${repo.name}`,
+            archived_at: repo.updated_at,
+            status: deployed?.status || "stopped",
+            ready: deployed?.ready || false,
+            replicas: deployed?.replicas || { ready: 0, desired: 0, total: 0 },
+            url: deployed?.url || "",
+          };
+        });
 
       const pendingApps = allRepos
         .filter(
@@ -186,7 +210,7 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         }),
       );
 
-      return { apps: [...deployedApps, ...pendingApps], archivedApps, orgs };
+      return { apps: [...activeApps, ...pendingApps], archivedApps, orgs };
     },
     {
       detail: { tags: ["Platform"], summary: "List deployed apps and orgs" },
@@ -208,7 +232,10 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
       let activationError: string | undefined;
       try {
         const woodpecker = new WoodpeckerClient();
-        const activated = await woodpecker.activateRepo(repo.id);
+        const activated = await woodpecker.activateRepo(
+          repo.id,
+          `${body.org}/${body.name}`,
+        );
         pipeline = await woodpecker.triggerPipeline(activated.id);
       } catch (err) {
         activationError =
@@ -240,20 +267,14 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
       const client = new ForgejoClient(user.token);
       const repoFound = await client.archiveRepo(org, repo);
 
-      // Best-effort: deactivate Woodpecker
-      try {
-        const woodpecker = new WoodpeckerClient();
-        const wpRepo = await woodpecker.lookupRepo(`${org}/${repo}`);
-        if (wpRepo) await woodpecker.deleteRepo(wpRepo.id);
-      } catch {}
+      // No need to deactivate Woodpecker — archived repos are read-only in Forgejo,
+      // so no pushes = no webhook triggers. Keeping the Woodpecker record allows restore.
 
-      // Delete namespace (always — cleans up orphaned K8s-only apps)
-      try {
-        await deleteNamespace(`op-${org}-${repo}`);
-      } catch {}
-
-      // If no Forgejo repo, also clean up DB and S3 (orphaned app — full cleanup)
+      // If no Forgejo repo, clean up orphaned K8s-only app entirely
       if (!repoFound) {
+        try {
+          await deleteNamespace(`op-${org}-${repo}`);
+        } catch {}
         try {
           await dropAppDatabase(org, repo);
         } catch {}
@@ -283,7 +304,10 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         const woodpecker = new WoodpeckerClient();
         const forgejoRepo = await client.getRepo(org, repo);
         if (forgejoRepo) {
-          const activated = await woodpecker.activateRepo(forgejoRepo.id);
+          const activated = await woodpecker.activateRepo(
+            forgejoRepo.id,
+            `${org}/${repo}`,
+          );
           await woodpecker.triggerPipeline(activated.id);
         }
       } catch {}
@@ -293,6 +317,42 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
     {
       params: t.Object({ org: t.String(), repo: t.String() }),
       detail: { tags: ["Platform"], summary: "Restore an archived app" },
+    },
+  )
+
+  // POST /apps/:org/:repo/stop — scale deployment to 0
+  .post(
+    "/apps/:org/:repo/stop",
+    async ({ params, set }) => {
+      try {
+        await scaleDeployment(`op-${params.org}-${params.repo}`, 0);
+        return { stopped: true };
+      } catch {
+        set.status = 404;
+        return { error: "No deployment found" };
+      }
+    },
+    {
+      params: t.Object({ org: t.String(), repo: t.String() }),
+      detail: { tags: ["Platform"], summary: "Stop an app" },
+    },
+  )
+
+  // POST /apps/:org/:repo/start — scale deployment to 1
+  .post(
+    "/apps/:org/:repo/start",
+    async ({ params, set }) => {
+      try {
+        await scaleDeployment(`op-${params.org}-${params.repo}`, 1);
+        return { started: true };
+      } catch {
+        set.status = 404;
+        return { error: "No deployment found" };
+      }
+    },
+    {
+      params: t.Object({ org: t.String(), repo: t.String() }),
+      detail: { tags: ["Platform"], summary: "Start an app" },
     },
   )
 
@@ -312,25 +372,42 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
 
       await client.deleteRepo(org, repo);
 
-      // Best-effort: deactivate Woodpecker
+      const errors: string[] = [];
+      const namespace = `op-${org}-${repo}`;
+
+      // Deactivate Woodpecker
       try {
         const woodpecker = new WoodpeckerClient();
         const wpRepo = await woodpecker.lookupRepo(`${org}/${repo}`);
         if (wpRepo) await woodpecker.deleteRepo(wpRepo.id);
-      } catch {}
+      } catch (e) {
+        errors.push(
+          `woodpecker: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
 
-      // Best-effort: clean up all resources
+      // Delete namespace (cascades deployments, services, ingresses)
       try {
-        await deleteNamespace(`op-${org}-${repo}`);
-      } catch {}
+        await deleteNamespace(namespace);
+      } catch (e) {
+        errors.push(`namespace: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      // Drop database and user
       try {
         await dropAppDatabase(org, repo);
-      } catch {}
+      } catch (e) {
+        errors.push(`database: ${e instanceof Error ? e.message : String(e)}`);
+      }
+
+      // Remove S3 bucket
       try {
         await deleteAppBucket(org, repo);
-      } catch {}
+      } catch (e) {
+        errors.push(`bucket: ${e instanceof Error ? e.message : String(e)}`);
+      }
 
-      return { deleted: true };
+      return { deleted: true, ...(errors.length > 0 ? { errors } : {}) };
     },
     {
       params: t.Object({ org: t.String(), repo: t.String() }),

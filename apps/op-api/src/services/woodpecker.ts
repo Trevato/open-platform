@@ -26,10 +26,26 @@ export class WoodpeckerClient {
     return res.json() as Promise<T>;
   }
 
-  async activateRepo(forgeRemoteId: number): Promise<WoodpeckerRepo> {
-    return this.fetchJSON(`/api/repos?forge_remote_id=${forgeRemoteId}`, {
-      method: "POST",
-    });
+  async activateRepo(
+    forgeRemoteId: number,
+    fullName?: string,
+  ): Promise<WoodpeckerRepo> {
+    // Try creating fresh first
+    const res = await fetch(
+      `${WOODPECKER_URL}/api/repos?forge_remote_id=${forgeRemoteId}`,
+      { method: "POST", headers: this.headers() },
+    );
+    if (res.ok) return res.json() as Promise<WoodpeckerRepo>;
+
+    // If creation failed and we have a name, look up existing (possibly soft-deleted) repo
+    if (fullName) {
+      const existing = await this.lookupRepo(fullName);
+      if (existing) return existing;
+    }
+
+    // Neither worked — throw the original error
+    const body = await res.text();
+    throw new Error(`Woodpecker API ${res.status}: ${body}`);
   }
 
   async lookupRepo(fullName: string): Promise<WoodpeckerRepo | null> {

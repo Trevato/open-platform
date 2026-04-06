@@ -13,7 +13,6 @@ rules:
   - apiGroups: [""]
     resources:
       [
-        "pods",
         "services",
         "configmaps",
         "secrets",
@@ -21,12 +20,18 @@ rules:
         "serviceaccounts",
       ]
     verbs: ["get", "list", "watch"]
+  # Pods: read + create/delete for ephemeral cleanup pods (DB drop, S3 delete)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  # Namespaces: read + create/patch/delete for app lifecycle
   - apiGroups: [""]
     resources: ["namespaces"]
-    verbs: ["get", "list", "watch", "create", "patch"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  # Deployments: read + patch for stop/start (scale replicas)
   - apiGroups: ["apps"]
     resources: ["deployments"]
-    verbs: ["get", "list", "watch"]
+    verbs: ["get", "list", "watch", "patch"]
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
     verbs: ["get", "list", "watch"]

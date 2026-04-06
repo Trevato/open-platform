@@ -1,4 +1,5 @@
 import * as k8s from "@kubernetes/client-node";
+import { setHeaderOptions } from "@kubernetes/client-node";
 import type { AppInfo, PreviewInfo, ServiceStatus } from "./types.js";
 
 const kc = new k8s.KubeConfig();
@@ -301,6 +302,21 @@ export async function listPreviews(
   }
 
   return previews;
+}
+
+/** Scale the first deployment in a namespace to the given replica count. */
+export async function scaleDeployment(
+  namespace: string,
+  replicas: number,
+): Promise<void> {
+  const depList = await appsV1.listNamespacedDeployment({ namespace });
+  const dep = depList.items?.[0];
+  if (!dep?.metadata?.name) throw new Error("No deployment found");
+
+  await appsV1.patchNamespacedDeployment(
+    { namespace, name: dep.metadata.name, body: { spec: { replicas } } },
+    setHeaderOptions("Content-Type", "application/merge-patch+json"),
+  );
 }
 
 export async function deleteNamespace(namespace: string): Promise<void> {
