@@ -14,6 +14,12 @@ steps:
       - npm install
       - npm run typecheck
 
+  - name: test
+    image: oven/bun:latest
+    commands:
+      - bun install
+      - bun test
+
   - name: build
     image: woodpeckerci/plugin-kaniko
     settings:
@@ -119,13 +125,24 @@ steps:
           CLIENT_ID=$(echo "$$RESPONSE" | grep -o '"client_id":"[^"]*"' | head -1 | cut -d'"' -f4)
           CLIENT_SECRET=$(echo "$$RESPONSE" | grep -o '"client_secret":"[^"]*"' | head -1 | cut -d'"' -f4)
           AUTH_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+          FLAGS_SECRET=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
           kubectl create secret generic $$PREVIEW_NAME-auth \
             -n $$PREVIEW_NS \
             --from-literal=client-id="$$CLIENT_ID" \
             --from-literal=client-secret="$$CLIENT_SECRET" \
             --from-literal=secret="$$AUTH_SECRET" \
+            --from-literal=flags-secret="$$FLAGS_SECRET" \
             --dry-run=client -o yaml | kubectl apply -f -
           echo "Created OAuth2 app '$$PREVIEW_NAME' with redirect to $$REDIRECT_URI"
+        fi
+      - |
+        export PREVIEW_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        export PREVIEW_NAME="${CI_REPO_OWNER}-${CI_REPO_NAME}-pr-${CI_COMMIT_PULL_REQUEST}"
+        if ! kubectl get secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS -o jsonpath='{.data.flags-secret}' 2>/dev/null | grep -q .; then
+          FLAGS_SECRET=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
+          kubectl patch secret $$PREVIEW_NAME-auth -n $$PREVIEW_NS \
+            --type=json -p="[{\"op\":\"add\",\"path\":\"/data/flags-secret\",\"value\":\"$(echo -n $$FLAGS_SECRET | base64 | tr -d '\n')\"}]"
+          echo "Added flags-secret to existing preview auth secret"
         fi
 
   - name: schema
@@ -268,6 +285,14 @@ steps:
                       value: "https://$REGISTRY_HOST"
                     - name: NODE_EXTRA_CA_CERTS
                       value: "/etc/ssl/custom/ca.crt"
+                    - name: FLAGS_SECRET
+                      valueFrom:
+                        secretKeyRef:
+                          name: $$PREVIEW_NAME-auth
+                          key: flags-secret
+                          optional: true
+                    - name: DEPLOY_ENV
+                      value: "preview"
                   volumeMounts:
                     - name: platform-ca
                       mountPath: /etc/ssl/custom

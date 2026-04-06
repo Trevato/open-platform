@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WoodpeckerClient } from "../../services/woodpecker.js";
 import type { ForgejoClient } from "../../services/forgejo.js";
+import type { WoodpeckerPipeline } from "../../services/types.js";
 
 const text = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
@@ -80,6 +81,69 @@ export function registerPipelineTools(
         step,
       );
       return text({ logs });
+    },
+  );
+
+  server.tool(
+    "wait_for_pipeline",
+    "Wait for a pipeline to reach a terminal state (success, failure, error). Polls every 10 seconds with a 5-minute timeout.",
+    {
+      org: z.string().describe("Organization name"),
+      repo: z.string().describe("Repository name"),
+      pipeline_number: z
+        .number()
+        .optional()
+        .describe("Pipeline number (latest if omitted)"),
+    },
+    async ({ org, repo, pipeline_number }) => {
+      await forgejo.getRepo(org, repo); // verify access
+      const wp = await woodpecker.lookupRepo(`${org}/${repo}`);
+      if (!wp) return text({ error: "Repo not found in Woodpecker" });
+
+      const terminal = new Set([
+        "success",
+        "failure",
+        "error",
+        "killed",
+        "declined",
+      ]);
+      const maxAttempts = 30; // 30 * 10s = 5 minutes
+      let pipeline: WoodpeckerPipeline | undefined;
+
+      for (let i = 0; i < maxAttempts; i++) {
+        if (pipeline_number) {
+          pipeline = await woodpecker.getPipeline(wp.id, pipeline_number);
+        } else {
+          const pipelines = await woodpecker.listPipelines(wp.id);
+          if (pipelines.length === 0)
+            return text({ error: "No pipelines found" });
+          pipeline = pipelines[0];
+        }
+
+        if (terminal.has(pipeline.status)) {
+          const failedSteps = (pipeline.workflows || [])
+            .flatMap((wf) => wf.children || [])
+            .filter((s) => s.state === "failure" || s.state === "error")
+            .map((s) => s.name);
+
+          return text({
+            number: pipeline.number,
+            status: pipeline.status,
+            event: pipeline.event,
+            branch: pipeline.branch,
+            ...(failedSteps.length > 0 ? { failed_steps: failedSteps } : {}),
+          });
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 10_000));
+      }
+
+      return text({
+        number: pipeline!.number,
+        status: pipeline!.status,
+        timeout: true,
+        message: "Pipeline did not reach terminal state within 5 minutes",
+      });
     },
   );
 }

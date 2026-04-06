@@ -1,0 +1,28 @@
+name: Feature Request
+about: Describe a feature you'd like built
+title: ""
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What should it do?
+      description: Describe the feature in plain language
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who is it for?
+      description: Who will use this feature and why?
+  - type: textarea
+    id: ui
+    attributes:
+      label: How should it look?
+      description: Describe the UI or user experience if applicable
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: How will we know it works?
+      description: Describe how to verify the feature is complete

@@ -148,7 +148,7 @@ describe("MCP tool catalog", () => {
     const { client, cleanup } = await createTestClient(testUser);
     try {
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(39);
+      expect(tools.length).toBe(43);
     } finally {
       await cleanup();
     }
@@ -169,6 +169,10 @@ describe("MCP tool catalog", () => {
       expect(names).toContain("create_pr");
       expect(names).toContain("list_issues");
       expect(names).toContain("list_apps");
+      expect(names).toContain("get_pr_ci_status");
+      expect(names).toContain("get_pr_diff");
+      expect(names).toContain("wait_for_pipeline");
+      expect(names).toContain("check_app_health");
     } finally {
       await cleanup();
     }
@@ -376,6 +380,141 @@ describe("MCP error handling", () => {
       });
       // SDK validates zod schema server-side and returns an error result
       expect(result.isError).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
+// ── Verification tools ───────────────────────────────────────────────
+
+describe("MCP verification tools", () => {
+  beforeEach(() => mockFetch(defaultFetchHandler));
+  afterEach(() => restoreFetch());
+
+  test("get_pr_ci_status returns statuses for PR head", async () => {
+    mockFetch((url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      // getPR call
+      if (
+        urlStr.match(/\/api\/v1\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/) &&
+        (!init?.method || init.method === "GET")
+      ) {
+        return jsonResponse({
+          number: 1,
+          title: "Test PR",
+          state: "open",
+          user: { login: "dev" },
+          head: { ref: "feat/test", label: "feat/test" },
+          base: { ref: "main", label: "main" },
+          html_url: "http://forgejo.test/org/repo/pulls/1",
+          mergeable: true,
+        });
+      }
+      // getCommitStatuses call
+      if (urlStr.includes("/commits/") && urlStr.includes("/statuses")) {
+        return jsonResponse([
+          {
+            id: 1,
+            status: "success",
+            context: "ci/woodpecker",
+            description: "Build passed",
+            target_url: "",
+            created_at: "",
+            updated_at: "",
+          },
+        ]);
+      }
+      return defaultFetchHandler(url, init);
+    });
+
+    const { client, cleanup } = await createTestClient(testUser);
+    try {
+      const result = await client.callTool({
+        name: "get_pr_ci_status",
+        arguments: { org: "myorg", repo: "myrepo", number: 1 },
+      });
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      const parsed = JSON.parse(text);
+      expect(parsed.overall).toBe("success");
+      expect(parsed.statuses).toHaveLength(1);
+      expect(parsed.statuses[0].context).toBe("ci/woodpecker");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("get_pr_diff returns diff text", async () => {
+    const diffText =
+      "diff --git a/file.ts b/file.ts\n--- a/file.ts\n+++ b/file.ts\n@@ -1,3 +1,4 @@\n+added line\n";
+    mockFetch((url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes(".diff")) {
+        return new Response(diffText, {
+          status: 200,
+          headers: { "Content-Type": "text/plain" },
+        });
+      }
+      return defaultFetchHandler(url, init);
+    });
+
+    const { client, cleanup } = await createTestClient(testUser);
+    try {
+      const result = await client.callTool({
+        name: "get_pr_diff",
+        arguments: { org: "myorg", repo: "myrepo", number: 1 },
+      });
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      expect(text).toContain("diff --git");
+      expect(text).toContain("+added line");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("check_app_health returns health status", async () => {
+    mockFetch((url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes("/api/health")) {
+        return jsonResponse({ status: "ok" });
+      }
+      return defaultFetchHandler(url, init);
+    });
+
+    const { client, cleanup } = await createTestClient(testUser);
+    try {
+      const result = await client.callTool({
+        name: "check_app_health",
+        arguments: { org: "myorg", repo: "myapp" },
+      });
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      const parsed = JSON.parse(text);
+      expect(parsed.healthy).toBe(true);
+      expect(parsed.status).toBe(200);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("check_app_health with preview PR", async () => {
+    mockFetch((url: string, init?: RequestInit) => {
+      const urlStr = String(url);
+      if (urlStr.includes("pr-5-myapp") && urlStr.includes("/api/health")) {
+        return jsonResponse({ status: "ok" });
+      }
+      return defaultFetchHandler(url, init);
+    });
+
+    const { client, cleanup } = await createTestClient(testUser);
+    try {
+      const result = await client.callTool({
+        name: "check_app_health",
+        arguments: { org: "myorg", repo: "myapp", pr: 5 },
+      });
+      const text = (result.content as Array<{ text: string }>)[0].text;
+      const parsed = JSON.parse(text);
+      expect(parsed.healthy).toBe(true);
+      expect(parsed.url).toContain("pr-5-myapp");
     } finally {
       await cleanup();
     }

@@ -134,6 +134,16 @@ export interface ForgejoFileResponse {
   };
 }
 
+export interface ForgejoCommitStatus {
+  id: number;
+  status: "pending" | "success" | "error" | "failure" | "warning";
+  context: string;
+  description: string;
+  target_url: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WoodpeckerStep {
   id: number;
   pid: number;

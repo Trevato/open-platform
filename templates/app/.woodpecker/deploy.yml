@@ -20,6 +20,12 @@ steps:
       - npm install
       - npm run typecheck
 
+  - name: test
+    image: oven/bun:latest
+    commands:
+      - bun install
+      - bun test
+
   - name: build
     image: woodpeckerci/plugin-kaniko
     settings:
@@ -112,13 +118,24 @@ steps:
           CLIENT_ID=$(echo "$$RESPONSE" | grep -o '"client_id":"[^"]*"' | head -1 | cut -d'"' -f4)
           CLIENT_SECRET=$(echo "$$RESPONSE" | grep -o '"client_secret":"[^"]*"' | head -1 | cut -d'"' -f4)
           AUTH_SECRET=$(head -c 32 /dev/urandom | base64 | tr -d '/+=' | head -c 32)
+          FLAGS_SECRET=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
           kubectl create secret generic $$AUTH_SECRET_NAME \
             -n $$APP_NS \
             --from-literal=client-id="$$CLIENT_ID" \
             --from-literal=client-secret="$$CLIENT_SECRET" \
             --from-literal=secret="$$AUTH_SECRET" \
+            --from-literal=flags-secret="$$FLAGS_SECRET" \
             --dry-run=client -o yaml | kubectl apply -f -
           echo "Created OAuth2 app with redirect to $$REDIRECT_URI"
+        fi
+      - |
+        APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
+        AUTH_SECRET_NAME="${CI_REPO_NAME}-auth"
+        if ! kubectl get secret $$AUTH_SECRET_NAME -n $$APP_NS -o jsonpath='{.data.flags-secret}' 2>/dev/null | grep -q .; then
+          FLAGS_SECRET=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=')
+          kubectl patch secret $$AUTH_SECRET_NAME -n $$APP_NS \
+            --type=json -p="[{\"op\":\"add\",\"path\":\"/data/flags-secret\",\"value\":\"$(echo -n $$FLAGS_SECRET | base64 | tr -d '\n')\"}]"
+          echo "Added flags-secret to existing auth secret"
         fi
     environment:
       REGISTRY_USER:
@@ -192,3 +209,27 @@ steps:
         from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
+
+  - name: verify
+    image: curlimages/curl:latest
+    environment:
+      SERVICE_PREFIX:
+        from_secret: service_prefix
+      PLATFORM_DOMAIN:
+        from_secret: platform_domain
+    commands:
+      - |
+        SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
+        URL="https://$${SP}${CI_REPO_NAME}.$PLATFORM_DOMAIN/api/health"
+        echo "Verifying deployment at $$URL..."
+        for i in $(seq 1 30); do
+          STATUS=$(curl -sk -o /dev/null -w '%{http_code}' "$$URL" 2>/dev/null || echo "000")
+          if [ "$$STATUS" = "200" ]; then
+            echo "Health check passed (attempt $$i)"
+            exit 0
+          fi
+          echo "Attempt $$i: HTTP $$STATUS, retrying in 2s..."
+          sleep 2
+        done
+        echo "Health check failed after 60s"
+        exit 1

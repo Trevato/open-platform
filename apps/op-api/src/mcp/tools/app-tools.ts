@@ -66,4 +66,44 @@ export function registerAppTools(server: McpServer) {
       return text(await k8sService.listPreviews(org, repo));
     },
   );
+
+  server.tool(
+    "check_app_health",
+    "Check an application's /api/health endpoint. Works for both production apps and PR previews.",
+    {
+      org: z.string().describe("Organization name"),
+      repo: z.string().describe("Repository / app name"),
+      pr: z
+        .number()
+        .optional()
+        .describe("PR number (for preview environments)"),
+    },
+    async ({ org, repo, pr }) => {
+      const PLATFORM_DOMAIN = process.env.PLATFORM_DOMAIN || "open-platform.sh";
+      const SP = (process.env.SERVICE_PREFIX || "").trim();
+      const host = pr
+        ? `pr-${pr}-${repo}.${PLATFORM_DOMAIN}`
+        : `${SP}${repo}.${PLATFORM_DOMAIN}`;
+      const url = `https://${host}/api/health`;
+
+      try {
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(10_000),
+        });
+        const body = await res.json().catch(() => null);
+        return text({
+          url,
+          status: res.status,
+          healthy: res.ok && body?.status === "ok",
+          body,
+        });
+      } catch (err) {
+        return text({
+          url,
+          healthy: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+  );
 }

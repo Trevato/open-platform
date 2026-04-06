@@ -75,6 +75,14 @@ spec:
               value: "https://REGISTRY_HOST"
             - name: NODE_EXTRA_CA_CERTS
               value: "/etc/ssl/custom/ca.crt"
+            - name: FLAGS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: PROJECT_NAME-auth
+                  key: flags-secret
+                  optional: true
+            - name: DEPLOY_ENV
+              value: "production"
           volumeMounts:
             - name: platform-ca
               mountPath: /etc/ssl/custom

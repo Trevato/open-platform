@@ -4,6 +4,8 @@
       "Bash(npm run typecheck)",
       "Bash(npm run build)",
       "Bash(npm run dev)",
+      "Bash(bun test)",
+      "Bash(bun install)",
       "Bash(git *)",
       "Bash(ls *)",
       "Bash(cat *)",

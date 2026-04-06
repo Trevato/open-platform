@@ -33,7 +33,7 @@ function getConfig(
       case "Claude Code":
         return {
           filename: "Terminal",
-          content: `claude mcp add open-platform ${apiUrl}/mcp`,
+          content: `claude mcp add --transport http open-platform ${apiUrl}/mcp`,
           isCommand: true,
         };
       case "Cursor":
@@ -372,7 +372,7 @@ export function McpConnector({
 
   const apiUrl = `https://${prefix}api.${domain}`;
   const forgejoUrl = `https://${prefix}forgejo.${domain}`;
-  const mcpCommand = `claude mcp add open-platform ${apiUrl}/mcp`;
+  const mcpCommand = `claude mcp add --transport http open-platform ${apiUrl}/mcp`;
   const config = getConfig(activeTab, apiUrl, authMode);
 
   return (

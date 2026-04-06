@@ -100,4 +100,52 @@ export function registerPrTools(server: McpServer, forgejo: ForgejoClient) {
       return text({ approved: true, number });
     },
   );
+
+  server.tool(
+    "get_pr_ci_status",
+    "Get CI/CD status for a pull request. Returns commit statuses for the PR's head branch.",
+    {
+      org: z.string().describe("Organization or owner name"),
+      repo: z.string().describe("Repository name"),
+      number: z.number().describe("PR number"),
+    },
+    async ({ org, repo, number }) => {
+      const pr = await forgejo.getPR(org, repo, number);
+      const statuses = await forgejo.getCommitStatuses(org, repo, pr.head.ref);
+      const overall =
+        statuses.length === 0
+          ? "none"
+          : statuses.every((s) => s.status === "success")
+            ? "success"
+            : statuses.some(
+                  (s) => s.status === "failure" || s.status === "error",
+                )
+              ? "failure"
+              : "pending";
+      return text({
+        pr: number,
+        overall,
+        statuses: statuses.map((s) => ({
+          context: s.context,
+          status: s.status,
+          description: s.description,
+          url: s.target_url,
+        })),
+      });
+    },
+  );
+
+  server.tool(
+    "get_pr_diff",
+    "Get the unified diff of a pull request.",
+    {
+      org: z.string().describe("Organization or owner name"),
+      repo: z.string().describe("Repository name"),
+      number: z.number().describe("PR number"),
+    },
+    async ({ org, repo, number }) => {
+      const diff = await forgejo.getPRDiff(org, repo, number);
+      return { content: [{ type: "text" as const, text: diff }] };
+    },
+  );
 }

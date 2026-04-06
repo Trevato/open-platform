@@ -11,6 +11,7 @@ import type {
   ForgejoBranch,
   ForgejoContent,
   ForgejoFileResponse,
+  ForgejoCommitStatus,
 } from "./types.js";
 
 const FORGEJO_URL =
@@ -571,5 +572,31 @@ export class ForgejoClient {
 
   async getCurrentUser(): Promise<ForgejoUser> {
     return this.fetchJSON("/api/v1/user");
+  }
+
+  // Commit Statuses
+
+  async getCommitStatuses(
+    owner: string,
+    repo: string,
+    ref: string,
+  ): Promise<ForgejoCommitStatus[]> {
+    return this.fetchAllPages(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(ref)}/statuses`,
+    );
+  }
+
+  // PR Diff
+
+  async getPRDiff(owner: string, repo: string, index: number): Promise<string> {
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${index}.diff`,
+      { headers: this.headers() },
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
+    }
+    return res.text();
   }
 }
