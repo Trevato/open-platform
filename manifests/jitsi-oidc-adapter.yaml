@@ -21,7 +21,7 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - host: meet-auth.dev.test
+    - host: meet-auth.open-platform.sh
       http:
         paths:
           - path: /

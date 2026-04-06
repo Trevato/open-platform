@@ -1,0 +1,21 @@
+# Local development — macOS with Colima
+# Copy to project root: cp nix/examples/open-platform-dev.yaml open-platform.yaml
+#
+# Prerequisites:
+#   - make colima-start (starts k3s via Colima)
+#   - dnsmasq routing *.dev.test → Colima IP (192.168.64.x)
+#   - Trust CA after first deploy:
+#     sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain certs/ca.crt
+
+domain: dev.test
+
+admin:
+  username: opadmin
+  email: admin@dev.test
+
+tls:
+  mode: selfsigned
+  email: admin@dev.test
+
+pgadmin:
+  enabled: true
