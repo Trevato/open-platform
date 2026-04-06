@@ -6,6 +6,8 @@ import {
   getServiceStatuses,
   getApps,
   deleteNamespace,
+  dropAppDatabase,
+  deleteAppBucket,
 } from "../services/k8s.js";
 import { PlatformConfigService } from "../services/platform-config.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
@@ -133,12 +135,23 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         }),
       );
 
-      const pendingApps = orgRepoLists
+      const allRepos = orgRepoLists
         .flat()
+        .filter((repo) => !repo.template && !INFRA_REPOS.has(repo.name));
+
+      const archivedApps = allRepos
+        .filter((repo) => repo.archived)
+        .map((repo) => ({
+          org: repo.owner.login,
+          repo: repo.name,
+          namespace: `op-${repo.owner.login}-${repo.name}`,
+          archived_at: repo.updated_at,
+        }));
+
+      const pendingApps = allRepos
         .filter(
           (repo) =>
-            !repo.template &&
-            !INFRA_REPOS.has(repo.name) &&
+            !repo.archived &&
             !deployedKeys.has(`${repo.owner.login}/${repo.name}`),
         )
         .map((repo) => ({
@@ -173,7 +186,7 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         }),
       );
 
-      return { apps: [...deployedApps, ...pendingApps], orgs };
+      return { apps: [...deployedApps, ...pendingApps], archivedApps, orgs };
     },
     {
       detail: { tags: ["Platform"], summary: "List deployed apps and orgs" },
@@ -219,42 +232,109 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
     },
   )
 
-  // DELETE /apps/:org/:repo — delete an app
-  .delete(
-    "/apps/:org/:repo",
+  // POST /apps/:org/:repo/archive — soft delete (archive)
+  .post(
+    "/apps/:org/:repo/archive",
     async ({ params, user }) => {
       const { org, repo } = params;
       const client = new ForgejoClient(user.token);
+      const repoFound = await client.archiveRepo(org, repo);
 
-      // Delete Forgejo repo (primary operation)
-      await client.deleteRepo(org, repo);
-
-      // Best-effort: deactivate/delete from Woodpecker
+      // Best-effort: deactivate Woodpecker
       try {
         const woodpecker = new WoodpeckerClient();
         const wpRepo = await woodpecker.lookupRepo(`${org}/${repo}`);
-        if (wpRepo) {
-          await woodpecker.deleteRepo(wpRepo.id);
-        }
-      } catch {
-        // Woodpecker cleanup is best-effort
-      }
+        if (wpRepo) await woodpecker.deleteRepo(wpRepo.id);
+      } catch {}
 
-      // Best-effort: delete K8s namespace
+      // Delete namespace (always — cleans up orphaned K8s-only apps)
       try {
         await deleteNamespace(`op-${org}-${repo}`);
-      } catch {
-        // Namespace may not exist or already be deleted
+      } catch {}
+
+      // If no Forgejo repo, also clean up DB and S3 (orphaned app — full cleanup)
+      if (!repoFound) {
+        try {
+          await dropAppDatabase(org, repo);
+        } catch {}
+        try {
+          await deleteAppBucket(org, repo);
+        } catch {}
       }
+
+      return { archived: true };
+    },
+    {
+      params: t.Object({ org: t.String(), repo: t.String() }),
+      detail: { tags: ["Platform"], summary: "Archive an app" },
+    },
+  )
+
+  // POST /apps/:org/:repo/restore — unarchive
+  .post(
+    "/apps/:org/:repo/restore",
+    async ({ params, user }) => {
+      const { org, repo } = params;
+      const client = new ForgejoClient(user.token);
+      await client.unarchiveRepo(org, repo);
+
+      // Best-effort: reactivate Woodpecker and trigger deploy
+      try {
+        const woodpecker = new WoodpeckerClient();
+        const forgejoRepo = await client.getRepo(org, repo);
+        if (forgejoRepo) {
+          const activated = await woodpecker.activateRepo(forgejoRepo.id);
+          await woodpecker.triggerPipeline(activated.id);
+        }
+      } catch {}
+
+      return { restored: true };
+    },
+    {
+      params: t.Object({ org: t.String(), repo: t.String() }),
+      detail: { tags: ["Platform"], summary: "Restore an archived app" },
+    },
+  )
+
+  // DELETE /apps/:org/:repo — permanent delete (must be archived first)
+  .delete(
+    "/apps/:org/:repo",
+    async ({ params, user, set }) => {
+      const { org, repo } = params;
+      const client = new ForgejoClient(user.token);
+
+      // Verify repo is archived before permanent deletion
+      const forgejoRepo = await client.getRepo(org, repo);
+      if (forgejoRepo && !forgejoRepo.archived) {
+        set.status = 409;
+        return { error: "App must be archived before permanent deletion" };
+      }
+
+      await client.deleteRepo(org, repo);
+
+      // Best-effort: deactivate Woodpecker
+      try {
+        const woodpecker = new WoodpeckerClient();
+        const wpRepo = await woodpecker.lookupRepo(`${org}/${repo}`);
+        if (wpRepo) await woodpecker.deleteRepo(wpRepo.id);
+      } catch {}
+
+      // Best-effort: clean up all resources
+      try {
+        await deleteNamespace(`op-${org}-${repo}`);
+      } catch {}
+      try {
+        await dropAppDatabase(org, repo);
+      } catch {}
+      try {
+        await deleteAppBucket(org, repo);
+      } catch {}
 
       return { deleted: true };
     },
     {
-      params: t.Object({
-        org: t.String(),
-        repo: t.String(),
-      }),
-      detail: { tags: ["Platform"], summary: "Delete an app" },
+      params: t.Object({ org: t.String(), repo: t.String() }),
+      detail: { tags: ["Platform"], summary: "Permanently delete an app" },
     },
   )
 

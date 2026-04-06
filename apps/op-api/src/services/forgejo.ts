@@ -145,6 +145,40 @@ export class ForgejoClient {
     });
   }
 
+  async archiveRepo(owner: string, name: string): Promise<boolean> {
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({ archived: true }),
+      },
+    );
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
+    }
+    return true;
+  }
+
+  async unarchiveRepo(owner: string, name: string): Promise<boolean> {
+    const res = await fetch(
+      `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({ archived: false }),
+      },
+    );
+    if (res.status === 404) return false;
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Forgejo API ${res.status}: ${body}`);
+    }
+    return true;
+  }
+
   async deleteRepo(owner: string, name: string): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,

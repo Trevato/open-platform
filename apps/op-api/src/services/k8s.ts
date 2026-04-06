@@ -306,3 +306,115 @@ export async function listPreviews(
 export async function deleteNamespace(namespace: string): Promise<void> {
   await coreV1.deleteNamespace({ name: namespace });
 }
+
+/** Run a short-lived pod, wait for completion, then delete it. */
+async function runEphemeralPod(
+  namespace: string,
+  name: string,
+  pod: k8s.V1Pod,
+  timeoutMs = 60_000,
+): Promise<void> {
+  await coreV1.createNamespacedPod({ namespace, body: pod });
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const { status } = await coreV1.readNamespacedPod({ namespace, name });
+    const phase = status?.phase;
+    if (phase === "Succeeded") break;
+    if (phase === "Failed") {
+      throw new Error(`Pod ${name} failed`);
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+
+  try {
+    await coreV1.deleteNamespacedPod({ namespace, name });
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+/** Drop the database and user for an app. */
+export async function dropAppDatabase(
+  org: string,
+  repo: string,
+): Promise<void> {
+  const dbName = `op_${org.replace(/-/g, "_")}_${repo.replace(/-/g, "_")}`;
+  const podName = `db-cleanup-${org}-${repo}-${Date.now()}`.slice(0, 63);
+
+  const pod: k8s.V1Pod = {
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: { name: podName },
+    spec: {
+      restartPolicy: "Never",
+      containers: [
+        {
+          name: "cleanup",
+          image: "postgres:16-alpine",
+          command: [
+            "sh",
+            "-c",
+            [
+              `psql -h postgres-rw.postgres.svc -U postgres -c "DROP DATABASE IF EXISTS ${dbName}"`,
+              `psql -h postgres-rw.postgres.svc -U postgres -c "DROP USER IF EXISTS ${dbName}"`,
+            ].join(" && "),
+          ],
+          env: [
+            {
+              name: "PGPASSWORD",
+              valueFrom: {
+                secretKeyRef: {
+                  name: "postgres-superuser",
+                  key: "password",
+                },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  await runEphemeralPod("postgres", podName, pod);
+}
+
+/** Delete the S3 bucket for an app. */
+export async function deleteAppBucket(
+  org: string,
+  repo: string,
+): Promise<void> {
+  const bucket = `op-${org}-${repo}`;
+  const podName = `s3-cleanup-${org}-${repo}-${Date.now()}`.slice(0, 63);
+
+  const pod: k8s.V1Pod = {
+    apiVersion: "v1",
+    kind: "Pod",
+    metadata: { name: podName },
+    spec: {
+      restartPolicy: "Never",
+      containers: [
+        {
+          name: "cleanup",
+          image: "minio/mc:latest",
+          command: [
+            "sh",
+            "-c",
+            `mc alias set minio http://minio.minio.svc:9000 $(cat /minio/rootUser) $(cat /minio/rootPassword) && mc rb --force minio/${bucket} || true`,
+          ],
+          volumeMounts: [
+            { name: "minio-creds", mountPath: "/minio", readOnly: true },
+          ],
+        },
+      ],
+      volumes: [
+        {
+          name: "minio-creds",
+          secret: { secretName: "minio-credentials" },
+        },
+      ],
+    },
+  };
+
+  await runEphemeralPod("minio", podName, pod);
+}

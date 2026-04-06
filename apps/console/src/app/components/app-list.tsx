@@ -10,6 +10,14 @@ interface AppInfo {
   status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; total: number };
   url: string;
+  archived_at?: string;
+}
+
+interface ArchivedAppInfo {
+  org: string;
+  repo: string;
+  namespace: string;
+  archived_at: string;
 }
 
 interface Org {
@@ -53,6 +61,25 @@ function CodeIcon() {
   );
 }
 
+function ArchiveIcon() {
+  return (
+    <svg
+      className="icon-sm"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="21 8 21 21 3 21 3 8" />
+      <rect x="1" y="3" width="22" height="5" />
+      <line x1="10" y1="12" x2="14" y2="12" />
+    </svg>
+  );
+}
+
 function TrashIcon() {
   return (
     <svg
@@ -67,6 +94,24 @@ function TrashIcon() {
     >
       <polyline points="3 6 5 6 21 6" />
       <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+    </svg>
+  );
+}
+
+function RestoreIcon() {
+  return (
+    <svg
+      className="icon-sm"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="1 4 1 10 7 10" />
+      <path d="M3.51 15a9 9 0 102.13-9.36L1 10" />
     </svg>
   );
 }
@@ -94,6 +139,14 @@ function PlusIcon() {
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
+}
+
+function getTimeAgo(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days === 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
 }
 
 function StatusBadge({ status }: { status: AppInfo["status"] }) {
@@ -162,13 +215,19 @@ function StatusBadge({ status }: { status: AppInfo["status"] }) {
 }
 
 function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
-  const [deleting, setDeleting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [error, setError] = useState("");
 
-  async function handleDelete() {
-    if (!confirm(`Delete ${app.org}/${app.repo}? This cannot be undone.`)) {
+  async function handleArchive() {
+    if (
+      !confirm(
+        `Archive ${app.org}/${app.repo}? The deployment will be torn down. You can restore within 30 days.`,
+      )
+    ) {
       return;
     }
-    setDeleting(true);
+    setArchiving(true);
+    setError("");
     try {
       const res = await fetch("/api/platform/apps", {
         method: "DELETE",
@@ -177,11 +236,13 @@ function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
       });
       if (res.ok) {
         onRefresh();
+      } else {
+        setError("Failed to archive");
       }
     } catch {
-      // silent
+      setError("Network error");
     } finally {
-      setDeleting(false);
+      setArchiving(false);
     }
   }
 
@@ -207,30 +268,30 @@ function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <StatusBadge status={app.status} />
             <button
-              onClick={handleDelete}
-              disabled={deleting}
-              title="Delete app"
+              onClick={handleArchive}
+              disabled={archiving}
+              title="Archive app"
               style={{
                 background: "none",
                 border: "none",
-                cursor: deleting ? "wait" : "pointer",
+                cursor: archiving ? "wait" : "pointer",
                 color: "var(--text-muted)",
                 padding: 4,
                 borderRadius: 4,
                 display: "inline-flex",
                 alignItems: "center",
-                opacity: deleting ? 0.5 : 0.6,
+                opacity: archiving ? 0.5 : 0.6,
                 transition: "opacity 0.15s",
               }}
               onMouseEnter={(e) => {
-                if (!deleting)
+                if (!archiving)
                   (e.currentTarget as HTMLButtonElement).style.opacity = "1";
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLButtonElement).style.opacity = "0.6";
               }}
             >
-              <TrashIcon />
+              <ArchiveIcon />
             </button>
           </div>
         </div>
@@ -284,6 +345,198 @@ function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
             )}
           </span>
         </div>
+        {error && (
+          <p
+            className="text-xs"
+            style={{ color: "rgb(239, 68, 68)", margin: 0 }}
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ArchivedAppCard({
+  app,
+  onRefresh,
+}: {
+  app: ArchivedAppInfo;
+  onRefresh: () => void;
+}) {
+  const [restoring, setRestoring] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [error, setError] = useState("");
+
+  const timeAgo = getTimeAgo(app.archived_at);
+
+  async function handleRestore() {
+    setRestoring(true);
+    setError("");
+    try {
+      const res = await fetch(
+        `/api/platform/apps/${app.org}/${app.repo}/restore`,
+        { method: "POST" },
+      );
+      if (res.ok) onRefresh();
+      else setError("Failed to restore");
+    } catch {
+      setError("Network error");
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (confirmText !== app.repo) return;
+    setDeleting(true);
+    setError("");
+    try {
+      const res = await fetch(`/api/platform/apps/${app.org}/${app.repo}`, {
+        method: "DELETE",
+      });
+      if (res.ok) onRefresh();
+      else setError("Failed to delete");
+    } catch {
+      setError("Network error");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ opacity: 0.75, borderStyle: "dashed" }}>
+      <div
+        className="card-body"
+        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      >
+        <div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+            }}
+          >
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>
+                {app.repo}
+              </h3>
+              <p className="text-sm text-muted">
+                {app.org} &middot; archived {timeAgo}
+              </p>
+            </div>
+            <span
+              className="badge"
+              style={{
+                background: "rgba(148, 163, 184, 0.15)",
+                color: "rgb(148, 163, 184)",
+              }}
+            >
+              Archived
+            </span>
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={handleRestore}
+            disabled={restoring || deleting}
+            style={{
+              color: "var(--accent)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+            }}
+          >
+            <RestoreIcon />
+            {restoring ? "Restoring..." : "Restore"}
+          </button>
+          {!confirmDelete ? (
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setConfirmDelete(true)}
+              disabled={restoring || deleting}
+              style={{
+                color: "rgb(239, 68, 68)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12,
+              }}
+            >
+              <TrashIcon />
+              Delete
+            </button>
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                flex: 1,
+              }}
+            >
+              <input
+                className="input"
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder={`Type "${app.repo}" to confirm`}
+                style={{ fontSize: 12, padding: "4px 8px", flex: 1 }}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setConfirmDelete(false);
+                    setConfirmText("");
+                  }
+                  if (e.key === "Enter") handleDelete();
+                }}
+              />
+              <button
+                className="btn btn-sm"
+                onClick={handleDelete}
+                disabled={confirmText !== app.repo || deleting}
+                style={{
+                  background: "rgba(239, 68, 68, 0.1)",
+                  color: "rgb(239, 68, 68)",
+                  border: "1px solid rgba(239, 68, 68, 0.2)",
+                  fontSize: 12,
+                }}
+              >
+                {deleting ? "Deleting..." : "Confirm"}
+              </button>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  setConfirmText("");
+                }}
+                style={{ fontSize: 12 }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+        {error && (
+          <p
+            className="text-xs"
+            style={{ color: "rgb(239, 68, 68)", margin: 0 }}
+          >
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -418,9 +671,11 @@ function CreateAppForm({
 
 export function AppList() {
   const [apps, setApps] = useState<AppInfo[]>([]);
+  const [archivedApps, setArchivedApps] = useState<ArchivedAppInfo[]>([]);
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchApps = useCallback(async () => {
@@ -429,6 +684,7 @@ export function AppList() {
       if (!res.ok) return;
       const data = await res.json();
       setApps(data.apps);
+      setArchivedApps(data.archivedApps || []);
       setOrgs(data.orgs);
     } catch {
       // silent retry
@@ -475,7 +731,7 @@ export function AppList() {
     fetchApps();
   }
 
-  if (apps.length === 0 && !showCreate) {
+  if (apps.length === 0 && archivedApps.length === 0 && !showCreate) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">
@@ -546,6 +802,46 @@ export function AppList() {
           <AppCard key={app.namespace} app={app} onRefresh={fetchApps} />
         ))}
       </div>
+      {archivedApps.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <button
+            onClick={() => setShowArchived(!showArchived)}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "var(--text-muted)",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "4px 0",
+            }}
+          >
+            <span
+              style={{
+                transform: showArchived ? "rotate(90deg)" : "rotate(0deg)",
+                transition: "transform 0.15s",
+                display: "inline-block",
+              }}
+            >
+              &#9654;
+            </span>
+            Archived ({archivedApps.length})
+          </button>
+          {showArchived && (
+            <div className="grid-2" style={{ marginTop: 12 }}>
+              {archivedApps.map((app) => (
+                <ArchivedAppCard
+                  key={app.namespace}
+                  app={app}
+                  onRefresh={fetchApps}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

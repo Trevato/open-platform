@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
-    const data = await opApiDelete(
-      `/api/v1/platform/apps/${body.org}/${body.repo}`,
+    const data = await opApiPost(
+      `/api/v1/platform/apps/${body.org}/${body.repo}/archive`,
     );
     return NextResponse.json(data);
   } catch (e: unknown) {

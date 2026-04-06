@@ -22,6 +22,7 @@ export interface ForgejoRepo {
   forks_count: number;
   open_issues_count: number;
   permissions?: { admin: boolean; push: boolean; pull: boolean };
+  archived: boolean;
 }
 
 export interface ForgejoPR {
@@ -192,6 +193,7 @@ export interface AppInfo {
   status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; desired: number; total: number };
   url: string;
+  archived_at?: string;
 }
 
 export interface PreviewInfo {
