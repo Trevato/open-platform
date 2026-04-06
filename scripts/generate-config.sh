@@ -103,6 +103,7 @@ fi
 DOMAIN=$(yaml_get "$CONFIG_FILE" "domain") || { echo "Error: 'domain' not set in open-platform.yaml"; exit 1; }
 ADMIN_USER=$(yaml_get "$CONFIG_FILE" "admin.username" 2>/dev/null) || ADMIN_USER="opadmin"
 ADMIN_EMAIL=$(yaml_get "$CONFIG_FILE" "admin.email" 2>/dev/null) || ADMIN_EMAIL="admin@${DOMAIN}"
+DOMAIN_TLD="${DOMAIN##*.}"
 
 # Forgejo reserves certain usernames
 RESERVED_NAMES="admin api assets attachments avatars captcha commits debug error explore favicon ghost issues labels login lfs milestones notifications org raw repo search stars template topics user"
@@ -136,6 +137,9 @@ JITSI_JVB_ADVERTISE_IP=$(yaml_get "$CONFIG_FILE" "jitsi.jvb_advertise_ip" 2>/dev
 # Zulip settings (optional)
 ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_ENABLED="true"
 
+# pgAdmin settings (optional)
+PGADMIN_ENABLED=$(yaml_get "$CONFIG_FILE" "pgadmin.enabled" 2>/dev/null) || PGADMIN_ENABLED="false"
+
 # Provisioner (optional)
 PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
 
@@ -168,6 +172,9 @@ if [ "$JITSI_ENABLED" = "true" ]; then
 fi
 if [ "$ZULIP_ENABLED" = "true" ]; then
   echo "  Zulip: enabled"
+fi
+if [ "$PGADMIN_ENABLED" = "true" ]; then
+  echo "  pgAdmin: enabled"
 fi
 if [ "$PROVISIONER_ENABLED" = "true" ]; then
   echo "  Provisioner: enabled"
@@ -281,6 +288,7 @@ template_file() {
     -e "s|\${METALLB_TRAEFIK_IP}|${METALLB_TRAEFIK_IP}|g" \
     -e "s|\${METALLB_ADDRESS_POOL}|${METALLB_ADDRESS_POOL}|g" \
     -e "s|\${METALLB_INTERFACE}|${METALLB_INTERFACE}|g" \
+    -e "s|\${DOMAIN_TLD}|${DOMAIN_TLD}|g" \
     "$src" > "$dest"
 }
 
@@ -323,6 +331,14 @@ if [ "$ZULIP_ENABLED" = "true" ]; then
   echo "  zulip-values.yaml"
 else
   rm -f "$ROOT_DIR/zulip-values.yaml"
+fi
+
+# pgAdmin: optional
+if [ "$PGADMIN_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/pgadmin-values.yaml.tmpl" "$ROOT_DIR/pgadmin-values.yaml"
+  echo "  pgadmin-values.yaml"
+else
+  rm -f "$ROOT_DIR/pgadmin-values.yaml"
 fi
 
 if [ "$PROVISIONER_ENABLED" = "true" ]; then
@@ -396,6 +412,13 @@ if [ "$ZULIP_ENABLED" = "true" ]; then
   template_platform "apps/zulip.yaml"
 else
   rm -f "$ROOT_DIR/platform/apps/zulip.yaml"
+fi
+
+# pgAdmin: only generate if enabled
+if [ "$PGADMIN_ENABLED" = "true" ]; then
+  template_platform "apps/pgadmin.yaml"
+else
+  rm -f "$ROOT_DIR/platform/apps/pgadmin.yaml"
 fi
 
 # Cloudflared: only generate if tunnel is configured
@@ -488,6 +511,13 @@ else
   rm -f "$ROOT_DIR/manifests/jitsi-oidc-adapter.yaml"
 fi
 
+if [ "$PGADMIN_ENABLED" = "true" ]; then
+  template_file "$TEMPLATES_DIR/manifests/pgadmin-oauth-config.yaml.tmpl" "$ROOT_DIR/manifests/pgadmin-oauth-config.yaml"
+  echo "  manifests/pgadmin-oauth-config.yaml"
+else
+  rm -f "$ROOT_DIR/manifests/pgadmin-oauth-config.yaml"
+fi
+
 if [ "$NETWORK_MODE" = "loadbalancer" ]; then
   template_file "$TEMPLATES_DIR/manifests/metallb-config.yaml.tmpl" "$ROOT_DIR/manifests/metallb-config.yaml"
   echo "  manifests/metallb-config.yaml"
@@ -532,6 +562,14 @@ if [ "$ZULIP_ENABLED" != "true" ]; then
   sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/manifests/postgres-cluster.yaml"
   sed_i '/# BEGIN zulip/,/# END zulip/d' "$ROOT_DIR/platform/infrastructure/configs/postgres-cluster.yaml"
   echo "  zulip excluded"
+fi
+
+# Conditional: remove pgadmin block if not enabled
+if [ "$PGADMIN_ENABLED" != "true" ]; then
+  sed_i '/# BEGIN pgadmin/,/# END pgadmin/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN pgadmin/,/# END pgadmin/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN pgadmin/,/# END pgadmin/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  echo "  pgadmin excluded"
 fi
 
 # Conditional: remove provisioner block if not enabled
@@ -656,9 +694,25 @@ if [ "$TLS_MODE" != "letsencrypt" ]; then
 
     # CA
     openssl genrsa -out "$CERTS_DIR/ca.key" 4096 2>/dev/null
+    cat > "$CERTS_DIR/ca.cnf" <<CAEOF
+[req]
+distinguished_name = req_dn
+x509_extensions = v3_ca
+prompt = no
+
+[req_dn]
+CN = OpenPlatform Local CA
+
+[v3_ca]
+basicConstraints = critical, CA:TRUE
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always, issuer
+keyUsage = critical, keyCertSign, cRLSign
+CAEOF
     openssl req -x509 -new -nodes -key "$CERTS_DIR/ca.key" \
       -sha256 -days 3650 -out "$CERTS_DIR/ca.crt" \
-      -subj "/CN=OpenPlatform Local CA" 2>/dev/null
+      -config "$CERTS_DIR/ca.cnf" 2>/dev/null
+    rm -f "$CERTS_DIR/ca.cnf"
 
     # Wildcard cert
     openssl genrsa -out "$CERTS_DIR/wildcard.key" 2048 2>/dev/null
@@ -714,6 +768,9 @@ if [ "$JITSI_ENABLED" = "true" ]; then
 fi
 if [ "$ZULIP_ENABLED" = "true" ]; then
   echo "  Zulip:      https://${SERVICE_PREFIX}chat.${DOMAIN}"
+fi
+if [ "$PGADMIN_ENABLED" = "true" ]; then
+  echo "  pgAdmin:    https://${SERVICE_PREFIX}db.${DOMAIN}"
 fi
 echo ""
 echo "Next: make deploy"

@@ -319,6 +319,11 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
                 enabled: t.Optional(t.Boolean()),
               }),
             ),
+            pgadmin: t.Optional(
+              t.Object({
+                enabled: t.Optional(t.Boolean()),
+              }),
+            ),
           }),
         ),
       }),

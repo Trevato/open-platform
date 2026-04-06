@@ -14,3 +14,7 @@ domain: myplatform.example.com
 #   enabled: false
 # zulip:
 #   enabled: false
+
+# pgAdmin 4 (database management) — disabled by default:
+# pgadmin:
+#   enabled: true

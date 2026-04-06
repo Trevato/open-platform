@@ -4,6 +4,7 @@ metadata:
   name: postgres
   namespace: postgres
 spec:
+  enableSuperuserAccess: true
   instances: 1
   storage:
     size: 10Gi
@@ -20,6 +21,9 @@ spec:
     parameters:
       max_connections: "200"
       shared_buffers: "256MB"
+    pg_hba:
+      - host all postgres 10.42.0.0/16 trust
+      - host all postgres 10.43.0.0/16 trust
   resources:
     requests:
       memory: "256Mi"

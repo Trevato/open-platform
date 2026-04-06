@@ -42,6 +42,12 @@ const PLATFORM_SERVICES = [
     labelSelector: "role=primary",
     subdomain: "",
   },
+  {
+    name: "pgadmin",
+    namespace: "pgadmin",
+    labelSelector: "app.kubernetes.io/name=pgadmin4",
+    subdomain: "db",
+  },
 ];
 
 /** Build a service URL from domain config, falling back to ingress lookup. */

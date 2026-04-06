@@ -26,6 +26,7 @@ export interface PlatformConfig {
     jitsi: { enabled: boolean };
     zulip: { enabled: boolean };
     mailpit: { enabled: boolean };
+    pgadmin: { enabled: boolean };
   };
 }
 
@@ -328,9 +329,106 @@ spec:
             memory: 256Mi
 `;
 
+const PGADMIN_TEMPLATE = `apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: runix
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://helm.runix.net
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: pgadmin
+  namespace: pgadmin
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: pgadmin4
+      version: "1.62.0"
+      sourceRef:
+        kind: HelmRepository
+        name: runix
+        namespace: flux-system
+  install:
+    createNamespace: true
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+      retries: 3
+  values:
+    env:
+      email: "\${ADMIN_EMAIL}"
+      variables:
+        - name: PGADMIN_CONFIG_CHECK_EMAIL_DELIVERABILITY
+          value: "False"
+        - name: PGADMIN_CONFIG_GLOBALLY_DELIVERABLE
+          value: "False"
+        - name: PGADMIN_CONFIG_ALLOW_SPECIAL_EMAIL_DOMAINS
+          value: "['\${DOMAIN_TLD}']"
+        - name: REQUESTS_CA_BUNDLE
+          value: "/etc/ssl/certs/platform-ca.crt"
+        - name: PGADMIN_CONFIG_ALLOW_SAVE_PASSWORD
+          value: "True"
+    existingSecret: pgadmin-secrets
+    envVarsFromSecrets:
+      - pgadmin-secrets
+    serverDefinitions:
+      enabled: true
+      servers:
+        "1":
+          Name: "Platform PostgreSQL"
+          Group: "Platform"
+          Host: "postgres-rw.postgres.svc.cluster.local"
+          Port: 5432
+          Username: "postgres"
+          SSLMode: "prefer"
+          MaintenanceDB: "postgres"
+          Shared: true
+          SharedUsername: "postgres"
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - host: \${SERVICE_PREFIX}db.\${DOMAIN}
+          paths:
+            - path: /
+              pathType: Prefix
+    persistentVolume:
+      enabled: true
+      size: 1Gi
+    extraConfigmapMounts:
+      - name: pgadmin-oauth-config
+        configMap: pgadmin-oauth-config
+        subPath: config_local.py
+        mountPath: /pgadmin4/config_local.py
+        readOnly: true
+    extraVolumes:
+      - name: platform-ca
+        secret:
+          secretName: platform-ca
+    extraVolumeMounts:
+      - name: platform-ca
+        mountPath: /etc/ssl/certs/platform-ca.crt
+        subPath: ca.crt
+        readOnly: true
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 50m
+      limits:
+        memory: 512Mi
+        cpu: 250m
+`;
+
 const SERVICE_TEMPLATES: Record<string, string> = {
   jitsi: JITSI_TEMPLATE,
   zulip: ZULIP_TEMPLATE,
+  pgadmin: PGADMIN_TEMPLATE,
 };
 
 const NAMESPACE_YAML: Record<string, string> = {
@@ -343,6 +441,11 @@ metadata:
 kind: Namespace
 metadata:
   name: zulip
+`,
+  pgadmin: `apiVersion: v1
+kind: Namespace
+metadata:
+  name: pgadmin
 `,
 };
 
@@ -363,6 +466,7 @@ function defaultConfig(): PlatformConfig {
       jitsi: { enabled: false },
       zulip: { enabled: false },
       mailpit: { enabled: true },
+      pgadmin: { enabled: false },
     },
   };
 }
@@ -419,14 +523,16 @@ export class PlatformConfigService {
 
     // Derive from env + probe repo for enabled services
     const config = defaultConfig();
-    const [jitsiSha, zulipSha, mailpitSha] = await Promise.all([
+    const [jitsiSha, zulipSha, mailpitSha, pgadminSha] = await Promise.all([
       this.getFileSha("apps/jitsi.yaml"),
       this.getFileSha("apps/zulip.yaml"),
       this.getFileSha("apps/mailpit.yaml"),
+      this.getFileSha("apps/pgadmin.yaml"),
     ]);
     config.services.jitsi.enabled = jitsiSha !== null;
     config.services.zulip.enabled = zulipSha !== null;
     config.services.mailpit.enabled = mailpitSha !== null;
+    config.services.pgadmin.enabled = pgadminSha !== null;
 
     return config;
   }
@@ -443,7 +549,11 @@ export class PlatformConfigService {
     const fileOps: FileOp[] = [];
 
     // Service toggles (only services with templates are toggleable)
-    const toggles: Array<"jitsi" | "zulip"> = ["jitsi", "zulip"];
+    const toggles: Array<"jitsi" | "zulip" | "pgadmin"> = [
+      "jitsi",
+      "zulip",
+      "pgadmin",
+    ];
     for (const svc of toggles) {
       const was = current.services[svc].enabled;
       const now = updated.services[svc].enabled;
@@ -568,7 +678,7 @@ export class PlatformConfigService {
   // ---- Service toggle logic -----------------------------------------------
 
   private async toggleService(
-    service: "jitsi" | "zulip" | "mailpit",
+    service: "jitsi" | "zulip" | "mailpit" | "pgadmin",
     enabled: boolean,
     config: PlatformConfig,
   ): Promise<FileOp[]> {

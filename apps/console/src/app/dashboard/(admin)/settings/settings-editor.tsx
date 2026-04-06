@@ -17,6 +17,7 @@ interface PlatformConfig {
     jitsi: { enabled: boolean };
     zulip: { enabled: boolean };
     mailpit: { enabled: boolean };
+    pgadmin: { enabled: boolean };
   };
 }
 
@@ -322,6 +323,12 @@ export function SettingsEditor({ initialConfig, domain, prefix }: Props) {
             enabled={config.services.zulip.enabled}
             onToggle={(enabled) => handleServiceToggle("zulip", enabled)}
           />
+          <ServiceToggle
+            name="pgAdmin"
+            description="Database management"
+            enabled={config.services.pgadmin.enabled}
+            onToggle={(enabled) => handleServiceToggle("pgadmin", enabled)}
+          />
         </div>
       </div>
 
@@ -351,6 +358,9 @@ export function SettingsEditor({ initialConfig, domain, prefix }: Props) {
             )}
             {config.services.mailpit.enabled && (
               <UrlRow name="Mail" url={`${prefix}mail.${domain}`} />
+            )}
+            {config.services.pgadmin.enabled && (
+              <UrlRow name="Database" url={`${prefix}db.${domain}`} />
             )}
           </div>
         </div>

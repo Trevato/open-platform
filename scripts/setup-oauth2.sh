@@ -22,6 +22,7 @@ OAUTH2_APPS=(
   "Jitsi|https://${PREFIX}meet-auth.${DOMAIN}/callback|true"
   "Zulip|https://${PREFIX}chat.${DOMAIN}/complete/oidc/|true"
   "MCP-Auth|https://${PREFIX}api.${DOMAIN}/oauth/callback|true"
+  "pgAdmin|https://${PREFIX}db.${DOMAIN}/oauth2/authorize|true"
 )
 
 # ── Wait for Forgejo ──────────────────────────────────────────────────────────
@@ -185,6 +186,11 @@ create_app_auth_secret() {
   local SECRET_NAME="$2"
   local NAMESPACE="$3"
 
+  if ! kubectl get ns "${NAMESPACE}" >/dev/null 2>&1; then
+    echo "Namespace '${NAMESPACE}' does not exist — skipping ${APP_NAME} auth secret."
+    return 0
+  fi
+
   if [ -n "${CLIENT_SECRETS[$APP_NAME]}" ]; then
     # Preserve existing BETTER_AUTH_SECRET if the secret already exists
     EXISTING_AUTH_SECRET=""
@@ -279,6 +285,33 @@ else
   echo "Warning: MCP-Auth OAuth2 app exists but 'op-api-oauth' secret is missing."
   echo "Delete the app in Forgejo and re-run, or create the secret manually."
   exit 1
+fi
+
+# ── pgAdmin secrets ────────────────────────────────────────────────────────────
+
+if kubectl get ns pgadmin >/dev/null 2>&1; then
+  if [ -n "${CLIENT_SECRETS[pgAdmin]}" ]; then
+    echo "Creating pgAdmin secrets..."
+    # Preserve existing admin password if secret exists
+    EXISTING_PW=""
+    if kubectl get secret pgadmin-secrets -n pgadmin >/dev/null 2>&1; then
+      EXISTING_PW=$(kubectl get secret pgadmin-secrets -n pgadmin -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
+    fi
+    PGADMIN_PW="${EXISTING_PW:-$(openssl rand -base64 16 | head -c 16)}"
+
+    apply_secret pgadmin-secrets -n pgadmin \
+      --from-literal=password="${PGADMIN_PW}" \
+      --from-literal=OAUTH2_CLIENT_ID="${CLIENT_IDS[pgAdmin]}" \
+      --from-literal=OAUTH2_CLIENT_SECRET="${CLIENT_SECRETS[pgAdmin]}"
+  elif kubectl get secret pgadmin-secrets -n pgadmin >/dev/null 2>&1; then
+    echo "pgAdmin secrets already exist."
+  else
+    echo "Warning: pgAdmin OAuth2 app exists but 'pgadmin-secrets' secret is missing."
+    echo "Delete the app in Forgejo and re-run, or create the secret manually."
+    exit 1
+  fi
+else
+  echo "Skipping pgAdmin secrets (pgadmin not enabled)."
 fi
 
 echo "OAuth2 setup complete."
