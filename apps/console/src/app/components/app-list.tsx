@@ -3,13 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
 interface AppInfo {
+  name: string;
   namespace: string;
   org: string;
   repo: string;
-  ready: boolean;
+  tier: "platform" | "workload";
   status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; total: number };
   url: string;
+  repoUrl: string;
+  toggleable?: boolean;
   archived_at?: string;
 }
 
@@ -19,7 +22,6 @@ interface ArchivedAppInfo {
   namespace: string;
   archived_at: string;
   status: "running" | "degraded" | "stopped";
-  ready: boolean;
   replicas: { ready: number; desired: number; total: number };
   url: string;
 }
@@ -350,6 +352,176 @@ function AppCard({ app, onRefresh }: { app: AppInfo; onRefresh: () => void }) {
           >
             <a
               href={getForgejoUrl(app.org, app.repo)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm"
+              style={{
+                color: "var(--text-muted)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 2,
+              }}
+              onClick={(e) => e.stopPropagation()}
+              title="View source"
+            >
+              <CodeIcon />
+            </a>
+            {app.url && (
+              <a
+                href={app.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm"
+                style={{
+                  color: "var(--accent)",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {app.url.replace(/^https?:\/\//, "")}
+                <ExternalLinkIcon />
+              </a>
+            )}
+          </span>
+        </div>
+        {error && (
+          <p
+            className="text-xs"
+            style={{ color: "rgb(239, 68, 68)", margin: 0 }}
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PlatformAppCard({
+  app,
+  onRefresh,
+}: {
+  app: AppInfo;
+  onRefresh: () => void;
+}) {
+  const [toggling, setToggling] = useState(false);
+  const [error, setError] = useState("");
+
+  const isEnabled = app.status !== "stopped";
+
+  async function handleToggle() {
+    setToggling(true);
+    setError("");
+    try {
+      const res = await fetch("/api/platform/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          services: { [app.repo]: { enabled: !isEnabled } },
+        }),
+      });
+      if (res.ok) {
+        onRefresh();
+      } else {
+        setError("Failed to update");
+      }
+    } catch {
+      setError("Network error");
+    } finally {
+      setToggling(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div
+        className="card-body"
+        style={{ display: "flex", flexDirection: "column", gap: 12 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>
+              {app.name}
+            </h3>
+            <p className="text-sm text-muted">{app.namespace}</p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <StatusBadge status={app.status} />
+            {app.toggleable && (
+              <button
+                onClick={handleToggle}
+                disabled={toggling}
+                style={{
+                  position: "relative",
+                  width: 44,
+                  height: 24,
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: isEnabled ? "var(--accent)" : "var(--bg-inset)",
+                  cursor: toggling ? "wait" : "pointer",
+                  flexShrink: 0,
+                  transition: "background 0.2s",
+                  padding: 0,
+                }}
+                aria-label={`${isEnabled ? "Disable" : "Enable"} ${app.name}`}
+              >
+                <span
+                  style={{
+                    position: "absolute",
+                    top: 2,
+                    left: isEnabled ? 22 : 2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    background: "white",
+                    transition: "left 0.2s",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }}
+                />
+                {toggling && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <span
+                      className="spinner"
+                      style={{ width: 12, height: 12 }}
+                    />
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          <span className="text-xs text-muted">
+            {app.replicas.ready}/{app.replicas.total} replica
+            {app.replicas.total !== 1 ? "s" : ""}
+          </span>
+          <span
+            style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+          >
+            <a
+              href={app.repoUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm"
@@ -837,7 +1009,15 @@ export function AppList() {
     fetchApps();
   }
 
-  if (apps.length === 0 && archivedApps.length === 0 && !showCreate) {
+  const platformApps = apps.filter((a) => a.tier === "platform");
+  const workloadApps = apps.filter((a) => a.tier === "workload");
+
+  if (
+    workloadApps.length === 0 &&
+    platformApps.length === 0 &&
+    archivedApps.length === 0 &&
+    !showCreate
+  ) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">
@@ -879,34 +1059,72 @@ export function AppList() {
           50% { opacity: 0.4; }
         }
       `}</style>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          marginBottom: 16,
-        }}
-      >
-        {!showCreate && (
-          <button
-            className="btn btn-accent btn-sm"
-            onClick={() => setShowCreate(true)}
-          >
-            <PlusIcon />
-            Create App
-          </button>
-        )}
-      </div>
-      {showCreate && (
-        <CreateAppForm
-          orgs={orgs}
-          onCreated={handleCreated}
-          onCancel={() => setShowCreate(false)}
-        />
+      {platformApps.length > 0 && (
+        <div className="section">
+          <div className="section-header">Platform</div>
+          <div className="grid-2">
+            {platformApps.map((app) => (
+              <PlatformAppCard
+                key={app.namespace}
+                app={app}
+                onRefresh={fetchApps}
+              />
+            ))}
+          </div>
+        </div>
       )}
-      <div className="grid-2">
-        {apps.map((app) => (
-          <AppCard key={app.namespace} app={app} onRefresh={fetchApps} />
-        ))}
+      <div className="section">
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginBottom: 16,
+          }}
+        >
+          <span className="section-header" style={{ marginBottom: 0 }}>
+            Your Apps
+          </span>
+          {!showCreate && (
+            <button
+              className="btn btn-accent btn-sm"
+              onClick={() => setShowCreate(true)}
+            >
+              <PlusIcon />
+              Create App
+            </button>
+          )}
+        </div>
+        {showCreate && (
+          <CreateAppForm
+            orgs={orgs}
+            onCreated={handleCreated}
+            onCancel={() => setShowCreate(false)}
+          />
+        )}
+        {workloadApps.length > 0 ? (
+          <div className="grid-2">
+            {workloadApps.map((app) => (
+              <AppCard key={app.namespace} app={app} onRefresh={fetchApps} />
+            ))}
+          </div>
+        ) : (
+          !showCreate && (
+            <div className="card">
+              <div
+                style={{
+                  padding: "40px 20px",
+                  textAlign: "center",
+                }}
+              >
+                <p className="text-sm text-muted">
+                  No apps deployed yet. Create one from the template to get
+                  started.
+                </p>
+              </div>
+            </div>
+          )
+        )}
       </div>
       {archivedApps.length > 0 && (
         <div style={{ marginTop: 32 }}>

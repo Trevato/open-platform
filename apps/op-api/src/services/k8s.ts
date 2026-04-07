@@ -1,6 +1,6 @@
 import * as k8s from "@kubernetes/client-node";
 import { setHeaderOptions } from "@kubernetes/client-node";
-import type { AppInfo, PreviewInfo, ServiceStatus } from "./types.js";
+import type { AppInfo, PreviewInfo } from "./types.js";
 
 const kc = new k8s.KubeConfig();
 kc.loadFromDefault();
@@ -12,42 +12,87 @@ const networkingV1 = kc.makeApiClient(k8s.NetworkingV1Api);
 const SERVICE_PREFIX = process.env.SERVICE_PREFIX || "";
 const PLATFORM_DOMAIN = process.env.PLATFORM_DOMAIN || "";
 
-const PLATFORM_SERVICES = [
+export const PLATFORM_SERVICES = [
   {
-    name: "forgejo",
+    name: "Forgejo",
+    repo: "forgejo",
     namespace: "forgejo",
     labelSelector: "app.kubernetes.io/name=forgejo",
     subdomain: "forgejo",
+    repoUrl: "https://codeberg.org/forgejo/forgejo",
+    toggleable: false,
   },
   {
-    name: "woodpecker",
+    name: "Woodpecker",
+    repo: "woodpecker",
     namespace: "woodpecker",
     labelSelector: "app.kubernetes.io/name=server",
     subdomain: "ci",
+    repoUrl: "https://github.com/woodpecker-ci/woodpecker",
+    toggleable: false,
   },
   {
-    name: "headlamp",
+    name: "Headlamp",
+    repo: "headlamp",
     namespace: "headlamp",
     labelSelector: "app.kubernetes.io/name=headlamp",
     subdomain: "headlamp",
+    repoUrl: "https://github.com/headlamp-k8s/headlamp",
+    toggleable: false,
   },
   {
-    name: "minio",
+    name: "MinIO",
+    repo: "minio",
     namespace: "minio",
     labelSelector: "app=minio",
     subdomain: "minio",
+    repoUrl: "https://github.com/minio/minio",
+    toggleable: false,
   },
   {
-    name: "postgres",
+    name: "PostgreSQL",
+    repo: "postgres",
     namespace: "postgres",
     labelSelector: "role=primary",
-    subdomain: "db",
+    subdomain: "",
+    repoUrl: "https://github.com/cloudnative-pg/cloudnative-pg",
+    toggleable: false,
   },
   {
-    name: "pgadmin",
+    name: "pgAdmin",
+    repo: "pgadmin",
     namespace: "pgadmin",
     labelSelector: "app.kubernetes.io/name=pgadmin4",
     subdomain: "db",
+    repoUrl: "https://github.com/pgadmin-org/pgadmin4",
+    toggleable: true,
+  },
+  {
+    name: "Jitsi Meet",
+    repo: "jitsi",
+    namespace: "jitsi",
+    labelSelector: "app.kubernetes.io/name=jitsi-meet",
+    subdomain: "meet",
+    repoUrl: "https://github.com/jitsi/jitsi-meet",
+    toggleable: true,
+  },
+  {
+    name: "Zulip",
+    repo: "zulip",
+    namespace: "zulip",
+    labelSelector: "app.kubernetes.io/name=zulip",
+    subdomain: "chat",
+    repoUrl: "https://github.com/zulip/zulip",
+    toggleable: true,
+  },
+  {
+    name: "Mailpit",
+    repo: "mailpit",
+    namespace: "mailpit",
+    labelSelector: "app.kubernetes.io/name=mailpit",
+    subdomain: "mail",
+    repoUrl: "https://github.com/axllent/mailpit",
+    toggleable: true,
   },
 ];
 
@@ -80,8 +125,8 @@ async function resolveServiceUrl(
   return getIngressUrl(namespace);
 }
 
-export async function getServiceStatuses(): Promise<ServiceStatus[]> {
-  const statuses: ServiceStatus[] = [];
+export async function getPlatformApps(): Promise<AppInfo[]> {
+  const apps: AppInfo[] = [];
 
   for (const svc of PLATFORM_SERVICES) {
     try {
@@ -99,30 +144,39 @@ export async function getServiceStatuses(): Promise<ServiceStatus[]> {
         ),
       ).length;
 
-      statuses.push({
+      apps.push({
         name: svc.name,
+        org: "system",
+        repo: svc.repo,
         namespace: svc.namespace,
-        ready: ready > 0,
-        replicas: { ready, total: pods.length },
+        tier: "platform",
+        status:
+          ready > 0 ? "running" : pods.length > 0 ? "degraded" : "stopped",
+        replicas: { ready, desired: pods.length, total: pods.length },
         url,
-        subdomain: svc.subdomain,
+        repoUrl: svc.repoUrl,
+        toggleable: svc.toggleable,
       });
     } catch {
-      statuses.push({
+      apps.push({
         name: svc.name,
+        org: "system",
+        repo: svc.repo,
         namespace: svc.namespace,
-        ready: false,
-        replicas: { ready: 0, total: 0 },
+        tier: "platform",
+        status: "stopped",
+        replicas: { ready: 0, desired: 0, total: 0 },
         url: buildServiceUrl(svc.subdomain),
-        subdomain: svc.subdomain,
+        repoUrl: svc.repoUrl,
+        toggleable: svc.toggleable,
       });
     }
   }
 
-  return statuses;
+  return apps;
 }
 
-export async function getApps(): Promise<AppInfo[]> {
+export async function getWorkloadApps(): Promise<AppInfo[]> {
   const apps: AppInfo[] = [];
 
   try {
@@ -145,6 +199,8 @@ export async function getApps(): Promise<AppInfo[]> {
 
       if (INFRA_REPOS.has(repo)) continue;
 
+      const repoUrl = `https://${SERVICE_PREFIX}forgejo.${PLATFORM_DOMAIN}/${org}/${repo}`;
+
       try {
         const [depList, url] = await Promise.all([
           appsV1.listNamespacedDeployment({ namespace }),
@@ -156,23 +212,27 @@ export async function getApps(): Promise<AppInfo[]> {
 
         const isReady = ready >= desired && desired > 0;
         apps.push({
+          name: repo,
           org,
           repo,
           namespace,
-          ready: isReady,
+          tier: "workload",
           status: isReady ? "running" : ready > 0 ? "degraded" : "stopped",
           replicas: { ready, desired, total: desired },
           url,
+          repoUrl,
         });
       } catch {
         apps.push({
+          name: repo,
           org,
           repo,
           namespace,
-          ready: false,
+          tier: "workload",
           status: "stopped",
           replicas: { ready: 0, desired: 0, total: 0 },
           url: "",
+          repoUrl,
         });
       }
     }
@@ -181,6 +241,14 @@ export async function getApps(): Promise<AppInfo[]> {
   }
 
   return apps;
+}
+
+export async function getAllApps(): Promise<AppInfo[]> {
+  const [platform, workload] = await Promise.all([
+    getPlatformApps(),
+    getWorkloadApps(),
+  ]);
+  return [...platform, ...workload];
 }
 
 export async function getAppStatus(
@@ -201,13 +269,15 @@ export async function getAppStatus(
 
     const isReady = ready >= desired && desired > 0;
     return {
+      name: repo,
       org,
       repo,
       namespace,
-      ready: isReady,
+      tier: "workload" as const,
       status: isReady ? "running" : ready > 0 ? "degraded" : "stopped",
       replicas: { ready, desired, total: desired },
       url,
+      repoUrl: `https://${SERVICE_PREFIX}forgejo.${PLATFORM_DOMAIN}/${org}/${repo}`,
     };
   } catch {
     return null;

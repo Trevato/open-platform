@@ -1,8 +1,6 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { ServiceToggle } from "@/app/components/service-toggle";
-
 interface PlatformConfig {
   domain: string;
   servicePrefix: string;
@@ -13,21 +11,13 @@ interface PlatformConfig {
     addressPool?: string;
     interface?: string;
   };
-  services: {
-    jitsi: { enabled: boolean };
-    zulip: { enabled: boolean };
-    mailpit: { enabled: boolean };
-    pgadmin: { enabled: boolean };
-  };
 }
 
 interface Props {
   initialConfig: PlatformConfig | null;
-  domain: string;
-  prefix: string;
 }
 
-export function SettingsEditor({ initialConfig, domain, prefix }: Props) {
+export function SettingsEditor({ initialConfig }: Props) {
   const [config, setConfig] = useState<PlatformConfig | null>(initialConfig);
   const [saving, setSaving] = useState<string | null>(null);
   const [lastChange, setLastChange] = useState<string | null>(null);
@@ -72,24 +62,6 @@ export function SettingsEditor({ initialConfig, domain, prefix }: Props) {
     }
     return data;
   }, []);
-
-  const handleServiceToggle = useCallback(
-    async (service: string, enabled: boolean) => {
-      setSaving(service);
-      try {
-        const result = await patchConfig({
-          services: { [service]: { enabled } },
-        });
-        setLastChange(
-          result.changes?.[0] ||
-            `${service} ${enabled ? "enabled" : "disabled"}`,
-        );
-      } finally {
-        setSaving(null);
-      }
-    },
-    [patchConfig],
-  );
 
   const handleNetworkApply = useCallback(async () => {
     setSaving("network");
@@ -306,65 +278,6 @@ export function SettingsEditor({ initialConfig, domain, prefix }: Props) {
           </div>
         </div>
       </div>
-
-      {/* Services */}
-      <div className="section">
-        <div className="section-header">Services</div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <ServiceToggle
-            name="Jitsi Meet"
-            description="Video conferencing"
-            enabled={config.services.jitsi.enabled}
-            onToggle={(enabled) => handleServiceToggle("jitsi", enabled)}
-          />
-          <ServiceToggle
-            name="Zulip"
-            description="Team messaging"
-            enabled={config.services.zulip.enabled}
-            onToggle={(enabled) => handleServiceToggle("zulip", enabled)}
-          />
-          <ServiceToggle
-            name="pgAdmin"
-            description="Database management"
-            enabled={config.services.pgadmin.enabled}
-            onToggle={(enabled) => handleServiceToggle("pgadmin", enabled)}
-          />
-        </div>
-      </div>
-
-      {/* Service URLs */}
-      <div className="section">
-        <div className="section-header">Service URLs</div>
-        <div className="card">
-          <div
-            className="card-body"
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              padding: "16px 20px",
-            }}
-          >
-            <UrlRow name="Console" url={`${prefix}console.${domain}`} />
-            <UrlRow name="Forgejo" url={`${prefix}forgejo.${domain}`} />
-            <UrlRow name="CI/CD" url={`${prefix}ci.${domain}`} />
-            <UrlRow name="Dashboard" url={`${prefix}headlamp.${domain}`} />
-            <UrlRow name="Storage" url={`${prefix}minio.${domain}`} />
-            {config.services.jitsi.enabled && (
-              <UrlRow name="Meet" url={`${prefix}meet.${domain}`} />
-            )}
-            {config.services.zulip.enabled && (
-              <UrlRow name="Chat" url={`${prefix}chat.${domain}`} />
-            )}
-            {config.services.mailpit.enabled && (
-              <UrlRow name="Mail" url={`${prefix}mail.${domain}`} />
-            )}
-            {config.services.pgadmin.enabled && (
-              <UrlRow name="Database" url={`${prefix}db.${domain}`} />
-            )}
-          </div>
-        </div>
-      </div>
     </>
   );
 }
@@ -483,37 +396,6 @@ function InputField({
             "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
         }}
       />
-    </div>
-  );
-}
-
-function UrlRow({ name, url }: { name: string; url: string }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        padding: "6px 0",
-      }}
-    >
-      <span className="text-sm" style={{ fontWeight: 500, flexShrink: 0 }}>
-        {name}
-      </span>
-      <a
-        href={`https://${url}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          fontSize: 12,
-          color: "var(--accent)",
-          fontFamily:
-            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
-        }}
-      >
-        {url}
-      </a>
     </div>
   );
 }

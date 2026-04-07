@@ -3,8 +3,9 @@ import { randomBytes } from "crypto";
 import { requireAdminPlugin } from "../auth.js";
 import { ForgejoClient } from "../services/forgejo.js";
 import {
-  getServiceStatuses,
-  getApps,
+  getPlatformApps,
+  getWorkloadApps,
+  PLATFORM_SERVICES,
   deleteNamespace,
   dropAppDatabase,
   deleteAppBucket,
@@ -23,7 +24,16 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
   .get(
     "/services",
     async () => {
-      const services = await getServiceStatuses();
+      const apps = await getPlatformApps();
+      const svcMap = new Map(PLATFORM_SERVICES.map((s) => [s.repo, s]));
+      const services = apps.map((a) => ({
+        name: a.repo,
+        namespace: a.namespace,
+        ready: a.status === "running",
+        replicas: { ready: a.replicas.ready, total: a.replicas.total },
+        url: a.url,
+        subdomain: svcMap.get(a.repo)?.subdomain || "",
+      }));
       return { services };
     },
     {
@@ -107,8 +117,9 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
     "/apps",
     async ({ user }) => {
       const client = new ForgejoClient(user.token);
-      const [deployedApps, orgs] = await Promise.all([
-        getApps(),
+      const [platformApps, deployedApps, orgs] = await Promise.all([
+        getPlatformApps(),
+        getWorkloadApps(),
         client.listOrgs(),
       ]);
 
@@ -166,7 +177,6 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
             namespace: `op-${repo.owner.login}-${repo.name}`,
             archived_at: repo.updated_at,
             status: deployed?.status || "stopped",
-            ready: deployed?.ready || false,
             replicas: deployed?.replicas || { ready: 0, desired: 0, total: 0 },
             url: deployed?.url || "",
           };
@@ -182,7 +192,6 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
           org: repo.owner.login,
           repo: repo.name,
           namespace: `op-${repo.owner.login}-${repo.name}`,
-          ready: false,
           status: "pending" as const,
           replicas: { ready: 0, desired: 0, total: 0 },
           url: "",
@@ -210,7 +219,11 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         }),
       );
 
-      return { apps: [...activeApps, ...pendingApps], archivedApps, orgs };
+      return {
+        apps: [...platformApps, ...activeApps, ...pendingApps],
+        archivedApps,
+        orgs,
+      };
     },
     {
       detail: { tags: ["Platform"], summary: "List deployed apps and orgs" },

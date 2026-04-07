@@ -150,19 +150,27 @@ export const ServiceStatus = t.Object({
 });
 
 export const AppInfo = t.Object({
+  name: t.String(),
   org: t.String(),
   repo: t.String(),
   namespace: t.String(),
+  tier: t.Union([t.Literal("platform"), t.Literal("workload")]),
   status: t.Union([
     t.Literal("running"),
     t.Literal("degraded"),
     t.Literal("stopped"),
+    t.Literal("pending"),
+    t.Literal("deploying"),
   ]),
   replicas: t.Object({
     ready: t.Number(),
     desired: t.Number(),
+    total: t.Number(),
   }),
   url: t.String(),
+  repoUrl: t.String(),
+  archived_at: t.Optional(t.String()),
+  toggleable: t.Optional(t.Boolean()),
 });
 
 export const UserProfile = t.Object({

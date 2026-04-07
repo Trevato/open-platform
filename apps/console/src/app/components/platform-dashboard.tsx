@@ -3,23 +3,17 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 
-interface ServiceStatus {
-  name: string;
-  namespace: string;
-  ready: boolean;
-  replicas: { ready: number; total: number };
-  url: string;
-}
-
 interface AppInfo {
   name: string;
   namespace: string;
   org: string;
   repo: string;
-  ready: boolean;
+  tier: "platform" | "workload";
+  status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; total: number };
   url: string;
-  createdAt: string | null;
+  repoUrl: string;
+  toggleable?: boolean;
 }
 
 const SERVICE_ICONS: Record<
@@ -129,24 +123,14 @@ function AppIcon() {
 }
 
 export function PlatformDashboard() {
-  const [services, setServices] = useState<ServiceStatus[]>([]);
   const [apps, setApps] = useState<AppInfo[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
-      const [servicesRes, appsRes] = await Promise.all([
-        fetch("/api/platform/services"),
-        fetch("/api/platform/apps"),
-      ]);
-
-      if (servicesRes.ok) {
-        const data = await servicesRes.json();
-        setServices(data.services);
-      }
-
-      if (appsRes.ok) {
-        const data = await appsRes.json();
+      const res = await fetch("/api/platform/apps");
+      if (res.ok) {
+        const data = await res.json();
         setApps(data.apps);
       }
     } catch {
@@ -162,15 +146,21 @@ export function PlatformDashboard() {
     return () => clearInterval(id);
   }, [fetchData]);
 
-  const allHealthy = services.length > 0 && services.every((s) => s.ready);
-  const healthyCount = services.filter((s) => s.ready).length;
+  const platformApps = apps.filter((a) => a.tier === "platform");
+  const workloadApps = apps.filter((a) => a.tier === "workload");
+  const healthyCount = platformApps.filter(
+    (a) => a.status === "running",
+  ).length;
+  const allHealthy =
+    platformApps.length > 0 && healthyCount === platformApps.length;
+  const recentWorkloadApps = workloadApps.slice(0, 4);
 
   return (
     <>
       <div className="section">
         <div className="section-header">
           Platform Services
-          {!loading && services.length > 0 && (
+          {!loading && platformApps.length > 0 && (
             <span
               style={{
                 float: "right",
@@ -181,24 +171,26 @@ export function PlatformDashboard() {
             >
               <StatusDot ready={allHealthy} />{" "}
               <span style={{ marginLeft: 4 }}>
-                {healthyCount}/{services.length} healthy
+                {healthyCount}/{platformApps.length} healthy
               </span>
             </span>
           )}
         </div>
 
         {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+          <div
+            style={{ display: "flex", justifyContent: "center", padding: 40 }}
+          >
             <div className="spinner" />
           </div>
         ) : (
           <div className="grid-3">
-            {services.map((service) => {
-              const isExternal = service.url.startsWith("https://");
+            {platformApps.map((app) => {
+              const isExternal = app.url.startsWith("https://");
               const CardTag = isExternal ? "a" : "div";
               const linkProps = isExternal
                 ? {
-                    href: service.url,
+                    href: app.url,
                     target: "_blank" as const,
                     rel: "noopener noreferrer",
                   }
@@ -206,36 +198,36 @@ export function PlatformDashboard() {
 
               return (
                 <CardTag
-                  key={service.name}
+                  key={app.namespace}
                   className="card service-card"
                   {...linkProps}
                 >
                   <div className="service-card-header">
-                    <ServiceIcon name={service.name} />
-                    <h3>{service.name}</h3>
+                    <ServiceIcon name={app.name} />
+                    <h3>{app.name}</h3>
                     <span
-                      className={`badge ${service.ready ? "badge-ready" : "badge-failed"}`}
+                      className={`badge ${app.status === "running" ? "badge-ready" : "badge-failed"}`}
                       style={{ marginLeft: "auto" }}
                     >
-                      <StatusDot ready={service.ready} />
-                      {service.ready ? "Ready" : "Down"}
+                      <StatusDot ready={app.status === "running"} />
+                      {app.status === "running" ? "Ready" : "Down"}
                     </span>
                   </div>
                   {isExternal ? (
                     <span className="service-card-url">
-                      {formatUrl(service.url)}
+                      {formatUrl(app.url)}
                     </span>
                   ) : (
                     <span
                       className="text-xs text-muted"
                       style={{ fontFamily: "monospace" }}
                     >
-                      {service.url}
+                      {app.url}
                     </span>
                   )}
                   <span className="text-xs text-muted">
-                    {service.replicas.ready}/{service.replicas.total} replica
-                    {service.replicas.total !== 1 ? "s" : ""}
+                    {app.replicas.ready}/{app.replicas.total} replica
+                    {app.replicas.total !== 1 ? "s" : ""}
                   </span>
                 </CardTag>
               );
@@ -262,10 +254,12 @@ export function PlatformDashboard() {
         </div>
 
         {loading ? (
-          <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
+          <div
+            style={{ display: "flex", justifyContent: "center", padding: 40 }}
+          >
             <div className="spinner" />
           </div>
-        ) : apps.length === 0 ? (
+        ) : recentWorkloadApps.length === 0 ? (
           <div className="card">
             <div
               style={{
@@ -288,7 +282,7 @@ export function PlatformDashboard() {
           </div>
         ) : (
           <div className="grid-2">
-            {apps.map((app) => (
+            {recentWorkloadApps.map((app) => (
               <a
                 key={app.namespace}
                 href={app.url}
@@ -297,16 +291,22 @@ export function PlatformDashboard() {
                 className="card service-card"
               >
                 <div className="service-card-header">
-                  <div className="service-icon" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+                  <div
+                    className="service-icon"
+                    style={{
+                      background: "var(--accent-bg)",
+                      color: "var(--accent)",
+                    }}
+                  >
                     <AppIcon />
                   </div>
                   <h3>{app.name}</h3>
                   <span
-                    className={`badge ${app.ready ? "badge-ready" : "badge-failed"}`}
+                    className={`badge ${app.status === "running" ? "badge-ready" : "badge-failed"}`}
                     style={{ marginLeft: "auto" }}
                   >
-                    <StatusDot ready={app.ready} />
-                    {app.ready ? "Ready" : "Down"}
+                    <StatusDot ready={app.status === "running"} />
+                    {app.status === "running" ? "Ready" : "Down"}
                   </span>
                 </div>
                 <span className="service-card-url">{formatUrl(app.url)}</span>

@@ -30,8 +30,8 @@ export function registerPlatformTools(
       if (!(await checkAdmin(user))) {
         return text({ error: "Admin access required" });
       }
-      const services = await k8sService.getServiceStatuses();
-      return text({ services });
+      const apps = await k8sService.getPlatformApps();
+      return text({ services: apps });
     },
   );
 
@@ -120,7 +120,7 @@ export function registerPlatformTools(
     "List all deployed applications",
     {},
     async () => {
-      return text(await k8sService.getApps());
+      return text(await k8sService.getWorkloadApps());
     },
   );
 

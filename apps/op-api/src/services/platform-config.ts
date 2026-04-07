@@ -94,7 +94,7 @@ spec:
         TOKEN_AUTH_URL: "https://\${SERVICE_PREFIX}meet-auth.\${DOMAIN}/room/{room}"
       extraContainers:
         - name: jitsi-oidc
-          image: ghcr.io/marcelcoding/jitsi-openid:latest
+          image: \${REGISTRY_HOST}/system/jitsi-oidc:latest
           imagePullPolicy: Always
           ports:
             - name: http
@@ -374,6 +374,8 @@ spec:
           value: "/etc/ssl/certs/platform-ca.crt"
         - name: PGADMIN_CONFIG_ALLOW_SAVE_PASSWORD
           value: "True"
+        - name: PGADMIN_REPLACE_SERVERS_ON_STARTUP
+          value: "True"
     existingSecret: pgadmin-secrets
     envVarsFromSecrets:
       - pgadmin-secrets
@@ -416,13 +418,16 @@ spec:
         mountPath: /etc/ssl/certs/platform-ca.crt
         subPath: ca.crt
         readOnly: true
+    startupProbe:
+      failureThreshold: 60
+      periodSeconds: 10
     resources:
       requests:
-        memory: 128Mi
-        cpu: 50m
+        memory: 256Mi
+        cpu: 100m
       limits:
-        memory: 512Mi
-        cpu: 250m
+        memory: 1Gi
+        cpu: 500m
 `;
 
 const SERVICE_TEMPLATES: Record<string, string> = {
@@ -524,10 +529,10 @@ export class PlatformConfigService {
     // Derive from env + probe repo for enabled services
     const config = defaultConfig();
     const [jitsiSha, zulipSha, mailpitSha, pgadminSha] = await Promise.all([
-      this.getFileSha("apps/jitsi.yaml"),
-      this.getFileSha("apps/zulip.yaml"),
-      this.getFileSha("apps/mailpit.yaml"),
-      this.getFileSha("apps/pgadmin.yaml"),
+      this.getFileSha("platform/apps/jitsi.yaml"),
+      this.getFileSha("platform/apps/zulip.yaml"),
+      this.getFileSha("platform/apps/mailpit.yaml"),
+      this.getFileSha("platform/apps/pgadmin.yaml"),
     ]);
     config.services.jitsi.enabled = jitsiSha !== null;
     config.services.zulip.enabled = zulipSha !== null;
@@ -683,7 +688,7 @@ export class PlatformConfigService {
     config: PlatformConfig,
   ): Promise<FileOp[]> {
     const files: FileOp[] = [];
-    const helmPath = `apps/${service}.yaml`;
+    const helmPath = `platform/apps/${service}.yaml`;
 
     if (enabled) {
       const yaml = this.generateServiceYaml(service, config);
@@ -698,7 +703,7 @@ export class PlatformConfigService {
       }
 
       const kustomOps = await this.addToKustomization(
-        "apps/kustomization.yaml",
+        "platform/apps/kustomization.yaml",
         `${service}.yaml`,
       );
       files.push(...kustomOps);
@@ -712,7 +717,7 @@ export class PlatformConfigService {
       }
 
       const kustomOps = await this.removeFromKustomization(
-        "apps/kustomization.yaml",
+        "platform/apps/kustomization.yaml",
         `${service}.yaml`,
       );
       files.push(...kustomOps);
@@ -732,9 +737,15 @@ export class PlatformConfigService {
 
     const rabbitmqPassword = crypto.randomUUID().replace(/-/g, "");
 
+    const registryHost =
+      process.env.REGISTRY_HOST || `forgejo.${config.domain}`;
+    const domainTld = config.domain.split(".").pop() || "sh";
+
     return template
       .replace(/\$\{DOMAIN\}/g, config.domain)
+      .replace(/\$\{DOMAIN_TLD\}/g, domainTld)
       .replace(/\$\{SERVICE_PREFIX\}/g, config.servicePrefix)
+      .replace(/\$\{REGISTRY_HOST\}/g, registryHost)
       .replace(/\$\{ADMIN_EMAIL\}/g, `admin@${config.domain}`)
       .replace(/\$\{SMTP_HOST\}/g, "mailpit-smtp.mailpit.svc.cluster.local")
       .replace(/\$\{SMTP_PORT\}/g, "25")
@@ -801,30 +812,32 @@ export class PlatformConfigService {
     const nsYaml = NAMESPACE_YAML[service];
     if (!nsYaml) return [];
 
-    const nsPath = `infrastructure/configs/namespaces.yaml`;
+    const nsPath = `platform/infrastructure/configs/namespaces.yaml`;
     const existing = await this.getFileContent(nsPath);
 
     if (!existing) {
-      // File doesn't exist — create with just this namespace
       return [
         {
           operation: "create" as const,
           path: nsPath,
-          content: nsYaml,
+          content: `# BEGIN ${service}\n${nsYaml}# END ${service}\n`,
         },
       ];
     }
 
-    // Already contains this namespace
+    // Already contains this namespace (check both marker and plain formats)
     if (existing.content.includes(`name: ${service}`)) return [];
 
-    // Append the new namespace document
+    // Append with BEGIN/END markers
     const separator = existing.content.endsWith("\n") ? "---\n" : "\n---\n";
     return [
       {
         operation: "update" as const,
         path: nsPath,
-        content: existing.content + separator + nsYaml,
+        content:
+          existing.content +
+          separator +
+          `# BEGIN ${service}\n${nsYaml}# END ${service}\n`,
         sha: existing.sha,
       },
     ];

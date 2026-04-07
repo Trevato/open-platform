@@ -8,7 +8,7 @@ const text = (data: unknown) => ({
 
 export function registerAppTools(server: McpServer) {
   server.tool("list_apps", "List all deployed applications", {}, async () => {
-    return text(await k8sService.getApps());
+    return text(await k8sService.getWorkloadApps());
   });
 
   server.tool(
@@ -29,14 +29,14 @@ export function registerAppTools(server: McpServer) {
     "Get platform health and all service statuses",
     {},
     async () => {
-      const [services, apps] = await Promise.all([
-        k8sService.getServiceStatuses(),
-        k8sService.getApps(),
+      const [platformApps, workloadApps] = await Promise.all([
+        k8sService.getPlatformApps(),
+        k8sService.getWorkloadApps(),
       ]);
       return text({
-        healthy: services.every((s) => s.ready),
-        services,
-        apps,
+        healthy: platformApps.every((a) => a.status === "running"),
+        services: platformApps,
+        apps: workloadApps,
       });
     },
   );

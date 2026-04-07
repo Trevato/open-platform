@@ -15,9 +15,6 @@ export default async function PlatformSettingsPage() {
     // Config API not available — show fallback
   }
 
-  const domain = process.env.PLATFORM_DOMAIN ?? "localhost";
-  const prefix = process.env.SERVICE_PREFIX ?? "";
-
   return (
     <div className="container" style={{ maxWidth: 640 }}>
       <h1
@@ -30,7 +27,7 @@ export default async function PlatformSettingsPage() {
       >
         Platform Settings
       </h1>
-      <SettingsEditor initialConfig={config} domain={domain} prefix={prefix} />
+      <SettingsEditor initialConfig={config} />
     </div>
   );
 }

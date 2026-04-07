@@ -185,15 +185,20 @@ export interface WoodpeckerRepo {
   active: boolean;
 }
 
+export type AppTier = "platform" | "workload";
+
 export interface AppInfo {
+  name: string;
   org: string;
   repo: string;
   namespace: string;
-  ready: boolean;
+  tier: AppTier;
   status: "running" | "degraded" | "stopped" | "pending" | "deploying";
   replicas: { ready: number; desired: number; total: number };
   url: string;
+  repoUrl: string;
   archived_at?: string;
+  toggleable?: boolean;
 }
 
 export interface PreviewInfo {
@@ -205,13 +210,4 @@ export interface PreviewInfo {
   status: "running" | "degraded" | "stopped";
   replicas: { ready: number; desired: number; total: number };
   url: string;
-}
-
-export interface ServiceStatus {
-  name: string;
-  namespace: string;
-  ready: boolean;
-  replicas: { ready: number; total: number };
-  url: string;
-  subdomain: string;
 }

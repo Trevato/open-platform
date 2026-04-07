@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authPlugin } from "../auth.js";
 import {
-  getApps,
+  getWorkloadApps,
   getAppStatus,
   getPreviewStatus,
   listPreviews,
@@ -17,7 +17,7 @@ export const appsPlugin = new Elysia({ prefix: "/apps" })
   .get(
     "/",
     async () => {
-      return getApps();
+      return getWorkloadApps();
     },
     {
       detail: { tags: ["Apps"], summary: "List deployed apps" },
