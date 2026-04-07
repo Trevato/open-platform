@@ -83,10 +83,10 @@ Before running `make deploy` with `infrastructure.mode=external`:
 │  ├── Flux           → GitOps for OP workloads            │
 │  └── Apps           → whatever you build                 │
 │                                                           │
-│  Other tenants (independent namespaces):                 │
-│  ├── chromadb       → vector database                    │
-│  ├── ollama         → local LLM inference                │
-│  └── (future)       → child company vClusters            │
+│  Other tenants (vClusters):                              │
+│  ├── espo-ai        → ChromaDB, Ollama, data pipelines   │
+│  ├── espoengineering→ child company workloads            │
+│  └── (future)       → additional child companies         │
 │                                                           │
 └───────────────────────────────────────────────────────────┘
 ```
