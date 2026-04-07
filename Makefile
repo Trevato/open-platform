@@ -1,4 +1,4 @@
-.PHONY: deploy generate deploy-infra diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset
+.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra
 
 deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
 	./scripts/deploy.sh
@@ -8,6 +8,12 @@ generate: ## Generate config from open-platform.yaml (run before deploy if confi
 
 deploy-infra: ## Deploy infrastructure only (traefik, cnpg, minio, forgejo)
 	helmfile sync -l tier=infra
+
+deploy-apps: ## Deploy apps only (headlamp, woodpecker, oauth2-proxy — skips infrastructure)
+	helmfile sync -l tier=apps
+
+check-infra: ## Validate external infrastructure components are present
+	./scripts/check-infra.sh
 
 diff: ## Preview changes without applying
 	helmfile diff

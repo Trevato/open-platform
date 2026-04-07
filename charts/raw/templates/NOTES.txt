@@ -1,0 +1,1 @@
+This is a hook-only chart used for infrastructure bootstrap tasks.
