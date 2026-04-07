@@ -309,6 +309,8 @@ export function SettingsEditor({ initialConfig, initialNodes }: Props) {
                       }}
                     >
                       <span
+                        title={node.status}
+                        aria-label={node.status}
                         style={{
                           width: 8,
                           height: 8,
