@@ -31,6 +31,7 @@ domain: myplatform.example.com
 #           Required pre-existing components:
 #             - Traefik (watching all namespaces for Ingress resources)
 #             - CNPG operator (cloudnative-pg in cnpg-system namespace)
+#             - Flux (GitOps controllers in flux-system namespace)
 #             - cert-manager (if tls.mode=letsencrypt)
 #             - MetalLB (if network.mode=loadbalancer)
 #

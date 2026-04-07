@@ -28,6 +28,7 @@ network:
 | **CNPG operator** | Installed by helmfile, managed by Flux | Expected pre-installed, OP applies Cluster manifest only |
 | **cert-manager** | Installed if `tls.mode=letsencrypt` | Expected pre-installed if `tls.mode=letsencrypt` |
 | **MetalLB** | Installed if `network.mode=loadbalancer` | Expected pre-installed if `network.mode=loadbalancer` |
+| **Flux** | Installed by helmfile | Expected pre-installed, OP only registers its GitRepository + Kustomization |
 | **Forgejo** | No change | No change |
 | **All apps** | No change | No change |
 
@@ -60,6 +61,11 @@ Before running `make deploy` with `infrastructure.mode=external`:
 - Running in `metallb-system` namespace
 - Address pool and L2Advertisement configured for OP's VIP range
 
+### Flux
+- Controllers running in `flux-system` namespace (source-controller, kustomize-controller, helm-controller)
+- CRDs installed (GitRepository, Kustomization, HelmRelease, etc.)
+- OP's `setup-flux.sh` will create a GitRepository + Kustomization pointing to Forgejo
+
 ## Architecture
 
 ```
@@ -70,6 +76,7 @@ Before running `make deploy` with `infrastructure.mode=external`:
 │  ├── MetalLB        → assigns VIPs                       │
 │  ├── cert-manager   → issues TLS certs                   │
 │  ├── CNPG operator  → manages PostgreSQL clusters        │
+│  ├── Flux           → GitOps engine (multi-source)       │
 │  ├── CoreDNS        → resolves internal + external DNS   │
 │  ├── KubeVirt       → runs Windows VMs                   │
 │  └── (other infra)  → monitoring, AI services, etc.      │

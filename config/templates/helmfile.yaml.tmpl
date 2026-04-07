@@ -355,6 +355,7 @@ releases:
 
   # ─── Layer 4: GitOps ───────────────────────────────────────────────
 
+  # BEGIN infra-flux
   - name: flux
     namespace: flux-system
     chart: fluxcd-community/flux2
@@ -366,6 +367,23 @@ releases:
       - events: ["postsync"]
         showlogs: true
         command: "./scripts/setup-flux.sh"
+  # END infra-flux
+
+  # BEGIN flux-external
+  # When Flux is pre-installed as infrastructure, OP only needs to register
+  # its GitRepository and Kustomization — not install the Flux controllers.
+  - name: flux-bootstrap
+    namespace: default
+    chart: ./charts/raw
+    needs:
+      - forgejo/forgejo
+    labels:
+      tier: platform
+    hooks:
+      - events: ["postsync"]
+        showlogs: true
+        command: "./scripts/setup-flux.sh"
+  # END flux-external
 
   # ─── Layer 5: Provisioner ────────────────────────────────────────────
 

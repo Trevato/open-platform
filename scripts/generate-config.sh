@@ -628,11 +628,15 @@ if [ "$INFRA_MODE" = "external" ]; then
       sed_i '/dependsOn/,/name: infra-controllers/d' "$ROOT_DIR/platform/cluster/infra-configs.yaml"
   fi
 
+  # Flux: in external mode, skip installing Flux controllers (expect pre-installed)
+  sed_i '/# BEGIN infra-flux/,/# END infra-flux/d' "$ROOT_DIR/helmfile.yaml"
+
   # cert-manager and metallb are already conditional on tls.mode and network.mode
-  echo "  infrastructure: external (traefik, cnpg skipped — expected pre-installed)"
+  echo "  infrastructure: external (traefik, cnpg, flux skipped — expected pre-installed)"
 else
-  # Bundled mode: remove the external bootstrap release
+  # Bundled mode: remove the external bootstrap releases
   sed_i '/# BEGIN infra-external/,/# END infra-external/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN flux-external/,/# END flux-external/d' "$ROOT_DIR/helmfile.yaml"
 fi
 
 # ── Generate .env (backward compatibility) ──────────────────────────────────

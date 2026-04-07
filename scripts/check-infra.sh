@@ -63,6 +63,15 @@ if [ "${NETWORK_MODE:-host}" = "loadbalancer" ]; then
   fi
 fi
 
+# Check Flux controllers
+if kubectl get deployment -n flux-system source-controller -o name 2>/dev/null | grep -q deployment; then
+  echo "  [OK] Flux source-controller found in flux-system"
+else
+  echo "  [FAIL] Flux not found. Install Flux in flux-system namespace."
+  echo "         (helm install flux fluxcd-community/flux2 -n flux-system --create-namespace)"
+  FAILED=true
+fi
+
 if [ "$FAILED" = true ]; then
   echo ""
   echo "External infrastructure check failed."
