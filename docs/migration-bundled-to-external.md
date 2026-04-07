@@ -4,7 +4,11 @@ This guide covers switching a running Open Platform deployment from `infrastruct
 
 ## Overview
 
-In bundled mode, OP's Flux manages HelmReleases for Traefik, CNPG, cert-manager, and MetalLB. Switching to external mode means these components continue running but are no longer managed by OP's Flux. The infrastructure team takes ownership.
+In bundled mode, OP deploys directly on the host cluster and manages its own infrastructure (Traefik, CNPG, cert-manager, MetalLB, Flux). Switching to external mode means:
+
+1. Infrastructure components continue running but are no longer managed by OP — the infrastructure team takes ownership
+2. OP redeploys into its own vCluster, fully isolated from the host
+3. Ingress resources sync from the vCluster to the host Traefik automatically
 
 ## Pre-migration Checklist
 

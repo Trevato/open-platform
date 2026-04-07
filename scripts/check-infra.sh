@@ -63,6 +63,19 @@ if [ "${NETWORK_MODE:-host}" = "loadbalancer" ]; then
   fi
 fi
 
+# Check vCluster operator
+if kubectl get deployment -A -l app=vcluster -o name 2>/dev/null | grep -q deployment; then
+  echo "  [OK] vCluster operator found"
+elif kubectl get crd virtualclusters.management.loft.sh -o name 2>/dev/null | grep -q crd; then
+  echo "  [OK] vCluster CRDs found"
+elif command -v vcluster >/dev/null 2>&1; then
+  echo "  [OK] vCluster CLI available (will create vCluster during deploy)"
+else
+  echo "  [FAIL] vCluster not found. Install vCluster operator or CLI."
+  echo "         (helm install vcluster vcluster/vcluster -n vcluster --create-namespace)"
+  FAILED=true
+fi
+
 # Check Flux controllers
 if kubectl get deployment -n flux-system source-controller -o name 2>/dev/null | grep -q deployment; then
   echo "  [OK] Flux source-controller found in flux-system"
