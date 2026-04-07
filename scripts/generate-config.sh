@@ -143,6 +143,9 @@ PGADMIN_ENABLED=$(yaml_get "$CONFIG_FILE" "pgadmin.enabled" 2>/dev/null) || PGAD
 # Provisioner (optional)
 PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
 
+# Infrastructure mode (optional — defaults to bundled)
+INFRA_MODE=$(yaml_get "$CONFIG_FILE" "infrastructure.mode" 2>/dev/null) || INFRA_MODE="bundled"
+
 # Network mode (optional — defaults to host)
 NETWORK_MODE=$(yaml_get "$CONFIG_FILE" "network.mode" 2>/dev/null) || NETWORK_MODE="host"
 METALLB_TRAEFIK_IP=$(yaml_get "$CONFIG_FILE" "network.traefik_ip" 2>/dev/null) || METALLB_TRAEFIK_IP=""
@@ -180,6 +183,7 @@ if [ "$PROVISIONER_ENABLED" = "true" ]; then
   echo "  Provisioner: enabled"
 fi
 echo "  Network: ${NETWORK_MODE}"
+echo "  Infrastructure: ${INFRA_MODE}"
 
 # ── Generate / Load Secrets ─────────────────────────────────────────────────
 
@@ -606,6 +610,20 @@ for f in "$ROOT_DIR/traefik-values.yaml" "$ROOT_DIR/platform/infrastructure/cont
   [ -f "$f" ] && sed_i '/# BEGIN host-network/d; /# END host-network/d; /# BEGIN loadbalancer/d; /# END loadbalancer/d' "$f"
 done
 
+# Conditional: remove infrastructure components if using external mode
+if [ "$INFRA_MODE" = "external" ]; then
+  sed_i '/# BEGIN infra-traefik/,/# END infra-traefik/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN infra-cnpg/,/# END infra-cnpg/d' "$ROOT_DIR/helmfile.yaml"
+  # Remove Flux-managed infrastructure controllers (external infra has its own lifecycle)
+  rm -f "$ROOT_DIR/platform/infrastructure/controllers/traefik.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/controllers/cnpg.yaml"
+  # cert-manager and metallb are already conditional on tls.mode and network.mode
+  echo "  infrastructure: external (traefik, cnpg skipped — expected pre-installed)"
+else
+  # Bundled mode: remove the external bootstrap release
+  sed_i '/# BEGIN infra-external/,/# END infra-external/d' "$ROOT_DIR/helmfile.yaml"
+fi
+
 # ── Generate .env (backward compatibility) ──────────────────────────────────
 
 echo ""
@@ -629,6 +647,7 @@ SMTP_HOST=${SMTP_HOST}
 SMTP_PORT=${SMTP_PORT}
 SMTP_FROM=${SMTP_FROM}
 NETWORK_MODE=${NETWORK_MODE}
+INFRA_MODE=${INFRA_MODE}
 EOF
 
 # External SMTP credentials

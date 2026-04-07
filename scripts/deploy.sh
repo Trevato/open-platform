@@ -55,6 +55,14 @@ DOMAIN="${PLATFORM_DOMAIN:?PLATFORM_DOMAIN not set}"
 echo "=== Open Platform Deploy (${DOMAIN}) ==="
 echo ""
 
+# ── Phase 0.5: Validate external infrastructure (if applicable) ──────────────
+
+if [ "${INFRA_MODE:-bundled}" = "external" ]; then
+  echo "Phase 0.5: Validating external infrastructure..."
+  "${SCRIPT_DIR}/check-infra.sh"
+  echo ""
+fi
+
 # ── Phase 1: Bootstrap everything ────────────────────────────────────────────
 
 echo "Phase 1: helmfile sync..."

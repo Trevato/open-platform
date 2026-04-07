@@ -1,0 +1,4 @@
+apiVersion: v2
+name: raw
+description: Minimal chart for hook-only releases (no templates rendered)
+version: 0.1.0

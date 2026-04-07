@@ -18,3 +18,21 @@ domain: myplatform.example.com
 # pgAdmin 4 (database management) — disabled by default:
 # pgadmin:
 #   enabled: true
+
+# Infrastructure mode: "bundled" (default) or "external"
+#
+# bundled: Open Platform installs and manages Traefik, MetalLB, cert-manager, and CNPG.
+#          Best for fresh clusters where OP is the only tenant.
+#
+# external: Open Platform expects these infrastructure components to already be running.
+#           Best for clusters that host other workloads (KubeVirt VMs, DNS, monitoring)
+#           where infrastructure has its own lifecycle.
+#
+#           Required pre-existing components:
+#             - Traefik (watching all namespaces for Ingress resources)
+#             - CNPG operator (cloudnative-pg in cnpg-system namespace)
+#             - cert-manager (if tls.mode=letsencrypt)
+#             - MetalLB (if network.mode=loadbalancer)
+#
+# infrastructure:
+#   mode: external

@@ -55,6 +55,7 @@ releases:
             kubectl apply -f manifests/metallb-config.yaml
   # END metallb
 
+  # BEGIN infra-traefik
   - name: traefik
     namespace: kube-system
     chart: traefik/traefik
@@ -93,7 +94,9 @@ releases:
             fi
             # CoreDNS custom zone: resolve *.DOMAIN to Traefik inside the cluster
             ./scripts/setup-coredns.sh
+  # END infra-traefik
 
+  # BEGIN infra-cnpg
   - name: cnpg
     namespace: cnpg-system
     chart: cnpg/cloudnative-pg
@@ -122,6 +125,7 @@ releases:
             # BEGIN pgadmin
             kubectl exec -n postgres postgres-1 -- psql -U postgres -c "CREATE DATABASE pgadmin" 2>/dev/null || true
             # END pgadmin
+  # END infra-cnpg
 
   # BEGIN cert-manager
   - name: cert-manager
@@ -134,6 +138,47 @@ releases:
           enabled: true
   # END cert-manager
 
+  # BEGIN infra-external
+  # When infrastructure is external, namespaces and secrets must still be
+  # created before app releases. This lightweight release handles bootstrap
+  # tasks that are normally done in traefik's presync hook.
+  - name: infra-bootstrap
+    namespace: default
+    chart: ./charts/raw
+    labels:
+      tier: infra
+    hooks:
+      - events: ["presync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            kubectl apply -f manifests/namespaces.yaml
+            ./scripts/ensure-secrets.sh
+            if [ -f certs/wildcard.crt ] && [ -f certs/wildcard.key ]; then
+              kubectl create secret tls wildcard-tls \
+                --cert=certs/wildcard.crt \
+                --key=certs/wildcard.key \
+                -n kube-system \
+                --dry-run=client -o yaml | kubectl apply -f -
+            fi
+            if [ -f certs/wildcard.crt ]; then
+              kubectl apply -f manifests/traefik-tls.yaml
+            fi
+            ./scripts/setup-coredns.sh
+      - events: ["postsync"]
+        showlogs: true
+        command: "sh"
+        args:
+          - "-c"
+          - |
+            # CNPG operator is external — just apply the postgres cluster manifest
+            kubectl apply -f manifests/postgres-cluster.yaml
+            echo "Waiting for postgres cluster to be ready..."
+            kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s || true
+  # END infra-external
+
   # ─── Layer 1: Storage ──────────────────────────────────────────────────
 
   - name: minio
@@ -141,8 +186,14 @@ releases:
     chart: minio/minio
     values:
       - minio-values.yaml
+    # BEGIN infra-traefik
     needs:
       - kube-system/traefik
+    # END infra-traefik
+    # BEGIN infra-external
+    needs:
+      - default/infra-bootstrap
+    # END infra-external
     labels:
       tier: infra
     hooks:
@@ -158,8 +209,14 @@ releases:
     version: 16.2.0
     values:
       - forgejo-values.yaml
+    # BEGIN infra-cnpg
     needs:
       - cnpg-system/cnpg
+    # END infra-cnpg
+    # BEGIN infra-external
+    needs:
+      - default/infra-bootstrap
+    # END infra-external
     labels:
       tier: infra
     hooks:
@@ -269,7 +326,9 @@ releases:
     values:
       - zulip-values.yaml
     needs:
+      # BEGIN infra-cnpg
       - cnpg-system/cnpg
+      # END infra-cnpg
       - forgejo/forgejo
     labels:
       tier: apps
