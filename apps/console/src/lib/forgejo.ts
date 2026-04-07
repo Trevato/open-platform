@@ -1,7 +1,5 @@
 const forgejoUrl =
-  process.env.AUTH_FORGEJO_INTERNAL_URL ||
-  process.env.AUTH_FORGEJO_URL ||
-  "";
+  process.env.AUTH_FORGEJO_INTERNAL_URL || process.env.AUTH_FORGEJO_URL || "";
 
 const adminUser = process.env.FORGEJO_ADMIN_USER || "";
 const adminPass = process.env.FORGEJO_ADMIN_PASSWORD || "";
@@ -34,46 +32,6 @@ async function fetchAllPages<T>(baseUrl: string): Promise<T[]> {
   return results;
 }
 
-export interface ForgejoUser {
-  id: number;
-  login: string;
-  email: string;
-  full_name: string;
-  avatar_url: string;
-  is_admin: boolean;
-  created: string;
-  last_login: string;
-}
-
-export async function listUsers(): Promise<ForgejoUser[]> {
-  return fetchAllPages<ForgejoUser>(`${forgejoUrl}/api/v1/admin/users`);
-}
-
-export async function createUser(opts: {
-  username: string;
-  email: string;
-  password: string;
-  mustChangePassword?: boolean;
-}): Promise<ForgejoUser> {
-  const res = await fetch(`${forgejoUrl}/api/v1/admin/users`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({
-      username: opts.username,
-      email: opts.email,
-      password: opts.password,
-      must_change_password: opts.mustChangePassword ?? true,
-      login_name: opts.username,
-      source_id: 0,
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Forgejo create user error: ${res.status} ${body}`);
-  }
-  return res.json();
-}
-
 export interface ForgejoOrg {
   id: number;
   name: string;
@@ -98,7 +56,7 @@ export interface ForgejoRepo {
 
 export async function listOrgRepos(org: string): Promise<ForgejoRepo[]> {
   return fetchAllPages<ForgejoRepo>(
-    `${forgejoUrl}/api/v1/orgs/${encodeURIComponent(org)}/repos`
+    `${forgejoUrl}/api/v1/orgs/${encodeURIComponent(org)}/repos`,
   );
 }
 
@@ -109,7 +67,7 @@ export async function listOrgRepos(org: string): Promise<ForgejoRepo[]> {
 export async function isSystemOrgMember(username: string): Promise<boolean> {
   const res = await fetch(
     `${forgejoUrl}/api/v1/orgs/system/members/${encodeURIComponent(username)}`,
-    { headers: authHeaders(), cache: "no-store" }
+    { headers: authHeaders(), cache: "no-store" },
   );
   return res.status === 204;
 }
@@ -118,11 +76,11 @@ export async function isSystemOrgMember(username: string): Promise<boolean> {
  * Get a Forgejo user by login name.
  */
 export async function getForgejoUser(
-  username: string
+  username: string,
 ): Promise<ForgejoUser | null> {
   const res = await fetch(
     `${forgejoUrl}/api/v1/users/${encodeURIComponent(username)}`,
-    { headers: authHeaders(), cache: "no-store" }
+    { headers: authHeaders(), cache: "no-store" },
   );
   if (!res.ok) return null;
   return res.json();
@@ -141,12 +99,12 @@ export interface ForgejoToken {
  */
 export async function createUserToken(
   username: string,
-  tokenName: string
+  tokenName: string,
 ): Promise<ForgejoToken> {
   // Check if token already exists
   const listRes = await fetch(
     `${forgejoUrl}/api/v1/users/${encodeURIComponent(username)}/tokens`,
-    { headers: authHeaders(), cache: "no-store" }
+    { headers: authHeaders(), cache: "no-store" },
   );
   if (listRes.ok) {
     const tokens: ForgejoToken[] = await listRes.json();
@@ -155,7 +113,7 @@ export async function createUserToken(
       // Delete and recreate to get the full token value
       await fetch(
         `${forgejoUrl}/api/v1/users/${encodeURIComponent(username)}/tokens/${existing.id}`,
-        { method: "DELETE", headers: authHeaders() }
+        { method: "DELETE", headers: authHeaders() },
       );
     }
   }
@@ -178,7 +136,7 @@ export async function createUserToken(
           "write:package",
         ],
       }),
-    }
+    },
   );
   if (!res.ok) {
     const body = await res.text();
@@ -190,9 +148,7 @@ export async function createUserToken(
 /**
  * List repos accessible to a user via their own token.
  */
-export async function listUserRepos(
-  userToken: string
-): Promise<ForgejoRepo[]> {
+export async function listUserRepos(userToken: string): Promise<ForgejoRepo[]> {
   const results: ForgejoRepo[] = [];
   let page = 1;
   const limit = 50;
@@ -206,7 +162,7 @@ export async function listUserRepos(
           "Content-Type": "application/json",
         },
         cache: "no-store",
-      }
+      },
     );
     if (!res.ok) break;
     const items: ForgejoRepo[] = await res.json();
@@ -221,7 +177,7 @@ export async function listUserRepos(
 export async function generateFromTemplate(
   templateOwner: string,
   templateRepo: string,
-  opts: { owner: string; name: string; description?: string }
+  opts: { owner: string; name: string; description?: string },
 ): Promise<ForgejoRepo> {
   const res = await fetch(
     `${forgejoUrl}/api/v1/repos/${encodeURIComponent(templateOwner)}/${encodeURIComponent(templateRepo)}/generate`,
@@ -236,7 +192,7 @@ export async function generateFromTemplate(
         topics: true,
         labels: true,
       }),
-    }
+    },
   );
   if (!res.ok) {
     const body = await res.text();
