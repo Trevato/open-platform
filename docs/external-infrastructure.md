@@ -155,7 +155,7 @@ Before running `make deploy` with `infrastructure.mode=external`, the following 
 
 ## Companion: NixOS-K8s
 
-The infrastructure layer that pairs with Open Platform in external mode. For teams running bare-metal NixOS + K3s, [nixos-k8s](https://github.com/ESPO-Engineering/nixos-k8s) provides:
+The infrastructure layer that pairs with Open Platform in external mode. For teams running bare-metal NixOS + K3s, [nixos-k8s](https://github.com/vespo92/open-platform-infra) provides:
 
 ### What it manages (Layer 0-1)
 
