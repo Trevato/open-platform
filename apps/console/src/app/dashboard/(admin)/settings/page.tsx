@@ -7,20 +7,15 @@ export default async function PlatformSettingsPage() {
   const result = await getSessionWithRole();
   if (!result || result.role !== "admin") redirect("/dashboard");
 
-  let config = null;
+  let config: { domain: string; servicePrefix: string } | null = null;
   try {
     const data = await opApiGet("/api/v1/platform/config");
-    config = data.config;
+    config = {
+      domain: data.config.domain,
+      servicePrefix: data.config.servicePrefix,
+    };
   } catch {
     // Config API not available — show fallback
-  }
-
-  let nodes = null;
-  try {
-    const nodesData = await opApiGet("/api/v1/platform/nodes");
-    nodes = nodesData.nodes;
-  } catch {
-    // Nodes API not available
   }
 
   return (
@@ -35,7 +30,7 @@ export default async function PlatformSettingsPage() {
       >
         Platform Settings
       </h1>
-      <SettingsEditor initialConfig={config} initialNodes={nodes} />
+      <SettingsEditor initialConfig={config} />
     </div>
   );
 }

@@ -10,12 +10,6 @@ import {
   dropAppDatabase,
   deleteAppBucket,
   scaleDeployment,
-  listNodes,
-  labelNode,
-  cordonNode,
-  uncordonNode,
-  deleteNode,
-  getJoinToken,
 } from "../services/k8s.js";
 import { PlatformConfigService } from "../services/platform-config.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
@@ -457,27 +451,6 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
     },
     {
       body: t.Object({
-        tls: t.Optional(
-          t.Object({
-            mode: t.Optional(
-              t.Union([
-                t.Literal("selfsigned"),
-                t.Literal("letsencrypt"),
-                t.Literal("cloudflare"),
-              ]),
-            ),
-          }),
-        ),
-        network: t.Optional(
-          t.Object({
-            mode: t.Optional(
-              t.Union([t.Literal("host"), t.Literal("loadbalancer")]),
-            ),
-            traefikIp: t.Optional(t.String()),
-            addressPool: t.Optional(t.String()),
-            interface: t.Optional(t.String()),
-          }),
-        ),
         services: t.Optional(
           t.Object({
             jitsi: t.Optional(
@@ -504,88 +477,5 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         ),
       }),
       detail: { tags: ["Platform"], summary: "Update platform configuration" },
-    },
-  )
-
-  // GET /nodes — list all cluster nodes
-  .get(
-    "/nodes",
-    async () => {
-      const nodes = await listNodes();
-      return { nodes };
-    },
-    {
-      detail: { tags: ["Platform"], summary: "List cluster nodes" },
-    },
-  )
-
-  // GET /nodes/join-token — get k3s join token (must precede /:name routes)
-  .get(
-    "/nodes/join-token",
-    async () => {
-      const result = await getJoinToken();
-      if (!result)
-        return {
-          error: "Join token not available (not running on server node)",
-        };
-      return result;
-    },
-    {
-      detail: { tags: ["Platform"], summary: "Get k3s join token" },
-    },
-  )
-
-  // PATCH /nodes/:name — update node labels
-  .patch(
-    "/nodes/:name",
-    async ({ params, body }) => {
-      await labelNode(params.name, body.labels);
-      return { updated: true };
-    },
-    {
-      params: t.Object({ name: t.String() }),
-      body: t.Object({
-        labels: t.Record(t.String(), t.Union([t.String(), t.Null()])),
-      }),
-      detail: { tags: ["Platform"], summary: "Update node labels" },
-    },
-  )
-
-  // POST /nodes/:name/cordon — mark node unschedulable
-  .post(
-    "/nodes/:name/cordon",
-    async ({ params }) => {
-      await cordonNode(params.name);
-      return { cordoned: true };
-    },
-    {
-      params: t.Object({ name: t.String() }),
-      detail: { tags: ["Platform"], summary: "Cordon a node" },
-    },
-  )
-
-  // POST /nodes/:name/uncordon — mark node schedulable
-  .post(
-    "/nodes/:name/uncordon",
-    async ({ params }) => {
-      await uncordonNode(params.name);
-      return { uncordoned: true };
-    },
-    {
-      params: t.Object({ name: t.String() }),
-      detail: { tags: ["Platform"], summary: "Uncordon a node" },
-    },
-  )
-
-  // DELETE /nodes/:name — remove node from cluster
-  .delete(
-    "/nodes/:name",
-    async ({ params }) => {
-      await deleteNode(params.name);
-      return { deleted: true };
-    },
-    {
-      params: t.Object({ name: t.String() }),
-      detail: { tags: ["Platform"], summary: "Remove node from cluster" },
     },
   );

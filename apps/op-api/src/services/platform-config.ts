@@ -15,13 +15,6 @@ const FORGEJO_URL =
 export interface PlatformConfig {
   domain: string;
   servicePrefix: string;
-  tls: { mode: "selfsigned" | "letsencrypt" | "cloudflare" };
-  network: {
-    mode: "host" | "loadbalancer";
-    traefikIp?: string;
-    addressPool?: string;
-    interface?: string;
-  };
   services: {
     jitsi: { enabled: boolean };
     zulip: { enabled: boolean };
@@ -462,11 +455,6 @@ function defaultConfig(): PlatformConfig {
   return {
     domain: process.env.PLATFORM_DOMAIN || "localhost",
     servicePrefix: process.env.SERVICE_PREFIX || "",
-    tls: {
-      mode:
-        (process.env.TLS_MODE as PlatformConfig["tls"]["mode"]) || "selfsigned",
-    },
-    network: { mode: "host" },
     services: {
       jitsi: { enabled: false },
       zulip: { enabled: false },
@@ -576,14 +564,6 @@ export class PlatformConfigService {
     if (current.servicePrefix !== updated.servicePrefix) {
       changes.push(
         `servicePrefix: "${current.servicePrefix}" -> "${updated.servicePrefix}"`,
-      );
-    }
-    if (current.tls.mode !== updated.tls.mode) {
-      changes.push(`tls.mode: ${current.tls.mode} -> ${updated.tls.mode}`);
-    }
-    if (current.network.mode !== updated.network.mode) {
-      changes.push(
-        `network.mode: ${current.network.mode} -> ${updated.network.mode}`,
       );
     }
 
