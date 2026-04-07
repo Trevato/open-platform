@@ -15,6 +15,14 @@ export default async function PlatformSettingsPage() {
     // Config API not available — show fallback
   }
 
+  let nodes = null;
+  try {
+    const nodesData = await opApiGet("/api/v1/platform/nodes");
+    nodes = nodesData.nodes;
+  } catch {
+    // Nodes API not available
+  }
+
   return (
     <div className="container" style={{ maxWidth: 640 }}>
       <h1
@@ -27,7 +35,7 @@ export default async function PlatformSettingsPage() {
       >
         Platform Settings
       </h1>
-      <SettingsEditor initialConfig={config} />
+      <SettingsEditor initialConfig={config} initialNodes={nodes} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+
 interface PlatformConfig {
   domain: string;
   servicePrefix: string;
@@ -13,14 +14,42 @@ interface PlatformConfig {
   };
 }
 
-interface Props {
-  initialConfig: PlatformConfig | null;
+interface NodeInfo {
+  name: string;
+  status: "Ready" | "NotReady";
+  role: string;
+  schedulable: boolean;
+  labels: Record<string, string>;
+  capacity: { cpu: string; memory: string };
+  allocatable: { cpu: string; memory: string };
+  podCount: number;
+  internalIp: string;
+  kubeletVersion: string;
 }
 
-export function SettingsEditor({ initialConfig }: Props) {
+interface Props {
+  initialConfig: PlatformConfig | null;
+  initialNodes: NodeInfo[] | null;
+}
+
+function formatMemory(ki: string): string {
+  const num = parseInt(ki.replace(/Ki$/, ""));
+  if (isNaN(num)) return "—";
+  const bytes = num * 1024;
+  const gb = bytes / 1024 ** 3;
+  return gb >= 1
+    ? `${gb.toFixed(1)} GB`
+    : `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+}
+
+export function SettingsEditor({ initialConfig, initialNodes }: Props) {
   const [config, setConfig] = useState<PlatformConfig | null>(initialConfig);
   const [saving, setSaving] = useState<string | null>(null);
   const [lastChange, setLastChange] = useState<string | null>(null);
+
+  // Node state
+  const [nodes, setNodes] = useState<NodeInfo[] | null>(initialNodes);
+  const [showJoinInfo, setShowJoinInfo] = useState(false);
 
   // Network state
   const [networkMode, setNetworkMode] = useState(
@@ -36,6 +65,75 @@ export function SettingsEditor({ initialConfig }: Props) {
 
   // TLS state
   const [tlsMode, setTlsMode] = useState(config?.tls.mode ?? "selfsigned");
+
+  const refreshNodes = useCallback(async () => {
+    const res = await fetch("/api/platform/nodes");
+    if (res.ok) {
+      const data = await res.json();
+      setNodes(data.nodes);
+    }
+  }, []);
+
+  const handleRoleChange = useCallback(
+    async (nodeName: string, newRole: string) => {
+      setSaving(`role-${nodeName}`);
+      try {
+        const res = await fetch(
+          `/api/platform/nodes/${encodeURIComponent(nodeName)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              labels: { "open-platform.sh/node-role": newRole },
+            }),
+          },
+        );
+        if (res.ok) await refreshNodes();
+      } finally {
+        setSaving(null);
+      }
+    },
+    [refreshNodes],
+  );
+
+  const handleScheduleToggle = useCallback(
+    async (nodeName: string, currentlySchedulable: boolean) => {
+      const action = currentlySchedulable ? "cordon" : "uncordon";
+      setSaving(`schedule-${nodeName}`);
+      try {
+        const res = await fetch(
+          `/api/platform/nodes/${encodeURIComponent(nodeName)}/${action}`,
+          { method: "POST" },
+        );
+        if (res.ok) await refreshNodes();
+      } finally {
+        setSaving(null);
+      }
+    },
+    [refreshNodes],
+  );
+
+  const handleRemoveNode = useCallback(
+    async (nodeName: string) => {
+      if (
+        !confirm(
+          `Remove node "${nodeName}" from the cluster? The node will need to be re-joined to rejoin.`,
+        )
+      )
+        return;
+      setSaving(`remove-${nodeName}`);
+      try {
+        const res = await fetch(
+          `/api/platform/nodes/${encodeURIComponent(nodeName)}`,
+          { method: "DELETE" },
+        );
+        if (res.ok) await refreshNodes();
+      } finally {
+        setSaving(null);
+      }
+    },
+    [refreshNodes],
+  );
 
   const patchConfig = useCallback(async (patch: Record<string, unknown>) => {
     const res = await fetch("/api/platform/config", {
@@ -148,6 +246,245 @@ export function SettingsEditor({ initialConfig }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Nodes */}
+      {nodes && (
+        <div className="section">
+          <div className="section-header">Nodes</div>
+
+          {/* MetalLB warning */}
+          {nodes.length >= 2 && networkMode === "host" && (
+            <div
+              style={{
+                padding: "10px 14px",
+                marginBottom: 12,
+                borderRadius: "var(--radius-input)",
+                background: "var(--bg-inset)",
+                border: "1px solid var(--border)",
+                fontSize: 13,
+                color: "var(--text-secondary)",
+              }}
+            >
+              Multiple nodes detected with Host Network mode. Consider switching
+              to Load Balancer (MetalLB) below for production reliability.
+            </div>
+          )}
+
+          <div className="card">
+            <div
+              className="card-body"
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+                padding: 0,
+              }}
+            >
+              {nodes.map((node, i) => (
+                <div
+                  key={node.name}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    padding: "14px 20px",
+                    borderTop: i > 0 ? "1px solid var(--border)" : undefined,
+                  }}
+                >
+                  {/* Row 1: Name + status, role select, schedulable toggle */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background:
+                            node.status === "Ready" ? "#22c55e" : "#ef4444",
+                          flexShrink: 0,
+                        }}
+                      />
+                      <code
+                        style={{
+                          fontFamily:
+                            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                          fontSize: 13,
+                          fontWeight: 500,
+                          color: "var(--text-primary)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {node.name}
+                      </code>
+                    </div>
+
+                    <select
+                      value={node.role}
+                      onChange={(e) =>
+                        handleRoleChange(node.name, e.target.value)
+                      }
+                      disabled={saving === `role-${node.name}`}
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 8px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-input)",
+                        background: "var(--bg-inset)",
+                        color: "var(--text-primary)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="infra">infra</option>
+                      <option value="worker">worker</option>
+                    </select>
+
+                    <button
+                      onClick={() =>
+                        handleScheduleToggle(node.name, node.schedulable)
+                      }
+                      disabled={saving === `schedule-${node.name}`}
+                      title={
+                        node.schedulable
+                          ? "Schedulable — click to cordon"
+                          : "Cordoned — click to uncordon"
+                      }
+                      style={{
+                        fontSize: 12,
+                        padding: "4px 10px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-input)",
+                        background: node.schedulable
+                          ? "var(--bg-inset)"
+                          : "var(--bg-inset)",
+                        color: node.schedulable
+                          ? "var(--text-primary)"
+                          : "var(--text-muted)",
+                        cursor: "pointer",
+                        opacity: node.schedulable ? 1 : 0.7,
+                      }}
+                    >
+                      {node.schedulable ? "Schedulable" : "Cordoned"}
+                    </button>
+
+                    {nodes.length >= 2 && (
+                      <button
+                        onClick={() => handleRemoveNode(node.name)}
+                        disabled={saving === `remove-${node.name}`}
+                        style={{
+                          fontSize: 12,
+                          padding: "4px 10px",
+                          border: "1px solid var(--border)",
+                          borderRadius: "var(--radius-input)",
+                          background: "transparent",
+                          color: "#ef4444",
+                          cursor: "pointer",
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Row 2: Details */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 16,
+                      flexWrap: "wrap",
+                      paddingLeft: 16,
+                    }}
+                  >
+                    <DetailItem label="IP" value={node.internalIp} />
+                    <DetailItem label="Pods" value={String(node.podCount)} />
+                    <DetailItem
+                      label="CPU"
+                      value={`${node.allocatable.cpu} / ${node.capacity.cpu}`}
+                    />
+                    <DetailItem
+                      label="Memory"
+                      value={`${formatMemory(node.allocatable.memory)} / ${formatMemory(node.capacity.memory)}`}
+                    />
+                    <DetailItem label="Kubelet" value={node.kubeletVersion} />
+                  </div>
+                </div>
+              ))}
+
+              {nodes.length === 0 && (
+                <div
+                  style={{
+                    padding: "20px",
+                    textAlign: "center",
+                    fontSize: 13,
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  No nodes found.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Join instructions */}
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={() => setShowJoinInfo(!showJoinInfo)}
+              style={{
+                fontSize: 12,
+                color: "var(--text-muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "4px 0",
+                textDecoration: "underline",
+                textUnderlineOffset: "2px",
+              }}
+            >
+              {showJoinInfo ? "Hide join instructions" : "Join a node"}
+            </button>
+            {showJoinInfo && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: "12px 16px",
+                  borderRadius: "var(--radius-input)",
+                  background: "var(--bg-inset)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                <code
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+                    fontSize: 12,
+                    color: "var(--text-secondary)",
+                    display: "block",
+                    whiteSpace: "pre",
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {`make node-join          # join all agents from open-platform.yaml\nmake colima-agent       # join Mac as test agent`}
+                </code>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Networking */}
       <div className="section">
@@ -312,6 +649,26 @@ function InfoRow({
             "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
           fontSize: 13,
           color: muted ? "var(--text-muted)" : "var(--text-primary)",
+        }}
+      >
+        {value}
+      </code>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span className="text-xs text-muted" style={{ flexShrink: 0 }}>
+        {label}
+      </span>
+      <code
+        style={{
+          fontFamily:
+            "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace",
+          fontSize: 12,
+          color: "var(--text-secondary)",
         }}
       >
         {value}

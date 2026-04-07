@@ -68,6 +68,13 @@ fi
 echo "Phase 1: helmfile sync..."
 helmfile sync
 
+# Label server node for multinode scheduling
+if [ "${MULTINODE:-false}" = "true" ]; then
+  SERVER_NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
+  kubectl label node "$SERVER_NODE" open-platform.sh/node-role=infra --overwrite 2>/dev/null || true
+  echo "  Server node labeled: open-platform.sh/node-role=infra"
+fi
+
 # ── Phase 2: k3s OIDC + container registry setup ────────────────────────────
 # Configures k3s API server for Headlamp OIDC token validation.
 # Also installs CA cert and containerd registry config for image pulls.

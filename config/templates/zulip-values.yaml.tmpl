@@ -1,3 +1,16 @@
+# BEGIN multinode
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 60
+        preference:
+          matchExpressions:
+            - key: open-platform.sh/node-role
+              operator: In
+              values:
+                - infra
+# END multinode
+
 ingress:
   enabled: true
   className: traefik

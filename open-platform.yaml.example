@@ -45,3 +45,38 @@ domain: myplatform.example.com
 #
 # infrastructure:
 #   mode: external
+
+# Network mode: host (default) or loadbalancer (MetalLB)
+# Use loadbalancer for multi-node production clusters.
+# network:
+#   mode: loadbalancer
+#   traefik_ip: 10.0.16.10
+#   address_pool: 10.0.16.0/24
+#   interface: eno3
+
+# Multinode (optional — single-node works without this)
+# nodes:
+#   server:
+#     role: infra                  # scheduling label for server node
+#   agents:
+#     - name: worker-1
+#       address: 192.168.64.7     # IP reachable from server
+#       type: colima              # colima | nixos | generic
+#       role: worker              # worker | infra
+#
+# Enterprise HA (3 NixOS servers with embedded etcd):
+# NixOS module config for each node — see nix/modules/open-platform.nix
+#
+# First server (nix01):
+#   services.open-platform.clusterInit = true;
+#   services.open-platform.nodeExternalIp = "100.84.55.62";  # Tailscale
+#   services.open-platform.tlsSans = [ "100.84.55.62" "10.0.0.10" ];
+#   services.open-platform.maxPods = 250;
+#   services.open-platform.nodeCidrMaskSize = 20;
+#   services.open-platform.network.mode = "loadbalancer";
+#
+# Joining servers (nix02, nix04):
+#   services.open-platform.serverAddr = "https://10.0.0.10:6443";
+#   services.open-platform.tokenFile = /etc/k3s-token;
+#   services.open-platform.nodeExternalIp = "100.107.27.32";  # Tailscale
+#   services.open-platform.tlsSans = [ "100.107.27.32" "10.0.0.11" ];

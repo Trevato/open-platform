@@ -12,12 +12,12 @@ HOST_NETWORK=$(kubectl get ds traefik -n kube-system \
   -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null || echo "false")
 
 if [ "$HOST_NETWORK" = "true" ]; then
-  # hostNetwork DaemonSet: resolve to node IP (IPv4 only)
-  TRAEFIK_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
-    | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
+  # Use Traefik ClusterIP for in-cluster resolution (works regardless of node count)
+  TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
   if [ -z "$TRAEFIK_IP" ]; then
-    echo "Warning: Could not determine node IP — falling back to ClusterIP."
-    TRAEFIK_IP=$(kubectl get svc traefik -n kube-system -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+    # Fallback: first node IP (single-node case where ClusterIP isn't available yet)
+    TRAEFIK_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
+      | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
   fi
 else
   # Deployment mode: prefer LoadBalancer external IP, fall back to ClusterIP

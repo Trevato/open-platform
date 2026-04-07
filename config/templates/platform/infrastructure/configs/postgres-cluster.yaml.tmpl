@@ -6,6 +6,11 @@ metadata:
 spec:
   enableSuperuserAccess: true
   instances: 1
+  # BEGIN multinode
+  affinity:
+    nodeSelector:
+      open-platform.sh/node-role: infra
+  # END multinode
   storage:
     size: 10Gi
   bootstrap:

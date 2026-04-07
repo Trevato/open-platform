@@ -152,6 +152,15 @@ METALLB_TRAEFIK_IP=$(yaml_get "$CONFIG_FILE" "network.traefik_ip" 2>/dev/null) |
 METALLB_ADDRESS_POOL=$(yaml_get "$CONFIG_FILE" "network.address_pool" 2>/dev/null) || METALLB_ADDRESS_POOL=""
 METALLB_INTERFACE=$(yaml_get "$CONFIG_FILE" "network.interface" 2>/dev/null) || METALLB_INTERFACE=""
 
+# Multinode (optional)
+MULTINODE="false"
+# Check if nodes section exists in config
+if yaml_get "$CONFIG_FILE" "nodes.server.role" 2>/dev/null || \
+   yaml_get "$CONFIG_FILE" "nodes.agents" 2>/dev/null || \
+   yaml_get "$CONFIG_FILE" "nodes.servers" 2>/dev/null; then
+  MULTINODE="true"
+fi
+
 # Validate loadbalancer mode requirements
 if [ "$NETWORK_MODE" = "loadbalancer" ]; then
   [ -z "$METALLB_TRAEFIK_IP" ] && { echo "Error: network.traefik_ip required for loadbalancer mode"; exit 1; }
@@ -184,6 +193,9 @@ if [ "$PROVISIONER_ENABLED" = "true" ]; then
 fi
 echo "  Network: ${NETWORK_MODE}"
 echo "  Infrastructure: ${INFRA_MODE}"
+if [ "$MULTINODE" = "true" ]; then
+  echo "  Multinode: enabled"
+fi
 
 # ── Generate / Load Secrets ─────────────────────────────────────────────────
 
@@ -293,6 +305,7 @@ template_file() {
     -e "s|\${METALLB_ADDRESS_POOL}|${METALLB_ADDRESS_POOL}|g" \
     -e "s|\${METALLB_INTERFACE}|${METALLB_INTERFACE}|g" \
     -e "s|\${DOMAIN_TLD}|${DOMAIN_TLD}|g" \
+    -e "s|\${MULTINODE}|${MULTINODE}|g" \
     "$src" > "$dest"
 }
 
@@ -639,6 +652,15 @@ else
   sed_i '/# BEGIN flux-external/,/# END flux-external/d' "$ROOT_DIR/helmfile.yaml"
 fi
 
+# Strip multinode blocks if single-node
+if [ "$MULTINODE" != "true" ]; then
+  for f in "$ROOT_DIR"/manifests/*.yaml \
+           "$ROOT_DIR"/platform/infrastructure/configs/*.yaml \
+           "$ROOT_DIR"/*-values.yaml; do
+    [ -f "$f" ] && sed_i '/# BEGIN multinode/,/# END multinode/d' "$f"
+  done
+fi
+
 # ── Generate .env (backward compatibility) ──────────────────────────────────
 
 echo ""
@@ -663,6 +685,7 @@ SMTP_PORT=${SMTP_PORT}
 SMTP_FROM=${SMTP_FROM}
 NETWORK_MODE=${NETWORK_MODE}
 INFRA_MODE=${INFRA_MODE}
+MULTINODE=${MULTINODE}
 EOF
 
 # External SMTP credentials

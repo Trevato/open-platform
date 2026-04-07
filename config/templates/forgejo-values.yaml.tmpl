@@ -79,6 +79,19 @@ ingress:
         - path: /
           pathType: Prefix
 
+# BEGIN multinode
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 80
+        preference:
+          matchExpressions:
+            - key: open-platform.sh/node-role
+              operator: In
+              values:
+                - infra
+# END multinode
+
 persistence:
   enabled: true
   size: 10Gi

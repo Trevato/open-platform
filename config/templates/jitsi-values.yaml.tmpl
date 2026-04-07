@@ -96,6 +96,18 @@ web:
 prosody:
   jwt:
     existingSecretName: jitsi-secrets
+  # BEGIN multinode
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 60
+          preference:
+            matchExpressions:
+              - key: open-platform.sh/node-role
+                operator: In
+                values:
+                  - infra
+  # END multinode
 
   persistence:
     enabled: true

@@ -1,4 +1,4 @@
-.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra
+.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join
 
 deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
 	./scripts/deploy.sh
@@ -66,6 +66,21 @@ colima-stop: ## Stop Colima
 
 colima-reset: ## Delete and recreate Colima (clean state)
 	./nix/scripts/colima-start.sh --delete-first
+
+node-join: ## Join agent node(s) to the cluster
+	./scripts/node-join.sh $(NODE)
+
+node-remove: ## Remove an agent node from the cluster
+	./scripts/node-remove.sh $(NODE)
+
+node-status: ## Show node status and workload distribution
+	./scripts/node-status.sh
+
+colima-agent: ## Start Colima as k3s agent (Mac test node)
+	./nix/scripts/colima-agent.sh --ssh-host vxrail
+
+complete-mac-join: ## Complete Mac agent join after Tailscale auth
+	./scripts/complete-mac-join.sh
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
