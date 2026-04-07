@@ -617,6 +617,17 @@ if [ "$INFRA_MODE" = "external" ]; then
   # Remove Flux-managed infrastructure controllers (external infra has its own lifecycle)
   rm -f "$ROOT_DIR/platform/infrastructure/controllers/traefik.yaml"
   rm -f "$ROOT_DIR/platform/infrastructure/controllers/cnpg.yaml"
+
+  # If infra-controllers directory is now empty (no cert-manager, no metallb),
+  # remove the Flux Kustomization that points to it to avoid empty-directory errors
+  CONTROLLER_COUNT=$(find "$ROOT_DIR/platform/infrastructure/controllers/" -name '*.yaml' ! -name 'kustomization.yaml' 2>/dev/null | wc -l)
+  if [ "$CONTROLLER_COUNT" -eq 0 ]; then
+    rm -f "$ROOT_DIR/platform/cluster/infra-controllers.yaml"
+    # Update infra-configs to not depend on infra-controllers
+    [ -f "$ROOT_DIR/platform/cluster/infra-configs.yaml" ] && \
+      sed_i '/dependsOn/,/name: infra-controllers/d' "$ROOT_DIR/platform/cluster/infra-configs.yaml"
+  fi
+
   # cert-manager and metallb are already conditional on tls.mode and network.mode
   echo "  infrastructure: external (traefik, cnpg skipped — expected pre-installed)"
 else
