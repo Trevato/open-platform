@@ -294,8 +294,14 @@ releases:
     version: "0.31.3"
     values:
       - mailpit-values.yaml
+    # BEGIN infra-traefik
     needs:
       - kube-system/traefik
+    # END infra-traefik
+    # BEGIN infra-external
+    needs:
+      - default/infra-bootstrap
+    # END infra-external
     labels:
       tier: apps
   # END mailpit
