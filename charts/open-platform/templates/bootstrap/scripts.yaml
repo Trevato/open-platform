@@ -127,6 +127,61 @@ data:
       sleep 5
     done
 
+    # Generate self-signed wildcard TLS cert if needed
+    if [ "${TLS_MODE}" = "selfsigned" ]; then
+      if kubectl get secret wildcard-tls -n kube-system >/dev/null 2>&1; then
+        echo "Wildcard TLS cert already exists."
+      else
+        echo "Generating self-signed CA and wildcard cert for *.${DOMAIN}..."
+        CERT_DIR=$(mktemp -d)
+
+        # Generate CA
+        openssl genrsa -out "${CERT_DIR}/ca.key" 4096 2>/dev/null
+        openssl req -x509 -new -nodes -key "${CERT_DIR}/ca.key" \
+          -sha256 -days 3650 -out "${CERT_DIR}/ca.crt" \
+          -subj "/CN=Open Platform CA" \
+          -addext "basicConstraints=critical,CA:TRUE" \
+          -addext "subjectKeyIdentifier=hash" \
+          -addext "authorityKeyIdentifier=keyid:always,issuer" 2>/dev/null
+
+        # Generate wildcard cert
+        openssl genrsa -out "${CERT_DIR}/tls.key" 4096 2>/dev/null
+        openssl req -new -key "${CERT_DIR}/tls.key" \
+          -out "${CERT_DIR}/tls.csr" \
+          -subj "/CN=*.${DOMAIN}" 2>/dev/null
+        openssl x509 -req -in "${CERT_DIR}/tls.csr" \
+          -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
+          -CAcreateserial -out "${CERT_DIR}/tls.crt" \
+          -days 3650 -sha256 \
+          -extfile <(printf "subjectAltName=DNS:*.%s,DNS:%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth" "${DOMAIN}" "${DOMAIN}") 2>/dev/null
+
+        # Create wildcard-tls secret
+        kubectl create secret tls wildcard-tls \
+          -n kube-system \
+          --cert="${CERT_DIR}/tls.crt" \
+          --key="${CERT_DIR}/tls.key" 2>/dev/null
+        kubectl annotate secret wildcard-tls -n kube-system \
+          helm.sh/resource-policy=keep 2>/dev/null || true
+        echo "Wildcard TLS cert created."
+
+        # Store CA as platform-ca ConfigMap for services that need it
+        kubectl create configmap platform-ca \
+          -n kube-system \
+          --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+          --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+        # Copy to namespaces that need it
+        for ns in forgejo jitsi woodpecker; do
+          kubectl create configmap platform-ca \
+            -n "${ns}" \
+            --from-file=ca.crt="${CERT_DIR}/ca.crt" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
+        done
+        echo "Platform CA distributed."
+
+        rm -rf "${CERT_DIR}"
+      fi
+    fi
+
     # Apply Traefik TLSStore and Middleware
     if kubectl get crd middlewares.traefik.io >/dev/null 2>&1; then
       echo "Applying Traefik TLSStore and Middleware..."
