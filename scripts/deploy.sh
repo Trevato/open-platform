@@ -75,12 +75,10 @@ if [ "${MULTINODE:-false}" = "true" ]; then
   echo "  Server node labeled: open-platform.sh/node-role=infra"
 fi
 
-# ── Phase 2: k3s OIDC + container registry setup ────────────────────────────
-# Configures k3s API server for Headlamp OIDC token validation.
-# Also installs CA cert and containerd registry config for image pulls.
+# ── Phase 2: Colima VM setup (CA cert, hosts, containerd registry) ───────────
 
 echo ""
-echo "Phase 2: k3s OIDC setup..."
+echo "Phase 2: VM setup..."
 "${SCRIPT_DIR}/setup-oidc.sh"
 
 # ── Phase 3: Woodpecker setup + pipeline triggers ───────────────────────────

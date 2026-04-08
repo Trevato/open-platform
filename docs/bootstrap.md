@@ -10,7 +10,7 @@ Deep reference for the platform deployment pipeline, template system, and exampl
 | `platform/infrastructure/controllers/` | HelmReleases for traefik, cnpg                                                                 |
 | `platform/infrastructure/configs/`     | Namespaces, TLSStore, minio HelmRelease, postgres cluster, oauth2-proxy ForwardAuth middleware |
 | `platform/identity/`                   | Forgejo HelmRelease (OCIRepository), OIDC RBAC                                                 |
-| `platform/apps/`                       | Headlamp + Woodpecker HelmReleases, RBAC                                                       |
+| `platform/apps/`                       | Woodpecker HelmReleases, RBAC                                                                  |
 
 ## App Template (`templates/app/`)
 
@@ -84,6 +84,6 @@ Generated from the app template. Created by `setup-system-org.sh` and deployed v
 | `scripts/setup-system-org.sh`       | forgejo postsync          | Creates system org, pushes all system repos                      |
 | `scripts/setup-woodpecker-repos.sh` | woodpecker postsync       | Programmatic Woodpecker login, repo activation, org secrets      |
 | `scripts/setup-flux.sh`             | flux postsync             | Creates Flux bootstrap resources (GitRepository, Kustomization)  |
-| `scripts/setup-oidc.sh`             | after helmfile sync       | Updates k3s OIDC client ID                                       |
+| `scripts/setup-oidc.sh`             | after helmfile sync       | Colima VM setup (CA cert, hosts, containerd registry)            |
 
 All scripts are idempotent — safe to run on every `make deploy`.

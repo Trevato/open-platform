@@ -36,7 +36,6 @@ echo ""
 # Core services
 check "forgejo"    "https://${PREFIX}forgejo.${DOMAIN}/api/v1/settings/api" "200"
 check "ci"         "https://${PREFIX}ci.${DOMAIN}/healthz"                  "200 204"
-check "headlamp"   "https://${PREFIX}headlamp.${DOMAIN}/"                   "200 302"
 check "minio"      "https://${PREFIX}minio.${DOMAIN}/"                      "200 302 307"
 check "s3"         "https://${PREFIX}s3.${DOMAIN}/"                         "200 403"
 check "oauth2"     "https://${PREFIX}oauth2.${DOMAIN}/ping"                 "200"

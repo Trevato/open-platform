@@ -18,7 +18,6 @@ export function serviceUrl(service: string): string {
 export const urls = {
   forgejo: serviceUrl("forgejo"),
   ci: serviceUrl("ci"),
-  headlamp: serviceUrl("headlamp"),
   minio: serviceUrl("minio"),
   s3: serviceUrl("s3"),
   oauth2: serviceUrl("oauth2"),

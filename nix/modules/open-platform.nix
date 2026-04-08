@@ -37,32 +37,6 @@ in
         description = "Additional k3s server flags.";
       };
 
-      oidc = {
-        enable = lib.mkOption {
-          type = lib.types.bool;
-          default = false;
-          description = ''
-            Enable OIDC flags for Headlamp authentication.
-            Set this after first deploy once Forgejo is running and
-            the Headlamp OIDC client ID is available.
-          '';
-        };
-
-        clientId = lib.mkOption {
-          type = lib.types.str;
-          default = "";
-          description = ''
-            Headlamp OIDC client ID. Retrieve after first deploy:
-            kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' | base64 -d
-          '';
-        };
-
-        caFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "Path to CA cert for OIDC issuer verification (self-signed TLS only).";
-        };
-      };
     };
 
     network = {
@@ -234,17 +208,6 @@ in
           maxPodsFlags = lib.optionals (cfg.maxPods != null) [
             "--kubelet-arg=max-pods=${toString cfg.maxPods}"
           ];
-          oidcFlags =
-            lib.optionals (cfg.k3s.oidc.enable && cfg.k3s.oidc.clientId != "") [
-              "--kube-apiserver-arg=oidc-issuer-url=https://forgejo.${cfg.domain}"
-              "--kube-apiserver-arg=oidc-client-id=${cfg.k3s.oidc.clientId}"
-              "--kube-apiserver-arg=oidc-username-claim=preferred_username"
-              "--kube-apiserver-arg=oidc-username-prefix=-"
-              "--kube-apiserver-arg=oidc-groups-claim=groups"
-            ]
-            ++ lib.optionals (cfg.k3s.oidc.caFile != null) [
-              "--kube-apiserver-arg=oidc-ca-file=${cfg.k3s.oidc.caFile}"
-            ];
           clusterInitFlags = lib.optionals cfg.clusterInit [
             "--cluster-init"
           ];
@@ -255,7 +218,6 @@ in
             ++ cidrFlags
             ++ tlsSanFlags
             ++ maxPodsFlags
-            ++ oidcFlags
             ++ clusterInitFlags
             ++ cfg.k3s.extraFlags;
           agentFlags = externalIpFlags ++ maxPodsFlags ++ cfg.k3s.extraFlags;
@@ -273,13 +235,7 @@ in
     # --- k3s registry config (trust self-signed CA + optional auth for container pulls) ---
     systemd.services.k3s-registry-config =
       let
-        caFile =
-          if cfg.registryCaFile != null then
-            cfg.registryCaFile
-          else if cfg.k3s.oidc.caFile != null then
-            cfg.k3s.oidc.caFile
-          else
-            null;
+        caFile = cfg.registryCaFile;
         registryTemplate = pkgs.writeText "registries-yaml-template" (
           lib.concatStringsSep "\n" (
             [
@@ -320,21 +276,19 @@ in
       };
 
     environment.etc."rancher/k3s/registries.yaml" =
-      let
-        caFile = if cfg.registryCaFile != null then cfg.registryCaFile else cfg.k3s.oidc.caFile;
-      in
-      lib.mkIf (caFile != null && cfg.registryAuth.username == null) {
-        text = ''
-          mirrors:
-            forgejo.${cfg.domain}:
-              endpoint:
-                - "https://forgejo.${cfg.domain}"
-          configs:
-            "forgejo.${cfg.domain}":
-              tls:
-                ca_file: "${caFile}"
-        '';
-      };
+      lib.mkIf (cfg.registryCaFile != null && cfg.registryAuth.username == null)
+        {
+          text = ''
+            mirrors:
+              forgejo.${cfg.domain}:
+                endpoint:
+                  - "https://forgejo.${cfg.domain}"
+            configs:
+              "forgejo.${cfg.domain}":
+                tls:
+                  ca_file: "${cfg.registryCaFile}"
+          '';
+        };
 
     # --- System packages ---
     environment.systemPackages = with pkgs; [

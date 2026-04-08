@@ -37,7 +37,7 @@ chart-status: ## Show Flux HelmRelease reconciliation status
 deploy-infra: ## Deploy infrastructure only (traefik, cnpg, minio, forgejo)
 	helmfile sync -l tier=infra
 
-deploy-apps: ## Deploy apps only (headlamp, woodpecker, oauth2-proxy — skips infrastructure)
+deploy-apps: ## Deploy apps only (woodpecker, oauth2-proxy — skips infrastructure)
 	helmfile sync -l tier=apps
 
 check-infra: ## Validate external infrastructure components are present
@@ -62,7 +62,6 @@ urls: ## Print service URLs
 	@echo "Platform (*.$(DOMAIN)):"
 	@echo "  Forgejo:    https://forgejo.$(DOMAIN)"
 	@echo "  Woodpecker: https://ci.$(DOMAIN)"
-	@echo "  Headlamp:   https://headlamp.$(DOMAIN)"
 	@echo "  MinIO:      https://minio.$(DOMAIN)"
 	@echo "  MinIO S3:   https://s3.$(DOMAIN)"
 	@echo ""

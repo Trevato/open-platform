@@ -32,7 +32,7 @@ if [ -n "${VCLUSTER_NS:-}" ]; then
   NS_PREFIX="${VCLUSTER_NS}"
 else
   echo "Checking host platform"
-  NAMESPACES="forgejo woodpecker headlamp minio oauth2-proxy postgres cnpg-system"
+  NAMESPACES="forgejo woodpecker minio oauth2-proxy postgres cnpg-system"
   NS_PREFIX=""
 fi
 echo ""
@@ -82,7 +82,7 @@ if [ -n "$NS_PREFIX" ]; then
   HOST_COL=3
 else
   INGRESSES=$(kubectl get ingress --all-namespaces --no-headers 2>/dev/null | \
-    grep -E "forgejo|woodpecker|headlamp|minio|oauth2" || echo "")
+    grep -E "forgejo|woodpecker|minio|oauth2" || echo "")
   HOST_COL=4
 fi
 

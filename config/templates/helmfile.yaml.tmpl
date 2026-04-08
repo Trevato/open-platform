@@ -5,8 +5,6 @@ repositories:
     url: https://cloudnative-pg.github.io/charts
   - name: minio
     url: https://charts.min.io/
-  - name: headlamp
-    url: https://kubernetes-sigs.github.io/headlamp/
   - name: woodpecker
     url: https://woodpecker-ci.org/
   - name: oauth2-proxy
@@ -229,17 +227,6 @@ releases:
             kubectl apply -f manifests/oidc-rbac.yaml && ./scripts/setup-oauth2.sh && ./scripts/setup-system-org.sh
 
   # ─── Layer 3: Consumers ────────────────────────────────────────────────
-
-  - name: headlamp
-    namespace: headlamp
-    chart: headlamp/headlamp
-    version: "0.39.0"
-    values:
-      - headlamp-values.yaml
-    needs:
-      - forgejo/forgejo
-    labels:
-      tier: apps
 
   - name: woodpecker
     namespace: woodpecker

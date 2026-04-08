@@ -32,15 +32,6 @@ export const PLATFORM_SERVICES = [
     toggleable: false,
   },
   {
-    name: "Headlamp",
-    repo: "headlamp",
-    namespace: "headlamp",
-    labelSelector: "app.kubernetes.io/name=headlamp",
-    subdomain: "headlamp",
-    repoUrl: "https://github.com/headlamp-k8s/headlamp",
-    toggleable: false,
-  },
-  {
     name: "MinIO",
     repo: "minio",
     namespace: "minio",
@@ -126,9 +117,15 @@ async function resolveServiceUrl(
 }
 
 export async function getPlatformApps(): Promise<AppInfo[]> {
+  // Only include services whose namespace actually exists
+  const nsList = await coreV1.listNamespace();
+  const nsNames = new Set(nsList.items.map((ns) => ns.metadata?.name));
+
   const apps: AppInfo[] = [];
 
   for (const svc of PLATFORM_SERVICES) {
+    if (!nsNames.has(svc.namespace)) continue;
+
     try {
       const [podList, url] = await Promise.all([
         coreV1.listNamespacedPod({

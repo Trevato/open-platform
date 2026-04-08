@@ -10,7 +10,6 @@ PREFIX="${SERVICE_PREFIX:-}"
 FORGEJO_URL="https://${PREFIX}forgejo.${DOMAIN}"
 
 OAUTH2_APPS=(
-  "Headlamp|https://${PREFIX}headlamp.${DOMAIN}/oidc-callback|true"
   "Woodpecker|https://${PREFIX}ci.${DOMAIN}/authorize|true"
   "OAuth2-Proxy|https://${PREFIX}oauth2.${DOMAIN}/oauth2/callback|true"
   "Social|https://${PREFIX}social.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
@@ -119,25 +118,6 @@ done
 apply_secret() {
   kubectl create secret generic "$@" --dry-run=client -o yaml | kubectl apply -f -
 }
-
-# Headlamp OIDC secret — only update if we have a new secret (first creation)
-if [ -n "${CLIENT_SECRETS[Headlamp]}" ]; then
-  echo "Creating Headlamp OIDC secret..."
-  apply_secret oidc -n headlamp \
-    --from-literal=OIDC_CLIENT_ID="${CLIENT_IDS[Headlamp]}" \
-    --from-literal=OIDC_CLIENT_SECRET="${CLIENT_SECRETS[Headlamp]}" \
-    --from-literal=OIDC_ISSUER_URL="${FORGEJO_URL}" \
-    --from-literal=OIDC_SCOPES="openid,profile,email,groups" \
-    --from-literal=OIDC_CALLBACK_URL="https://${PREFIX}headlamp.${DOMAIN}/oidc-callback"
-else
-  # Verify the secret exists (from a previous run)
-  if ! kubectl get secret oidc -n headlamp -o jsonpath='{.data.OIDC_CLIENT_ID}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
-    echo "Warning: Headlamp OAuth2 app exists but 'oidc' secret is missing."
-    echo "Delete the app in Forgejo and re-run, or create the secret manually."
-    exit 1
-  fi
-  echo "Headlamp OIDC secret already exists."
-fi
 
 # Woodpecker secret — merge OAuth2 creds into existing agent secret
 if [ -n "${CLIENT_SECRETS[Woodpecker]}" ]; then

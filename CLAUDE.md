@@ -9,7 +9,6 @@ Self-hosted developer platform running on k3s. All services authenticate through
                     │
 Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ────► Forgejo (git, packages, OIDC provider)
               *.{PLATFORM_DOMAIN}             ├── ci ─────────► Woodpecker (CI/CD)
-                                              ├── headlamp ───► Headlamp (K8s dashboard)
                                               ├── minio ──────► MinIO Console
                                               ├── s3 ─────────► MinIO S3 API
                                               ├── oauth2 ─────► OAuth2-Proxy (preview auth)
@@ -25,7 +24,6 @@ op-api ──► MCP Server (~43 tools across 10 categories)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
-Headlamp ──► Forgejo (OIDC) ──► K8s API Server (OIDC token validation)
 
 Flux (flux-system) ──► system/open-platform on Forgejo ──► reconciles all platform services
 ```
@@ -80,7 +78,6 @@ PR previews deploy at `pr-N-<app>.open-platform.sh`, protected by OAuth2-Proxy (
 | Service      | Namespace           | Domain                                             | Role                                                                                   |
 | ------------ | ------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | Forgejo      | `forgejo`           | `forgejo.{PLATFORM_DOMAIN}`                        | Git, packages, OIDC identity provider. Central auth — all services use Forgejo OAuth2. |
-| Headlamp     | `headlamp`          | `headlamp.{PLATFORM_DOMAIN}`                       | K8s dashboard. OIDC via Forgejo.                                                       |
 | Woodpecker   | `woodpecker`        | `ci.{PLATFORM_DOMAIN}`                             | CI/CD. K8s-native backend, Kaniko image builds, auto-activated repos.                  |
 | MinIO        | `minio`             | `minio.{PLATFORM_DOMAIN}` / `s3.{PLATFORM_DOMAIN}` | Object storage (console + S3 API).                                                     |
 | PostgreSQL   | `postgres`          | internal only                                      | CNPG cluster. Databases: `forgejo`, `platform_ledger`, `zulip`.                        |
@@ -136,7 +133,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 ## Namespace Layout
 
 **Infrastructure**: `kube-system` (Traefik, CoreDNS), `cnpg-system`, `postgres`, `flux-system`, `cloudflare` (optional)
-**Services**: `forgejo`, `headlamp`, `woodpecker`, `minio`, `oauth2-proxy`, `mailpit`, `jitsi`, `zulip`
+**Services**: `forgejo`, `woodpecker`, `minio`, `oauth2-proxy`, `mailpit`, `jitsi`, `zulip`
 **Platform**: `op-system-console`, `op-system-op-api`
 **Apps**: `op-{org}-{repo}` convention
 
@@ -170,7 +167,7 @@ make urls     # show all service URLs
 
 ### Deployment Layers
 
-Helmfile bootstraps in 5 tiers: infra (traefik, cnpg) → storage (minio) → identity (forgejo) → apps (headlamp, woodpecker, oauth2-proxy) → gitops (flux). Flux then manages ongoing via Kustomizations in `platform/` with `dependsOn` ordering.
+Helmfile bootstraps in 5 tiers: infra (traefik, cnpg) → storage (minio) → identity (forgejo) → apps (woodpecker, oauth2-proxy) → gitops (flux). Flux then manages ongoing via Kustomizations in `platform/` with `dependsOn` ordering.
 
 ### Hook Execution Order (Bootstrap)
 
@@ -207,18 +204,9 @@ Configured via `tls_mode` in `open-platform.yaml`:
 - **`letsencrypt`**: cert-manager + HTTP-01 challenge. Requires public DNS.
 - **`cloudflare`**: TLS at Cloudflare edge. Traefik receives plain HTTP from tunnel.
 
-## k3s API Server OIDC
-
-Headlamp OIDC requires k3s API server flags. VxRail: declarative in `~/nix-darwin-config/modules/nixos.nix`. Colima: `/etc/rancher/k3s/config.yaml`, updated by `scripts/setup-oidc.sh`.
-
-- `oidc-issuer-url` must match Forgejo's `ROOT_URL` exactly
-- `oidc-client-id` must match Headlamp OAuth2 app (retrieve from `kubectl get secret oidc -n headlamp`)
-- `oidc-username-prefix=-` required (prevents issuer URL prefix on usernames)
-- Config requires k3s restart. Server node must resolve `forgejo.{PLATFORM_DOMAIN}` via CoreDNS, not hairpin through Cloudflare.
-
 ## Known Quirks
 
-Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, better-auth, helmfile, OAuth2-Proxy, and Flux coexistence. See [docs/known-issues.md](docs/known-issues.md) for the full list.
+Implementation gotchas for Woodpecker, Forgejo, Kaniko, CNPG, better-auth, helmfile, OAuth2-Proxy, and Flux coexistence. See [docs/known-issues.md](docs/known-issues.md) for the full list.
 
 ## Development Conventions
 

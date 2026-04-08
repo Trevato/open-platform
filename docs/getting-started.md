@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks through deploying Open Platform from scratch on either macOS (via Colima) or Linux (bare metal k3s). By the end, you will have a fully working developer platform with Git hosting, CI/CD, object storage, a Kubernetes dashboard, and push-to-deploy app workflows.
+This guide walks through deploying Open Platform from scratch on either macOS (via Colima) or Linux (bare metal k3s). By the end, you will have a fully working developer platform with Git hosting, CI/CD, object storage, and push-to-deploy app workflows.
 
 ## Prerequisites
 
@@ -239,7 +239,6 @@ After deploy completes, all services are live at `*.{domain}`:
 | ---------- | -------------------------------- | --------------------------------------------------------- |
 | Forgejo    | `forgejo.{domain}`               | Git hosting, container registry, OAuth2 identity provider |
 | Woodpecker | `ci.{domain}`                    | CI/CD pipelines                                           |
-| Headlamp   | `headlamp.{domain}`              | Kubernetes dashboard                                      |
 | MinIO      | `minio.{domain}` / `s3.{domain}` | Object storage console and S3 API                         |
 | Console    | `console.{domain}`               | Management dashboard                                      |
 | API        | `api.{domain}`                   | REST API and MCP server                                   |

@@ -51,7 +51,7 @@ echo "Phase 4: Destroying helm releases..."
 helmfile destroy 2>/dev/null || true
 
 # Clean up any stuck helm release secrets
-for ns in forgejo woodpecker headlamp minio oauth2-proxy cnpg-system flux-system kube-system; do
+for ns in forgejo woodpecker minio oauth2-proxy cnpg-system flux-system kube-system; do
   kubectl delete secrets -n "$ns" -l owner=helm 2>/dev/null || true
 done
 
@@ -74,7 +74,7 @@ done
 # ── Phase 6: Force-finalize stuck namespaces ────────────────────────────────
 
 echo "Phase 6: Cleaning up namespaces..."
-PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo headlamp woodpecker minio oauth2-proxy"
+PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo woodpecker minio oauth2-proxy"
 
 for ns in $PLATFORM_NAMESPACES; do
   # Delete namespace (may already be terminating)

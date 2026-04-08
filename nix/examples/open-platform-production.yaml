@@ -10,9 +10,6 @@
 #     domain = "platform.company.com";
 #     tailscale.enable = true;       # if using Tailscale for cross-node
 #     flannel.externalIp = true;     # if multi-node over Tailscale
-#     # After first deploy, enable OIDC:
-#     # k3s.oidc.enable = true;
-#     # k3s.oidc.clientId = "...";   # from: kubectl get secret oidc -n headlamp
 #   };
 #
 # Then: cd /opt/open-platform && make deploy

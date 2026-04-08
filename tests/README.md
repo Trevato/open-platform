@@ -13,7 +13,7 @@ PLATFORM_DOMAIN=open-platform.sh ./tests/smoke.sh
 PLATFORM_DOMAIN=open-platform.sh SERVICE_PREFIX=buster- ./tests/smoke.sh
 ```
 
-Checks: Forgejo API (200), Woodpecker healthz (200), Headlamp (200/302), MinIO (200/302/307), S3 (403), OAuth2-Proxy ping (200). Discovers and checks deployed apps via kubectl if available.
+Checks: Forgejo API (200), Woodpecker healthz (200), MinIO (200/302/307), S3 (403), OAuth2-Proxy ping (200). Discovers and checks deployed apps via kubectl if available.
 
 ## K8s Health (`k8s-health.sh`)
 
@@ -61,13 +61,13 @@ FORGEJO_ADMIN_PASSWORD=<password> \
 
 ### Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `PLATFORM_DOMAIN` | Yes | Platform domain (e.g., `open-platform.sh`) |
-| `SERVICE_PREFIX` | No | Instance prefix with trailing dash (e.g., `buster-`) |
-| `FORGEJO_ADMIN_USER` | No | Admin username (default: `opadmin`) |
-| `FORGEJO_ADMIN_PASSWORD` | Yes | Admin password |
-| `TLS_SKIP_VERIFY` | No | Skip TLS verification (default: `true`) |
+| Variable                 | Required | Description                                          |
+| ------------------------ | -------- | ---------------------------------------------------- |
+| `PLATFORM_DOMAIN`        | Yes      | Platform domain (e.g., `open-platform.sh`)           |
+| `SERVICE_PREFIX`         | No       | Instance prefix with trailing dash (e.g., `buster-`) |
+| `FORGEJO_ADMIN_USER`     | No       | Admin username (default: `opadmin`)                  |
+| `FORGEJO_ADMIN_PASSWORD` | Yes      | Admin password                                       |
+| `TLS_SKIP_VERIFY`        | No       | Skip TLS verification (default: `true`)              |
 
 ### Test Structure
 
@@ -85,7 +85,6 @@ tests/
       services.spec.ts               # All 6 services load in browser
       forgejo-auth.spec.ts           # Admin login, API, system org/repos
       woodpecker-auth.spec.ts        # OAuth2 redirect chain completes
-      headlamp-auth.spec.ts          # OIDC redirect chain completes
     apps/
       deployed.spec.ts               # All apps in workload namespaces respond
       app-auth.spec.ts               # better-auth sign-in flow on social app

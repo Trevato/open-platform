@@ -311,13 +311,11 @@ echo "Templating helm values..."
 template_file "$TEMPLATES_DIR/traefik-values.yaml.tmpl"    "$ROOT_DIR/traefik-values.yaml"
 template_file "$TEMPLATES_DIR/forgejo-values.yaml.tmpl"    "$ROOT_DIR/forgejo-values.yaml"
 template_file "$TEMPLATES_DIR/woodpecker-values.yaml.tmpl"  "$ROOT_DIR/woodpecker-values.yaml"
-template_file "$TEMPLATES_DIR/headlamp-values.yaml.tmpl"    "$ROOT_DIR/headlamp-values.yaml"
 template_file "$TEMPLATES_DIR/minio-values.yaml.tmpl"       "$ROOT_DIR/minio-values.yaml"
 
 echo "  traefik-values.yaml"
 echo "  forgejo-values.yaml"
 echo "  woodpecker-values.yaml"
-echo "  headlamp-values.yaml"
 echo "  minio-values.yaml"
 
 # Mailpit: only when not using external SMTP
@@ -391,7 +389,6 @@ template_platform "apps/woodpecker-rbac.yaml"
 template_platform "identity/oidc-rbac.yaml"
 template_platform "identity/forgejo.yaml"
 template_platform "apps/woodpecker.yaml"
-template_platform "apps/headlamp.yaml"
 template_platform "apps/oauth2-proxy.yaml"
 template_platform "infrastructure/configs/minio.yaml"
 template_platform "infrastructure/configs/oauth2-proxy-middleware.yaml"
@@ -489,7 +486,6 @@ template_flux() {
 }
 
 template_flux "apps/woodpecker.yaml"
-template_flux "apps/headlamp.yaml"
 template_flux "apps/oauth2-proxy.yaml"
 template_flux "infrastructure/configs/minio.yaml"
 
@@ -790,7 +786,6 @@ echo ""
 echo "Services:"
 echo "  Forgejo:    https://${SERVICE_PREFIX}forgejo.${DOMAIN}"
 echo "  Woodpecker: https://${SERVICE_PREFIX}ci.${DOMAIN}"
-echo "  Headlamp:   https://${SERVICE_PREFIX}headlamp.${DOMAIN}"
 echo "  MinIO:      https://${SERVICE_PREFIX}minio.${DOMAIN}"
 echo "  S3 API:     https://${SERVICE_PREFIX}s3.${DOMAIN}"
 echo "  OAuth2:     https://${SERVICE_PREFIX}oauth2.${DOMAIN}"

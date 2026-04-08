@@ -6,7 +6,6 @@ Self-hosted developer platform. One command deploys Git hosting, CI/CD, a Kubern
 *.yourdomain.com
   forgejo.   -- Git, packages, container registry, SSO
   ci.        -- CI/CD pipelines
-  headlamp.  -- Kubernetes dashboard
   minio.     -- Object storage console
   s3.        -- S3-compatible API
   console.   -- Management dashboard
@@ -38,7 +37,6 @@ After bootstrap, Flux GitOps takes over. Push to the platform repo on Forgejo an
 Browser --> Traefik (ingress, wildcard DNS)
               |-- forgejo    --> Forgejo (git, packages, OIDC provider)
               |-- ci         --> Woodpecker (CI/CD, K8s-native backend)
-              |-- headlamp   --> Headlamp (K8s dashboard, OIDC auth)
               |-- minio / s3 --> MinIO (S3-compatible object storage)
               |-- console    --> Console (management dashboard)
               |-- api        --> Platform API (REST + MCP, 43 AI tools)
@@ -57,7 +55,6 @@ All services authenticate through Forgejo as the single OIDC/OAuth2 identity pro
 | ------------ | -------------------------------- | ----------------------------------------------- |
 | Forgejo      | `forgejo.{domain}`               | Git, packages, container registry, SSO provider |
 | Woodpecker   | `ci.{domain}`                    | CI/CD with K8s-native pipeline backend          |
-| Headlamp     | `headlamp.{domain}`              | Kubernetes dashboard with OIDC                  |
 | MinIO        | `minio.{domain}` / `s3.{domain}` | S3-compatible object storage                    |
 | Console      | `console.{domain}`               | Platform management dashboard                   |
 | Platform API | `api.{domain}`                   | REST + MCP (43 tools)                           |

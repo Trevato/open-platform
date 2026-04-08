@@ -34,16 +34,6 @@ const SERVICE_ICONS: Record<
     className: "service-icon-ci",
     svg: <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />,
   },
-  Headlamp: {
-    className: "service-icon-dashboard",
-    svg: (
-      <>
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <path d="M3 9h18" />
-        <path d="M9 21V9" />
-      </>
-    ),
-  },
   MinIO: {
     className: "service-icon-storage",
     svg: (

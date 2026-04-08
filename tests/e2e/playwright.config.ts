@@ -20,7 +20,7 @@ export default defineConfig({
       testMatch: /global\.setup\.ts/,
     },
     {
-      // Platform tests (Forgejo, Headlamp, Woodpecker, etc.) — use Forgejo session
+      // Platform tests (Forgejo, Woodpecker, etc.) — use Forgejo session
       name: "platform",
       testDir: "./platform",
       testIgnore: /console\.spec\.ts/,

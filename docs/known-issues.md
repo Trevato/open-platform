@@ -2,16 +2,6 @@
 
 Implementation gotchas discovered during development. Consult when debugging unexpected behavior.
 
-## Headlamp
-
-- **OIDC secret pattern** — uses the `externalSecret` pattern (Option 3 in the chart). All OIDC values come from the K8s secret via `envFrom`. Keys must be uppercase with underscores (`OIDC_CLIENT_ID`, not `clientID`). The chart's Option 1 (`secret.create: false` with `secret.name`) does NOT inject client credentials.
-- **Callback path** — `/oidc-callback` (not `/oidc/callback`). The redirect URI in the Forgejo OAuth2 app must match exactly.
-- **OIDC scopes** — must be comma-separated, not space-separated. Do NOT include `offline_access` — Forgejo doesn't support it (not in `scopes_supported`). Using it causes "key not found" refresh token errors and auth loops. Use: `"openid,profile,email,groups"`.
-- **OIDC external secret keys** — the `oidc` K8s secret MUST include `OIDC_ISSUER_URL` and `OIDC_CALLBACK_URL` in addition to `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_SCOPES`. The chart uses `$(OIDC_ISSUER_URL)` in CLI args — missing key causes literal string and immediate OIDC failure.
-- **Self-signed CA for OIDC** — Headlamp's `-oidc-ca-file` flag parses the cert but does NOT propagate the custom TLS context to Go's OIDC HTTP client (`ConfigureTLSContext` in `auth.go` creates a custom pool but when `CACert` is empty/`&""`, it falls back to Go's default client). Fix: init container builds combined CA bundle (system CAs + platform CA) → mount as emptyDir → set `SSL_CERT_FILE` env var. Do NOT use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY` (broken — `GetInClusterContext` stores `CACert:&""` which overrides `InsecureSkipVerify`).
-- **sessionTTL flag crash** — do NOT add `sessionTTL` to HelmRelease values. Chart 0.40.x passes `-session-ttl` to the binary which doesn't support the flag yet. Pin chart to `version: "0.39.0"`.
-- **OIDC state is in-memory** — Headlamp stores OIDC state in a Go in-memory map (`oauthRequestMap`). Pod restarts during active login sessions cause "invalid request state is empty" errors. This is expected — users just retry.
-
 ## Woodpecker
 
 - **Redirect URI** — `https://ci.{PLATFORM_DOMAIN}/authorize`.

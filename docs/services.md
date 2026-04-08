@@ -16,19 +16,6 @@ Detailed configuration, secrets, and endpoints for each platform service. For ar
 | Features      | OAuth2 provider, OpenID signin, package/container registry, LFS, org creation    |
 | Webhook hosts | `ALLOWED_HOST_LIST: "*.{PLATFORM_DOMAIN}"`                                       |
 
-## Headlamp (Kubernetes Dashboard)
-
-| Key          | Value                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------ |
-| Config       | `platform/apps/headlamp.yaml` (Flux), `headlamp-values.yaml` (helmfile)                                      |
-| Namespace    | `headlamp`                                                                                                   |
-| Domain       | `headlamp.{PLATFORM_DOMAIN}`                                                                                 |
-| Helm chart   | `headlamp/headlamp`                                                                                          |
-| Auth         | OIDC via Forgejo, `externalSecret` pattern (Option 3)                                                        |
-| Secret       | `oidc` — keys: `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_ISSUER_URL`, `OIDC_SCOPES`, `OIDC_CALLBACK_URL` |
-| OIDC issuer  | `https://forgejo.{PLATFORM_DOMAIN}`                                                                          |
-| Callback URL | `https://headlamp.{PLATFORM_DOMAIN}/oidc-callback`                                                           |
-
 ## Woodpecker (CI/CD)
 
 | Key          | Value                                                                                                                        |
@@ -128,7 +115,6 @@ Created by `scripts/ensure-secrets.sh` (traefik presync hook):
 
 Created by `scripts/setup-oauth2.sh` (forgejo postsync hook):
 
-- `oidc` (headlamp ns) — OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, OIDC_ISSUER_URL, OIDC_SCOPES, OIDC_CALLBACK_URL
 - `woodpecker-secrets` (woodpecker ns) — merges WOODPECKER_FORGEJO_CLIENT, WOODPECKER_FORGEJO_SECRET
 - `oauth2-proxy-secrets` (oauth2-proxy ns) — merges client-id, client-secret
 - `social-auth` (op-system-social ns) — client-id, client-secret, secret (BETTER_AUTH_SECRET preserved)
