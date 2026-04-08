@@ -97,7 +97,7 @@ steps:
       - APP_NS="op-${CI_REPO_OWNER}-${CI_REPO_NAME}"
       - DB_NAME=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}" | tr '-' '_')
       - SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
-      - sed -i "s|__SERVICE_PREFIX__|$SP|g; s|__PLATFORM_DOMAIN__|$PLATFORM_DOMAIN|g; s|__PROVISIONER_ENABLED__|${PROVISIONER_ENABLED:-false}|g; s|APP_NAMESPACE|$APP_NS|g; s|DB_NAME|$DB_NAME|g; s|PROJECT_NAME|${CI_REPO_NAME}|g; s|ORG_NAME|${CI_REPO_OWNER}|g" k8s/*.yaml
+      - sed -i "s|__SERVICE_PREFIX__|$SP|g; s|__PLATFORM_DOMAIN__|$PLATFORM_DOMAIN|g; s|APP_NAMESPACE|$APP_NS|g; s|DB_NAME|$DB_NAME|g; s|PROJECT_NAME|${CI_REPO_NAME}|g; s|ORG_NAME|${CI_REPO_OWNER}|g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - |
         kubectl get secret forgejo-admin-credentials -n forgejo -o json | \
@@ -111,5 +111,3 @@ steps:
         from_secret: platform_domain
       SERVICE_PREFIX:
         from_secret: service_prefix
-      PROVISIONER_ENABLED:
-        from_secret: provisioner_enabled

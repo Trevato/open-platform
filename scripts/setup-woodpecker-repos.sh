@@ -364,7 +364,7 @@ else
     ORG_NAME=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
     echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
 
-    for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix provisioner_enabled forgejo_admin_token; do
+    for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix forgejo_admin_token; do
       EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
       if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
         continue
@@ -377,7 +377,6 @@ else
         registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
         registry_push_host) VALUE="forgejo-http.forgejo.svc.cluster.local:3000" ;;
         service_prefix) VALUE="${PREFIX}" ;;
-        provisioner_enabled) VALUE="${PROVISIONER_ENABLED:-false}" ;;
         forgejo_admin_token) VALUE="${FORGEJO_CI_TOKEN}" ;;
       esac
 

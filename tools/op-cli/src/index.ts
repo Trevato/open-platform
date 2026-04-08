@@ -5,13 +5,15 @@ import { whoamiCommand } from "./commands/whoami.js";
 import { appCommand } from "./commands/app.js";
 import { prCommand } from "./commands/pr.js";
 import { pipelineCommand } from "./commands/pipeline.js";
-import { issueCommand, labelCommand, milestoneCommand } from "./commands/issue.js";
+import {
+  issueCommand,
+  labelCommand,
+  milestoneCommand,
+} from "./commands/issue.js";
 import { branchCommand } from "./commands/branch.js";
 import { fileCommand } from "./commands/file.js";
 import { serviceCommand } from "./commands/service.js";
 import { userCommand } from "./commands/user.js";
-import { instanceCommand } from "./commands/instance.js";
-import { devpodCommand } from "./commands/devpod.js";
 
 const program = new Command()
   .name("op")
@@ -31,7 +33,5 @@ program.addCommand(branchCommand);
 program.addCommand(fileCommand);
 program.addCommand(serviceCommand);
 program.addCommand(userCommand);
-program.addCommand(instanceCommand);
-program.addCommand(devpodCommand);
 
 program.parse();

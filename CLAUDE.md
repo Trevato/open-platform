@@ -21,7 +21,7 @@ Browser ──► Traefik (ingress, hostNetwork) ──┬── forgejo ──�
                                               └── <app> ──────► Apps (from template)
 
 Console ──► op-api (REST) ──► Forgejo API + K8s API
-op-api ──► MCP Server (~39 tools across 9 categories)
+op-api ──► MCP Server (~43 tools across 10 categories)
 
 Forgejo ──► PostgreSQL (CNPG cluster, postgres namespace)
 Woodpecker ──► Forgejo (SCM integration, OAuth2)
@@ -40,8 +40,8 @@ Single source of truth: `open-platform.yaml` → `scripts/generate-config.sh` �
 - **Generated outputs**: `*-values.yaml`, `helmfile.yaml`, `platform/` Flux resources, `manifests/oidc-rbac.yaml`, `.env`
 - **TLS modes**: `selfsigned` (auto-generated CA), `letsencrypt` (cert-manager + HTTP-01), `cloudflare` (tunnel at edge)
 - **Deploy flow**: `open-platform.yaml` → `generate-config.sh` (Phase 0 in deploy.sh) → `helmfile sync`
-- **`service_prefix`** — Optional prefix prepended to all service subdomains (e.g., `myteam-` → `myteam-forgejo.open-platform.sh`). Empty by default. Used for multi-tenant deployments where each customer instance gets a unique prefix.
-- **Template placeholders**: `__SERVICE_PREFIX__` (domain prefix), `__PLATFORM_DOMAIN__` (base domain), `__PROVISIONER_ENABLED__` (feature flag). Used in k8s manifests and substituted via `sed` during CI deploy. Woodpecker org secrets: `service_prefix`, `platform_domain`, `registry_host`, `registry_push_host`, `registry_username`, `registry_token`, `provisioner_enabled`.
+- **`service_prefix`** — Optional prefix prepended to all service subdomains (e.g., `myteam-` → `myteam-forgejo.open-platform.sh`). Empty by default.
+- **Template placeholders**: `__SERVICE_PREFIX__` (domain prefix), `__PLATFORM_DOMAIN__` (base domain). Used in k8s manifests and substituted via `sed` during CI deploy. Woodpecker org secrets: `service_prefix`, `platform_domain`, `registry_host`, `registry_push_host`, `registry_username`, `registry_token`.
 
 ### Domain Strategy
 
@@ -88,8 +88,8 @@ PR previews deploy at `pr-N-<app>.open-platform.sh`, protected by OAuth2-Proxy (
 | Mailpit      | `mailpit`           | `mail.{PLATFORM_DOMAIN}`                           | SMTP catch-all (dev mode). Skipped when external SMTP configured.                      |
 | Jitsi Meet   | `jitsi`             | `meet.{PLATFORM_DOMAIN}`                           | Video conferencing. JWT auth via OIDC adapter. Enabled by default.                     |
 | Zulip        | `zulip`             | `chat.{PLATFORM_DOMAIN}`                           | Team messaging. OIDC via Forgejo. Enabled by default.                                  |
-| Console      | `op-system-console` | `console.{PLATFORM_DOMAIN}`                        | Platform control panel. App directory, MCP connector, service control, settings.       |
-| Platform API | `op-system-op-api`  | `api.{PLATFORM_DOMAIN}`                            | REST API + MCP server. Forgejo PAT auth. ~39 MCP tools across 9 categories.            |
+| Console      | `op-system-console` | `console.{PLATFORM_DOMAIN}`                        | Platform control panel. App directory, MCP connector.                                  |
+| Platform API | `op-system-op-api`  | `api.{PLATFORM_DOMAIN}`                            | REST API + MCP server. Forgejo PAT auth. ~43 MCP tools across 10 categories.           |
 | Flux         | `flux-system`       | n/a                                                | GitOps — watches `system/open-platform`, reconciles all HelmReleases.                  |
 
 For full config details (Helm charts, secrets, RBAC, env vars), see [docs/services.md](docs/services.md).
@@ -101,8 +101,8 @@ For full config details (Helm charts, secrets, RBAC, env vars), see [docs/servic
 - **Domain**: `api.{PLATFORM_DOMAIN}`
 - **Runtime**: Elysia on Bun
 - **Auth**: Bearer token (Forgejo PAT) validated against Forgejo API. Admin check via `system` org membership.
-- **REST API**: 10 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, platform (admin), mcp-tools. Swagger docs at `/swagger`.
-- **MCP Server**: ~39 tools across 9 categories — orgs (2), repos (5), PRs (5), issues (7), branches (3), files (2), pipelines (3), apps (3), users (1), platform (5). Streamable HTTP transport at `/mcp` via `@modelcontextprotocol/sdk`. Per-session `McpServer` instances via `createMcpServer(user)`. Session-based with 30-min TTL, stale cleanup every 5 min.
+- **REST API**: 12 route plugins — status, users, orgs, repos, PRs, branches, files, issues, pipelines, apps, platform (admin), mcp-tools. Swagger docs at `/swagger`.
+- **MCP Server**: ~43 tools across 10 categories — orgs (2), repos (5), PRs (7), issues (7), branches (3), files (3), pipelines (4), apps (6), users (1), platform (5). Streamable HTTP transport at `/mcp` via `@modelcontextprotocol/sdk`. Per-session `McpServer` instances via `createMcpServer(user)`. Session-based with 30-min TTL, stale cleanup every 5 min.
 - **Database**: `platform_ledger` (shared with console) — `platform` table.
 - **K8s access**: ServiceAccount `op-api` with ClusterRole for reading platform service statuses, namespaces, and deployments.
 - **Key env vars**: `FORGEJO_INTERNAL_URL` (HTTP, server-to-server), `FORGEJO_URL` (HTTPS, external), `WOODPECKER_INTERNAL_URL`, `DATABASE_URL`, `PLATFORM_DOMAIN`, `SERVICE_PREFIX`.
@@ -116,9 +116,9 @@ For full config details (Helm charts, secrets, RBAC, env vars), see [docs/servic
 - **Database**: `platform_ledger` on host PostgreSQL
 - **Auth**: Forgejo OAuth2 via better-auth
 - **Backend**: Calls op-api via internal HTTP (`http://op-api.op-system-op-api.svc:80`)
-- **Role**: Platform control panel for admins. App directory (list, create, manage apps), MCP connector (connection info and config snippets for Claude Code, Cursor, VS Code, Continue.dev, Windsurf), service control (status, start/stop), platform settings (TLS, networking, service toggles).
+- **Role**: Platform control panel for admins. App directory (list, create, manage apps), MCP connector (connection info and config snippets for Claude Code, Cursor, VS Code, Continue.dev, Windsurf).
 - **Schema**: `platform` (single-row config)
-- **Pages**: Landing (`/`), dashboard (`/dashboard`), apps (`/dashboard/apps`), services (`/dashboard/services`), MCP (`/dashboard/mcp`), users (`/dashboard/users`), settings (`/dashboard/settings`)
+- **Pages**: Landing (`/`), dashboard (`/dashboard`), apps (`/dashboard/apps`), MCP (`/dashboard/mcp`)
 - **Permission model**: Binary admin/user. Admin = Forgejo `is_admin` or `system` org member.
 - **Key env vars**: `DATABASE_URL`, `BETTER_AUTH_URL`, `AUTH_FORGEJO_URL`, `AUTH_FORGEJO_INTERNAL_URL`, `OP_API_URL`, `PLATFORM_DOMAIN`.
 
@@ -130,7 +130,7 @@ Created by `scripts/setup-system-org.sh` during first deploy. Contains:
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `system/open-platform` | Platform config — Flux HelmReleases + K8s manifests. Source of truth for all platform services.                                                                                  |
 | `system/template`      | App template — Next.js 15 App Router with postgres, S3/MinIO, Forgejo OAuth2 via better-auth, declarative schema, seed data, 4 Woodpecker CI workflows. Marked as template repo. |
-| `system/console`       | Platform control panel — app directory, MCP connector, service control, settings. Deployed at `console.{PLATFORM_DOMAIN}`.                                                       |
+| `system/console`       | Platform control panel — app directory, MCP connector. Deployed at `console.{PLATFORM_DOMAIN}`.                                                                                  |
 | `system/op-api`        | Platform API — REST (Elysia/Bun) + MCP server for repos, pipelines, apps, platform management. Deployed at `api.{PLATFORM_DOMAIN}`.                                              |
 
 ## Namespace Layout
@@ -218,7 +218,7 @@ Headlamp OIDC requires k3s API server flags. VxRail: declarative in `~/nix-darwi
 
 ## Known Quirks
 
-Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, better-auth, helmfile, OAuth2-Proxy, Flux coexistence, and vCluster. See [docs/known-issues.md](docs/known-issues.md) for the full list.
+Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, better-auth, helmfile, OAuth2-Proxy, and Flux coexistence. See [docs/known-issues.md](docs/known-issues.md) for the full list.
 
 ## Development Conventions
 
@@ -241,7 +241,6 @@ Implementation gotchas for Headlamp OIDC, Woodpecker, Forgejo, Kaniko, CNPG, bet
 | [docs/api.md](docs/api.md)                             | REST API reference (endpoints, auth, error format)      |
 | [docs/cli.md](docs/cli.md)                             | CLI command reference (`op` binary)                     |
 | [docs/mcp.md](docs/mcp.md)                             | MCP server tool catalog for AI agents                   |
-| [docs/hosting.md](docs/hosting.md)                     | Multi-tenant hosting via vCluster                       |
 | [docs/permissions.md](docs/permissions.md)             | Permission model and roles                              |
 | [docs/services.md](docs/services.md)                   | Per-service config, secrets, env vars, OAuth2 details   |
 | [docs/bootstrap.md](docs/bootstrap.md)                 | Deploy pipeline, template inventory, scripts, manifests |

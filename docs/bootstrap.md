@@ -85,10 +85,5 @@ Generated from the app template. Created by `setup-system-org.sh` and deployed v
 | `scripts/setup-woodpecker-repos.sh` | woodpecker postsync       | Programmatic Woodpecker login, repo activation, org secrets      |
 | `scripts/setup-flux.sh`             | flux postsync             | Creates Flux bootstrap resources (GitRepository, Kustomization)  |
 | `scripts/setup-oidc.sh`             | after helmfile sync       | Updates k3s OIDC client ID                                       |
-| `scripts/provision-instance.sh`     | Reconciler CronJob        | 8-phase vCluster instance provisioning                           |
-| `scripts/teardown-instance.sh`      | Reconciler CronJob        | vCluster teardown                                                |
-| `host/deploy-provisioner.sh`        | Manual                    | Deploys provisioner CronJob + RBAC to host cluster               |
-| `host/provisioner/reconciler.sh`    | CronJob (1min)            | Polls console DB for pending/terminating instances               |
-| `host/provisioner/health-check.sh`  | CronJob (5min)            | Monitors instance health via HTTPS probe                         |
 
 All scripts are idempotent — safe to run on every `make deploy`.

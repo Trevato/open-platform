@@ -8,12 +8,6 @@ The MCP server runs as part of the `op-api` service. Each authenticated session 
 
 ## Setup
 
-### Dev pods (pre-configured)
-
-Dev pods ship with MCP already configured. No setup needed.
-
-### External use
-
 Add to `~/.claude/.mcp.json` (or your MCP client's config):
 
 ```json
@@ -139,43 +133,3 @@ Sessions have a 30-minute TTL. Stale sessions are closed automatically.
 | `create_platform_user`   | Create Forgejo user             |
 | `list_platform_apps`     | List deployed applications      |
 | `create_platform_app`    | Create app from system template |
-
-### Instances (vCluster)
-
-| Tool                         | Description                                  |
-| ---------------------------- | -------------------------------------------- |
-| `list_instances`             | List instances (all flag for admin)          |
-| `create_instance`            | Create instance with slug, name, email, tier |
-| `get_instance`               | Instance detail with events                  |
-| `delete_instance`            | Terminate instance                           |
-| `get_instance_credentials`   | Get admin credentials                        |
-| `reset_instance_credentials` | Reset admin password                         |
-| `get_instance_kubeconfig`    | Get kubeconfig                               |
-| `list_instance_services`     | Services in instance                         |
-| `list_instance_apps`         | Apps in instance                             |
-
-### Agents (admin only)
-
-| Tool             | Description                          |
-| ---------------- | ------------------------------------ |
-| `list_agents`    | List all AI agents                   |
-| `get_agent`      | Get agent by slug                    |
-| `create_agent`   | Create agent with Forgejo identity   |
-| `update_agent`   | Update agent configuration           |
-| `delete_agent`   | Delete agent and Forgejo identity    |
-| `activate_agent` | Manually trigger agent with a prompt |
-
-### Dev Pods
-
-| Tool                       | Description                                    |
-| -------------------------- | ---------------------------------------------- |
-| `list_dev_pods`            | List host dev pods                             |
-| `create_dev_pod`           | Create dev pod (optional cpu, memory, storage) |
-| `get_dev_pod`              | Get dev pod status by username                 |
-| `control_dev_pod`          | Start or stop dev pod                          |
-| `delete_dev_pod`           | Delete dev pod                                 |
-| `list_instance_dev_pods`   | List dev pods in an instance                   |
-| `create_instance_dev_pod`  | Create dev pod in an instance                  |
-| `get_instance_dev_pod`     | Get instance dev pod status                    |
-| `control_instance_dev_pod` | Start/stop instance dev pod                    |
-| `delete_instance_dev_pod`  | Delete instance dev pod                        |

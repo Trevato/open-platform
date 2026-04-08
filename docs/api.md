@@ -116,58 +116,6 @@ Admin endpoints (`/api/v1/platform/*`) additionally verify the user is a Forgejo
 | GET    | `/api/v1/apps/:org/:repo` | Get app status                 |
 | POST   | `/api/v1/apps/:org/:repo` | Deploy app (triggers pipeline) |
 
-### Instances (vCluster)
-
-| Method | Path                                         | Description                                  |
-| ------ | -------------------------------------------- | -------------------------------------------- |
-| GET    | `/api/v1/instances`                          | List instances (`?all=true` for admin)       |
-| POST   | `/api/v1/instances`                          | Create instance                              |
-| GET    | `/api/v1/instances/:slug`                    | Instance detail with events and service URLs |
-| DELETE | `/api/v1/instances/:slug`                    | Request termination                          |
-| GET    | `/api/v1/instances/:slug/credentials`        | Get admin credentials                        |
-| POST   | `/api/v1/instances/:slug/credentials`        | Reset admin password                         |
-| GET    | `/api/v1/instances/:slug/kubeconfig`         | Download kubeconfig                          |
-| GET    | `/api/v1/instances/:slug/services`           | Live service health                          |
-| GET    | `/api/v1/instances/:slug/apps`               | Deployed apps in instance                    |
-| GET    | `/api/v1/instances/:slug/dev-pods`           | List instance dev pods                       |
-| POST   | `/api/v1/instances/:slug/dev-pods`           | Create instance dev pod                      |
-| GET    | `/api/v1/instances/:slug/dev-pods/:username` | Get instance dev pod                         |
-| PATCH  | `/api/v1/instances/:slug/dev-pods/:username` | Start/stop instance dev pod                  |
-| DELETE | `/api/v1/instances/:slug/dev-pods/:username` | Delete instance dev pod                      |
-
-### Dev Pods (host)
-
-| Method | Path                         | Description                                     |
-| ------ | ---------------------------- | ----------------------------------------------- |
-| GET    | `/api/v1/dev-pods`           | List host dev pods                              |
-| POST   | `/api/v1/dev-pods`           | Create dev pod                                  |
-| GET    | `/api/v1/dev-pods/:username` | Get dev pod                                     |
-| PATCH  | `/api/v1/dev-pods/:username` | Start/stop dev pod (`{"action":"start\|stop"}`) |
-| DELETE | `/api/v1/dev-pods/:username` | Delete dev pod                                  |
-
-### Agents (admin only)
-
-| Method | Path                            | Description                              |
-| ------ | ------------------------------- | ---------------------------------------- |
-| GET    | `/api/v1/agents`                | List agents (`?all=true` for all agents) |
-| POST   | `/api/v1/agents`                | Create agent with Forgejo identity       |
-| GET    | `/api/v1/agents/:slug`          | Get agent by slug                        |
-| PATCH  | `/api/v1/agents/:slug`          | Update agent config                      |
-| DELETE | `/api/v1/agents/:slug`          | Delete agent and Forgejo identity        |
-| POST   | `/api/v1/agents/:slug/activate` | Manually trigger agent with prompt       |
-
-Create body: `name` (required), `description`, `model`, `instructions`, `allowed_tools[]`, `orgs[]`, `schedule`, `max_steps` (1-500). The API creates a Forgejo user (`agent-{slug}`), generates a PAT, and adds the agent to specified orgs.
-
-Activate body: `prompt` (required), `context` (optional object with `owner`, `repo`, `issue_number`, `pr_number`).
-
-### Webhooks (HMAC-authenticated)
-
-| Method | Path                       | Description            |
-| ------ | -------------------------- | ---------------------- |
-| POST   | `/api/v1/webhooks/forgejo` | Receive Forgejo events |
-
-Forgejo org-level webhooks are auto-registered when agents join orgs. Events: `issue_comment`, `pull_request`, `issues`. Comments mentioning `@agent-{slug}` trigger the corresponding agent. Requests are validated via HMAC-SHA256 signature (`X-Forgejo-Signature` header) using `WEBHOOK_SECRET`.
-
 ### Platform (admin only)
 
 | Method | Path                        | Description                     |

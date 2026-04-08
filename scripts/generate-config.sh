@@ -140,9 +140,6 @@ ZULIP_ENABLED=$(yaml_get "$CONFIG_FILE" "zulip.enabled" 2>/dev/null) || ZULIP_EN
 # pgAdmin settings (optional)
 PGADMIN_ENABLED=$(yaml_get "$CONFIG_FILE" "pgadmin.enabled" 2>/dev/null) || PGADMIN_ENABLED="false"
 
-# Provisioner (optional)
-PROVISIONER_ENABLED=$(yaml_get "$CONFIG_FILE" "provisioner.enabled" 2>/dev/null) || PROVISIONER_ENABLED="false"
-
 # Infrastructure mode (optional — defaults to bundled)
 INFRA_MODE=$(yaml_get "$CONFIG_FILE" "infrastructure.mode" 2>/dev/null) || INFRA_MODE="bundled"
 
@@ -187,9 +184,6 @@ if [ "$ZULIP_ENABLED" = "true" ]; then
 fi
 if [ "$PGADMIN_ENABLED" = "true" ]; then
   echo "  pgAdmin: enabled"
-fi
-if [ "$PROVISIONER_ENABLED" = "true" ]; then
-  echo "  Provisioner: enabled"
 fi
 echo "  Network: ${NETWORK_MODE}"
 echo "  Infrastructure: ${INFRA_MODE}"
@@ -356,13 +350,6 @@ if [ "$PGADMIN_ENABLED" = "true" ]; then
   echo "  pgadmin-values.yaml"
 else
   rm -f "$ROOT_DIR/pgadmin-values.yaml"
-fi
-
-if [ "$PROVISIONER_ENABLED" = "true" ]; then
-  template_file "$TEMPLATES_DIR/provisioner-values.yaml.tmpl" "$ROOT_DIR/provisioner-values.yaml"
-  echo "  provisioner-values.yaml"
-else
-  rm -f "$ROOT_DIR/provisioner-values.yaml"
 fi
 
 # MetalLB: only when using loadbalancer mode
@@ -587,16 +574,6 @@ if [ "$PGADMIN_ENABLED" != "true" ]; then
   sed_i '/# BEGIN pgadmin/,/# END pgadmin/d' "$ROOT_DIR/manifests/namespaces.yaml"
   sed_i '/# BEGIN pgadmin/,/# END pgadmin/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
   echo "  pgadmin excluded"
-fi
-
-# Conditional: remove provisioner block if not enabled
-if [ "$PROVISIONER_ENABLED" != "true" ]; then
-  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/helmfile.yaml"
-  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/manifests/namespaces.yaml"
-  sed_i '/# BEGIN provisioner/,/# END provisioner/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
-  echo "  provisioner excluded"
-else
-  echo "  provisioner included"
 fi
 
 # Conditional: remove metallb blocks if not using loadbalancer

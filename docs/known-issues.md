@@ -11,7 +11,6 @@ Implementation gotchas discovered during development. Consult when debugging une
 - **Self-signed CA for OIDC** — Headlamp's `-oidc-ca-file` flag parses the cert but does NOT propagate the custom TLS context to Go's OIDC HTTP client (`ConfigureTLSContext` in `auth.go` creates a custom pool but when `CACert` is empty/`&""`, it falls back to Go's default client). Fix: init container builds combined CA bundle (system CAs + platform CA) → mount as emptyDir → set `SSL_CERT_FILE` env var. Do NOT use `HEADLAMP_CONFIG_OIDC_SKIP_TLS_VERIFY` (broken — `GetInClusterContext` stores `CACert:&""` which overrides `InsecureSkipVerify`).
 - **sessionTTL flag crash** — do NOT add `sessionTTL` to HelmRelease values. Chart 0.40.x passes `-session-ttl` to the binary which doesn't support the flag yet. Pin chart to `version: "0.39.0"`.
 - **OIDC state is in-memory** — Headlamp stores OIDC state in a Go in-memory map (`oauthRequestMap`). Pod restarts during active login sessions cause "invalid request state is empty" errors. This is expected — users just retry.
-- **vCluster OIDC** — the vCluster API server validates OIDC tokens, NOT the host k3s. OIDC flags go in `controlPlane.distro.k8s.apiServer.extraArgs`. Do NOT use `--oidc-ca-file` when traffic goes through Cloudflare Tunnel — Cloudflare serves its own cert (trusted by system CA bundle), not the platform's self-signed CA. Using `--oidc-ca-file` with the platform CA causes the OIDC authenticator to fail initialization.
 
 ## Woodpecker
 
@@ -88,11 +87,3 @@ Implementation gotchas discovered during development. Consult when debugging une
 ## Mailpit
 
 - **Bitnami-style ingress** — uses `ingress.hostname` and `ingress.ingressClassName`, NOT `ingress.hosts[]` array with `className`.
-
-## vCluster
-
-- **CoreDNS port** — custom server zones must use `:1053` inside vCluster (not `:53`). vCluster's kube-dns maps 53 to 1053.
-- **Traefik mode** — must be `Deployment` inside vCluster, not DaemonSet. `hostNetwork: true` is incompatible — synced pods would steal host ports.
-- **Headlamp OIDC** — needs Traefik Middleware (`X-Forwarded-Proto: https`) on host cluster because host Traefik terminates TLS. Also needs API server `--oidc-*` flags via helm upgrade (Phase 7c in provision-instance.sh).
-- **StatefulSet immutability** — `helm upgrade` fails if StatefulSet spec fields change (e.g., adding OIDC args). Delete StatefulSet with `--cascade=orphan` first, then upgrade.
-- **Ingress sync** — ingresses sync to host namespace `vc-{slug}` with mangled names (e.g., `headlamp-x-headlamp-x-tester`). Host Traefik picks them up automatically.

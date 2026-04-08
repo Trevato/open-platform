@@ -118,14 +118,6 @@ steps:
           kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c \
             "GRANT ALL ON ALL TABLES IN SCHEMA public TO $$PREVIEW_DB; GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO $$PREVIEW_DB;"
         fi
-      - |
-        export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
-        echo "Granting provisioner access to preview database $$PREVIEW_DB..."
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -c "GRANT CONNECT ON DATABASE $$PREVIEW_DB TO op_system_console"
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "GRANT ALL ON ALL TABLES IN SCHEMA public TO op_system_console"
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO op_system_console"
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO op_system_console"
-        kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO op_system_console"
 
   - name: deploy-preview
     image: bitnami/kubectl:latest

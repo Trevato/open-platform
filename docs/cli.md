@@ -4,7 +4,7 @@ Command-line interface for the Open Platform. Built with Commander.js, runs on B
 
 ## Installation
 
-Dev pods come with `op` pre-installed. For manual installation:
+For manual installation:
 
 ```bash
 cd tools/op-cli
@@ -126,31 +126,6 @@ echo "hello" | op file put system/social README.md --message "Update readme" --s
 | `op user list`                      | List platform users                   |
 | `op user create <username> <email>` | Create user (prints initial password) |
 | `op user whoami`                    | Show current user                     |
-
-### Instances
-
-| Command                                            | Description                                |
-| -------------------------------------------------- | ------------------------------------------ |
-| `op instance list`                                 | List instances (`--all` for admin view)    |
-| `op instance create <slug> --name <n> --email <e>` | Create instance (`--tier free\|pro\|team`) |
-| `op instance status <slug>`                        | Show detail, events, service URLs          |
-| `op instance delete <slug> --yes`                  | Terminate instance (requires `--yes`)      |
-| `op instance credentials show <slug>`              | Show admin credentials                     |
-| `op instance credentials reset <slug>`             | Reset admin password                       |
-| `op instance kubeconfig <slug>`                    | Print kubeconfig to stdout                 |
-| `op instance services <slug>`                      | List services in instance                  |
-| `op instance apps <slug>`                          | List apps in instance                      |
-
-### Dev Pods
-
-| Command                             | Description                                                     |
-| ----------------------------------- | --------------------------------------------------------------- |
-| `op devpod list`                    | List dev pods (`--instance <slug>` to scope)                    |
-| `op devpod create`                  | Create dev pod (`--instance`, `--cpu`, `--memory`, `--storage`) |
-| `op devpod status <username>`       | Show dev pod details (`--instance`)                             |
-| `op devpod start <username>`        | Start dev pod (`--instance`)                                    |
-| `op devpod stop <username>`         | Stop dev pod (`--instance`)                                     |
-| `op devpod delete <username> --yes` | Delete dev pod (requires `--yes`, `--instance`)                 |
 
 ## Environment Variables
 

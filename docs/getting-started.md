@@ -291,25 +291,6 @@ Open a pull request against any app repository and an isolated preview environme
 - Seed data applied automatically
 - Cleaned up when the PR is closed or merged
 
-## Dev Pods
-
-Dev pods are cloud development environments with pre-configured tooling (Nix, Claude Code, Docker-in-Docker, the `op` CLI, and more). They run as Kubernetes deployments with persistent storage.
-
-```bash
-op devpod create                       # Create a dev pod for the current user
-op devpod list                         # List all dev pods
-op devpod stop alice                   # Stop a dev pod
-op devpod delete alice --yes           # Delete a dev pod
-```
-
-Connect to a running dev pod:
-
-```bash
-kubectl exec -it deploy/devpod-{username} -n op-dev-pods -- zsh
-```
-
-Inside a dev pod, the `op` CLI and MCP server are pre-configured with your Forgejo credentials.
-
 ## CLI
 
 The `op` CLI authenticates via Forgejo personal access token:
@@ -338,14 +319,13 @@ op pr merge org/repo N                    # Merge PR
 op pipeline list org/repo                 # CI pipelines
 op pipeline logs org/repo N               # Pipeline logs
 
-op devpod create|list|status|start|stop|delete
 ```
 
 Full command reference: [docs/cli.md](cli.md)
 
 ## MCP for AI Agents
 
-The MCP server exposes 61 tools across 13 categories for AI-assisted development: repos, PRs, issues, pipelines, files, agents, dev pods, and more. Inside a dev pod, it is already configured. Outside a dev pod, create a Forgejo personal access token and add this to your MCP client config (e.g., `~/.claude/.mcp.json`):
+The MCP server exposes platform tools for AI-assisted development: repos, PRs, issues, pipelines, files, and more. Create a Forgejo personal access token and add this to your MCP client config (e.g., `~/.claude/.mcp.json`):
 
 ```json
 {
@@ -366,21 +346,6 @@ Replace `{domain}` with your platform domain and `<your-forgejo-pat>` with a val
 API documentation is available at `https://api.{domain}/swagger`.
 
 Full tool catalog: [docs/mcp.md](mcp.md)
-
-## Multi-Tenant Hosting
-
-Open Platform can provision isolated instances for multiple tenants using vCluster. Each instance gets its own Forgejo, CI, storage, and database at `{slug}-forgejo.{domain}`, `{slug}-ci.{domain}`, etc.
-
-```bash
-op instance create acme --name "Acme Corp" --email admin@acme.com --tier pro
-op instance credentials show acme
-```
-
-Resource tiers: `free` (500m CPU / 2Gi RAM / 10Gi disk), `pro` (2 CPU / 8Gi / 50Gi), `team` (4 CPU / 16Gi / 100Gi).
-
-Enable by adding `provisioner: { enabled: true }` to `open-platform.yaml`.
-
-Full hosting documentation: [docs/hosting.md](hosting.md)
 
 ## Configuration Reference
 
@@ -410,10 +375,6 @@ tls:
 #   account_tag: ""
 #   tunnel_id: ""
 #   tunnel_secret: ""
-
-# Optional: enable vCluster instance provisioning
-# provisioner:
-#   enabled: true
 ```
 
 See `open-platform.yaml.example` for the canonical reference.

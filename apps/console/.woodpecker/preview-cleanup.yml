@@ -8,26 +8,6 @@ when:
   - event: pull_request_closed
 
 steps:
-  - name: teardown-instances
-    image: bitnami/kubectl:latest
-    backend_options:
-      kubernetes:
-        serviceAccountName: woodpecker-pipeline
-    commands:
-      - |
-        export PREVIEW_DB=$(echo "op_${CI_REPO_OWNER}_${CI_REPO_NAME}_pr_${CI_COMMIT_PULL_REQUEST}" | tr '-' '_')
-        ACTIVE_COUNT=$(kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -tAc \
-          "SELECT count(*) FROM instances WHERE status NOT IN ('terminated', 'failed')" 2>/dev/null || echo "0")
-        if [ "$$ACTIVE_COUNT" -gt 0 ]; then
-          echo "Marking $$ACTIVE_COUNT preview instance(s) for teardown..."
-          kubectl exec -n postgres postgres-1 -- psql -U postgres -d $$PREVIEW_DB -c \
-            "UPDATE instances SET status = 'terminating' WHERE status NOT IN ('terminated', 'failed')"
-          echo "Waiting for provisioner to process teardowns (2 minutes)..."
-          sleep 120
-        else
-          echo "No active instances to tear down."
-        fi
-
   - name: cleanup
     image: bitnami/kubectl:latest
     backend_options:

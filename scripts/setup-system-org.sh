@@ -122,7 +122,6 @@ create_repo() {
 
 # ── Push open-platform deployment content ────────────────────────────────────
 # Includes platform config (Flux), scripts, config templates, manifests, charts.
-# The provisioner init container clones this repo at runtime.
 
 create_repo "open-platform" "Platform configuration and deployment content"
 
