@@ -1,0 +1,53 @@
+{{/*
+op-api RBAC — ClusterRole and binding for platform service status reads,
+app lifecycle management, and ephemeral cleanup pods.
+Ported from apps/op-api/k8s/rbac.yaml
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: op-api
+  namespace: op-system-op-api
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: op-api
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings", "clusterroles", "clusterrolebindings"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: op-api
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: op-api
+subjects:
+  - kind: ServiceAccount
+    name: op-api
+    namespace: op-system-op-api
