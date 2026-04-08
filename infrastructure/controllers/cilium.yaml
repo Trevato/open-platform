@@ -30,10 +30,8 @@ spec:
       replicas: 1
     ipam:
       mode: kubernetes
-    kubeProxyReplacement: true
+    kubeProxyReplacement: false
     enableIPv4Masquerade: true
-    bpf:
-      masquerade: true
     hubble:
       enabled: true
       relay:
