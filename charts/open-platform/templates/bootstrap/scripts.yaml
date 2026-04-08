@@ -1038,7 +1038,10 @@ data:
       # Check if already active
       WP_REPO=$(wp_api "${WP_URL}/api/repos/lookup/${REPO_FULL}" 2>/dev/null || echo "")
       if [ -n "$WP_REPO" ] && echo "$WP_REPO" | jq -e '.active == true' >/dev/null 2>&1; then
-        echo "Repo '${REPO_FULL}' already active in Woodpecker."
+        # Repair repo to sync clone URL with current forge domain
+        WP_REPO_ID=$(echo "$WP_REPO" | jq -r '.id')
+        wp_api -X POST "${WP_URL}/api/repos/${WP_REPO_ID}/repair" >/dev/null 2>&1 || true
+        echo "Repo '${REPO_FULL}' already active in Woodpecker (repaired)."
         continue
       fi
 
@@ -1109,11 +1112,6 @@ data:
         echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
 
         for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix forgejo_admin_token; do
-          EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
-          if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
-            continue
-          fi
-
           case "$SECRET_NAME" in
             registry_username) VALUE="${ADMIN_USER}" ;;
             registry_token) VALUE="${ADMIN_PASS}" ;;
@@ -1127,6 +1125,15 @@ data:
           # Woodpecker rejects empty values — use a space for empty secrets
           if [ -z "$VALUE" ]; then
             VALUE=" "
+          fi
+
+          EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
+            # Update existing secret (domain-dependent values may change on upgrade)
+            wp_api -X PATCH "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" \
+              -H "Content-Type: application/json" \
+              -d "{\"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1 || true
+            continue
           fi
 
           if wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \

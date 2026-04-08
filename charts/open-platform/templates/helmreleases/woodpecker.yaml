@@ -43,6 +43,11 @@ spec:
         WOODPECKER_FORGEJO_URL: {{ include "op.forgejoUrl" . | quote }}
         WOODPECKER_FORGEJO_SKIP_VERIFY: {{ include "op.skipTlsVerify" . | quote }}
         WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: {{ include "op.skipTlsVerify" . | quote }}
+        {{- if ne .Values.tls.mode "letsencrypt" }}
+        # git config --global http.sslVerify false (set by CLONE_INSECURE_SKIP_VERIFY)
+        # doesn't take effect in plugin-git's k8s pod — env var is reliable
+        WOODPECKER_ENVIRONMENT: "GIT_SSL_NO_VERIFY=true"
+        {{- end }}
         WOODPECKER_HOST: {{ include "op.svcUrl" (list . "ci") | quote }}
         WOODPECKER_ADMIN: {{ include "op.adminUser" . | quote }}
         WOODPECKER_OPEN: "false"
