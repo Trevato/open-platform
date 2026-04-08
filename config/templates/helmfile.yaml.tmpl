@@ -166,6 +166,7 @@ releases:
             if [ -f certs/wildcard.crt ]; then
               kubectl apply -f manifests/traefik-tls.yaml
             fi
+            [ -f .env ] && set -a && . ./.env && set +a
             ./scripts/setup-coredns.sh
       - events: ["postsync"]
         showlogs: true
@@ -173,10 +174,20 @@ releases:
         args:
           - "-c"
           - |
-            # CNPG operator is external — just apply the postgres cluster manifest
-            kubectl apply -f manifests/postgres-cluster.yaml
-            echo "Waiting for postgres cluster to be ready..."
-            kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s || true
+            # External mode: CNPG operator runs on the host cluster, but CRDs
+            # are not available inside the vCluster. Deploy a standalone
+            # PostgreSQL via the bundled chart as a temporary solution.
+            #
+            # TODO(@Trevato): Long-term, either:
+            #   1. Use vCluster experimental.proxy.customResources to proxy
+            #      CNPG Cluster CRDs to the host operator, or
+            #   2. Create the CNPG Cluster on the host in the vCluster's
+            #      namespace and sync the service endpoint back in.
+            #
+            # For now, deploy a simple PostgreSQL StatefulSet that matches
+            # the CNPG cluster's database/user layout so Forgejo, Zulip,
+            # and other consumers work without config changes.
+            ./scripts/setup-postgres-standalone.sh
   # END infra-external
 
   # ─── Layer 1: Storage ──────────────────────────────────────────────────

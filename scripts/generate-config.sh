@@ -644,8 +644,17 @@ if [ "$INFRA_MODE" = "external" ]; then
   # Flux: in external mode, skip installing Flux controllers (expect pre-installed)
   sed_i '/# BEGIN infra-flux/,/# END infra-flux/d' "$ROOT_DIR/helmfile.yaml"
 
-  # cert-manager and metallb are already conditional on tls.mode and network.mode
-  echo "  infrastructure: external (traefik, cnpg, flux skipped — expected pre-installed)"
+  # In external mode, cert-manager and metallb are also host-managed infrastructure.
+  # Strip them regardless of tls.mode / network.mode — the host cluster owns these.
+  sed_i '/# BEGIN cert-manager/,/# END cert-manager/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/helmfile.yaml"
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/manifests/namespaces.yaml"
+  sed_i '/# BEGIN metallb/,/# END metallb/d' "$ROOT_DIR/platform/infrastructure/configs/namespaces.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/controllers/cert-manager.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/controllers/metallb.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/configs/metallb-config.yaml"
+  rm -f "$ROOT_DIR/platform/infrastructure/configs/cluster-issuer.yaml"
+  echo "  infrastructure: external (traefik, cnpg, cert-manager, metallb, flux skipped — expected pre-installed)"
 else
   # Bundled mode: remove the external bootstrap releases
   sed_i '/# BEGIN infra-external/,/# END infra-external/d' "$ROOT_DIR/helmfile.yaml"
