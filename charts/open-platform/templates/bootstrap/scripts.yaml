@@ -1,0 +1,1261 @@
+{{/*
+Bootstrap scripts ConfigMap — consolidated from:
+  - scripts/setup-coredns.sh (Phase 1)
+  - scripts/setup-oauth2.sh (Phase 2)
+  - scripts/setup-system-org.sh (Phase 3)
+  - scripts/setup-woodpecker-repos.sh (Phase 4)
+
+All dynamic Helm values are injected as env vars on the Job container.
+The script content is pure bash — no Go template expressions inside.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "op.fullname" . }}-bootstrap-scripts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "40"
+    helm.sh/hook-delete-policy: before-hook-creation
+data:
+  bootstrap.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # ============================================================================
+    # Open Platform Bootstrap
+    # Runs inside the cluster as a post-install/post-upgrade Job.
+    #
+    # Env vars (set by Job container spec):
+    #   DOMAIN           — platform domain (e.g., open-platform.sh)
+    #   PREFIX           — service prefix (e.g., "myteam-", usually empty)
+    #   TLS_MODE         — selfsigned | letsencrypt | cloudflare
+    #   FORGEJO_URL      — external Forgejo URL (https://{prefix}forgejo.{domain})
+    #   FORGEJO_API_URL  — in-cluster Forgejo API (http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1)
+    #   FORGEJO_GIT_URL  — in-cluster Forgejo git URL (http://forgejo-http.forgejo.svc.cluster.local:3000)
+    #   WP_API_URL       — in-cluster Woodpecker API (http://woodpecker-server.woodpecker.svc.cluster.local:80)
+    #   REPO_URL         — source repo URL (https://github.com/trevato/open-platform.git)
+    #   REPO_BRANCH      — branch to clone (default: main)
+    # ============================================================================
+
+    # ── Install tools ────────────────────────────────────────────────────────
+    echo "Installing tools..."
+    apt-get update -qq && apt-get install -y -qq curl jq git openssl ca-certificates > /dev/null 2>&1
+    ARCH=$(dpkg --print-architecture)
+    KUBE_VERSION=$(curl -sL https://dl.k8s.io/release/stable.txt)
+    curl -sLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/${ARCH}/kubectl"
+    EXPECTED_SHA=$(curl -sL "https://dl.k8s.io/release/${KUBE_VERSION}/bin/linux/${ARCH}/kubectl.sha256")
+    ACTUAL_SHA=$(sha256sum /usr/local/bin/kubectl | awk '{print $1}')
+    if [ "$EXPECTED_SHA" != "$ACTUAL_SHA" ]; then
+      echo "FATAL: kubectl checksum mismatch (expected ${EXPECTED_SHA}, got ${ACTUAL_SHA})"
+      exit 1
+    fi
+    chmod +x /usr/local/bin/kubectl
+    echo "Tools installed (kubectl ${KUBE_VERSION}, checksum verified)."
+
+    # ── Clone source repo for system org content ──────────────────────────────
+    if [ -n "${REPO_URL:-}" ]; then
+      echo "Cloning platform repo for system org content..."
+      git clone --depth 1 --branch "${REPO_BRANCH:-main}" "${REPO_URL}" /content 2>/dev/null || {
+        echo "Warning: Failed to clone ${REPO_URL} — system org push will be skipped."
+      }
+    fi
+
+    # ── Shared helpers ──────────────────────────────────────────────────────────
+
+    apply_secret() {
+      kubectl create secret generic "$@" --dry-run=client -o yaml | kubectl apply -f -
+    }
+
+    # ============================================================================
+    # PHASE 0: Infrastructure — apply CRD-dependent resources
+    # Waits for Flux to install operators (CNPG, Traefik), then creates resources
+    # that depend on their CRDs. This bridges the gap between Helm install
+    # (which can't create CRD resources before operators exist) and Flux
+    # reconciliation (which installs the operators).
+    # ============================================================================
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Phase 0: Infrastructure setup"
+    echo "══════════════════════════════════════════════════════════════"
+
+    # Wait for CNPG operator
+    echo "Waiting for CNPG operator..."
+    for i in $(seq 1 60); do
+      if kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+        echo "CNPG CRDs available."
+        kubectl wait --for=condition=available deployment -l app.kubernetes.io/name=cloudnative-pg \
+          -n cnpg-system --timeout=120s 2>/dev/null || true
+        break
+      fi
+      if [ "$i" -eq 60 ]; then
+        echo "Warning: CNPG operator not found after 5 minutes — skipping postgres cluster creation."
+      fi
+      sleep 5
+    done
+
+    # Apply CNPG Cluster
+    if kubectl get crd clusters.postgresql.cnpg.io >/dev/null 2>&1; then
+      if kubectl get cluster postgres -n postgres >/dev/null 2>&1; then
+        echo "CNPG Cluster 'postgres' already exists."
+      else
+        echo "Creating CNPG Cluster..."
+        kubectl apply -f /scripts/postgres-cluster.yaml
+        echo "CNPG Cluster created."
+      fi
+
+      # Wait for PostgreSQL readiness
+      echo "Waiting for PostgreSQL..."
+      kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s 2>/dev/null || {
+        echo "Warning: PostgreSQL not ready within timeout — continuing."
+      }
+    fi
+
+    # Wait for Traefik
+    echo "Waiting for Traefik..."
+    for i in $(seq 1 60); do
+      if kubectl get crd middlewares.traefik.io >/dev/null 2>&1; then
+        echo "Traefik CRDs available."
+        break
+      fi
+      if [ "$i" -eq 60 ]; then
+        echo "Warning: Traefik CRDs not found after 5 minutes — skipping TLS/middleware setup."
+      fi
+      sleep 5
+    done
+
+    # Apply Traefik TLSStore and Middleware
+    if kubectl get crd middlewares.traefik.io >/dev/null 2>&1; then
+      echo "Applying Traefik TLSStore and Middleware..."
+      kubectl apply -f /scripts/traefik-tls.yaml 2>/dev/null || true
+      kubectl apply -f /scripts/traefik-middleware.yaml
+      echo "Traefik resources applied."
+    fi
+
+    # Wait for Forgejo
+    echo "Waiting for Forgejo pod readiness..."
+    until kubectl wait --for=condition=ready pod \
+      -l app.kubernetes.io/name=forgejo -n forgejo \
+      --timeout=300s 2>/dev/null; do
+      echo "Forgejo not ready, retrying..."
+      sleep 10
+    done
+    echo "Waiting for Forgejo API..."
+    until curl -sf http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1/settings/api; do
+      sleep 5
+    done
+    echo "Forgejo API ready."
+
+    ADMIN_USER=$(kubectl get secret forgejo-admin-credentials -n forgejo \
+      -o jsonpath='{.data.username}' | base64 -d)
+    ADMIN_PASS=$(kubectl get secret forgejo-admin-credentials -n forgejo \
+      -o jsonpath='{.data.password}' | base64 -d)
+
+    api() {
+      curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
+    }
+
+    echo "Phase 0 complete: Infrastructure ready."
+
+    # ============================================================================
+    # PHASE 1: CoreDNS Setup
+    # Creates a custom zone so *.{DOMAIN} resolves to Traefik inside the cluster.
+    # Ported from: scripts/setup-coredns.sh
+    # ============================================================================
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Phase 1: CoreDNS setup"
+    echo "══════════════════════════════════════════════════════════════"
+
+    HOST_NETWORK=$(kubectl get ds traefik -n kube-system \
+      -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null || echo "false")
+
+    if [ "$HOST_NETWORK" = "true" ]; then
+      # Use Traefik ClusterIP for in-cluster resolution
+      TRAEFIK_IP=$(kubectl get svc traefik -n kube-system \
+        -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+      if [ -z "$TRAEFIK_IP" ]; then
+        # Fallback: first node IP (single-node case where ClusterIP isn't available yet)
+        TRAEFIK_IP=$(kubectl get nodes \
+          -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
+          | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
+      fi
+    else
+      # Deployment mode: prefer LoadBalancer external IP, fall back to ClusterIP
+      LB_IP=$(kubectl get svc traefik -n kube-system \
+        -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+      if [ -n "$LB_IP" ]; then
+        TRAEFIK_IP="$LB_IP"
+      else
+        TRAEFIK_IP=$(kubectl get svc traefik -n kube-system \
+          -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+      fi
+    fi
+
+    if [ -z "${TRAEFIK_IP:-}" ]; then
+      echo "Warning: Traefik service not found — skipping CoreDNS setup."
+    else
+      # Build the CoreDNS custom zone.
+      # The {{ .Name }} inside the template block is CoreDNS syntax, not Go templates —
+      # it is rendered by CoreDNS at runtime.
+      PLATFORM_ZONE="${DOMAIN}:53 {
+      errors
+      cache 30
+      template IN A {
+        answer \"{{ "{{" }} .Name {{ "}}" }} 60 IN A ${TRAEFIK_IP}\"
+        fallthrough
+      }
+      template IN AAAA {
+        rcode NOERROR
+        fallthrough
+      }
+    }"
+
+      kubectl create configmap coredns-custom -n kube-system \
+        --from-literal="platform.server=${PLATFORM_ZONE}" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      # Restart CoreDNS to pick up the new zone and wait for rollout
+      kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+      kubectl rollout status deployment coredns -n kube-system --timeout=60s 2>/dev/null || true
+      # Brief pause for DNS cache to settle
+      sleep 3
+      echo "CoreDNS custom zone: *.${DOMAIN} -> ${TRAEFIK_IP} (hostNetwork=${HOST_NETWORK})"
+    fi
+
+    # ============================================================================
+    # PHASE 2: OAuth2 App Creation
+    # Creates OAuth2 applications in Forgejo and stores credentials as K8s secrets.
+    # Ported from: scripts/setup-oauth2.sh
+    # ============================================================================
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Phase 2: OAuth2 app creation"
+    echo "══════════════════════════════════════════════════════════════"
+
+    # ── Define OAuth2 apps ─────────────────────────────────────────────────────
+    # Format: NAME|REDIRECT_URI|CONFIDENTIAL
+    OAUTH2_APPS=(
+      "Woodpecker|https://${PREFIX}ci.${DOMAIN}/authorize|true"
+      "OAuth2-Proxy|https://${PREFIX}oauth2.${DOMAIN}/oauth2/callback|true"
+      "Social|https://${PREFIX}social.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Minecraft|https://${PREFIX}minecraft.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Arcade|https://${PREFIX}arcade.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Events|https://${PREFIX}events.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Hub|https://${PREFIX}hub.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Console|https://${PREFIX}console.${DOMAIN}/api/auth/oauth2/callback/forgejo|false"
+      "Jitsi|https://${PREFIX}meet-auth.${DOMAIN}/callback|true"
+      "Zulip|https://${PREFIX}chat.${DOMAIN}/complete/oidc/|true"
+      "MCP-Auth|https://${PREFIX}api.${DOMAIN}/oauth/callback|true"
+      "pgAdmin|https://${PREFIX}db.${DOMAIN}/oauth2/authorize|true"
+    )
+
+    # ── Fetch existing apps ────────────────────────────────────────────────────
+
+    echo "Waiting for Forgejo API..."
+    for i in $(seq 1 30); do
+      if api "${FORGEJO_API_URL}/user" >/dev/null 2>&1; then
+        echo "Forgejo API is ready."
+        break
+      fi
+      if [ "$i" -eq 30 ]; then
+        echo "Error: Forgejo API not responding after 30 attempts."
+        exit 1
+      fi
+      sleep 2
+    done
+
+    EXISTING_APPS=$(api "${FORGEJO_API_URL}/user/applications/oauth2")
+
+    # ── Create or retrieve each app ────────────────────────────────────────────
+
+    # Associative arrays for storing client credentials
+    declare -A CLIENT_IDS
+    declare -A CLIENT_SECRETS
+
+    for entry in "${OAUTH2_APPS[@]}"; do
+      APP_NAME="${entry%%|*}"
+      REMAINDER="${entry#*|}"
+      REDIRECT_URIS_CSV="${REMAINDER%%|*}"
+      CONFIDENTIAL="${REMAINDER##*|}"
+
+      # Build JSON array from comma-separated redirect URIs
+      REDIRECT_URIS_JSON=$(echo "$REDIRECT_URIS_CSV" | tr ',' '\n' | jq -R . | jq -s .)
+
+      EXISTING=$(echo "$EXISTING_APPS" | jq -r --arg name "$APP_NAME" '.[] | select(.name == $name)')
+
+      if [ -n "$EXISTING" ]; then
+        CLIENT_IDS["$APP_NAME"]=$(echo "$EXISTING" | jq -r '.client_id')
+        APP_ID=$(echo "$EXISTING" | jq -r '.id')
+
+        # Check if redirect URIs need updating (sorted comparison)
+        CURRENT_URIS=$(echo "$EXISTING" | jq -r '.redirect_uris // [] | sort')
+        DESIRED_URIS=$(echo "$REDIRECT_URIS_JSON" | jq -r 'sort')
+
+        if [ "$CURRENT_URIS" = "$DESIRED_URIS" ]; then
+          echo "OAuth2 app '${APP_NAME}' already exists with correct redirect URIs — skipping."
+        else
+          echo "OAuth2 app '${APP_NAME}' exists — updating redirect URIs."
+          echo "  Current: ${CURRENT_URIS}"
+          echo "  Desired: ${DESIRED_URIS}"
+          # WARNING: PATCH regenerates client_secret. Capture it to update K8s secrets.
+          PATCH_RESPONSE=$(api \
+            -X PATCH "${FORGEJO_API_URL}/user/applications/oauth2/${APP_ID}" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": ${REDIRECT_URIS_JSON}, \"confidential_client\": ${CONFIDENTIAL}}")
+          CLIENT_SECRETS["$APP_NAME"]=$(echo "$PATCH_RESPONSE" | jq -r '.client_secret')
+          echo "  Updated '${APP_NAME}' — new client_secret captured."
+        fi
+
+        # If no new secret from PATCH, mark as empty
+        if [ -z "${CLIENT_SECRETS[$APP_NAME]+x}" ]; then
+          CLIENT_SECRETS["$APP_NAME"]=""
+        fi
+      else
+        echo "Creating OAuth2 app '${APP_NAME}'..."
+        RESPONSE=$(api \
+          -X POST "${FORGEJO_API_URL}/user/applications/oauth2" \
+          -H "Content-Type: application/json" \
+          -d "{\"name\": \"${APP_NAME}\", \"redirect_uris\": ${REDIRECT_URIS_JSON}, \"confidential_client\": ${CONFIDENTIAL}}")
+
+        CLIENT_IDS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_id')
+        CLIENT_SECRETS["$APP_NAME"]=$(echo "$RESPONSE" | jq -r '.client_secret')
+        echo "Created '${APP_NAME}' (client_id: ${CLIENT_IDS[$APP_NAME]})"
+      fi
+    done
+
+    # ── Create K8s secrets ─────────────────────────────────────────────────────
+
+    # -- Woodpecker secret — merge OAuth2 creds into existing agent secret --
+    if [ -n "${CLIENT_SECRETS[Woodpecker]}" ]; then
+      echo "Updating Woodpecker secrets with OAuth2 credentials..."
+      AGENT_SECRET=$(kubectl get secret woodpecker-secrets -n woodpecker \
+        -o jsonpath='{.data.WOODPECKER_AGENT_SECRET}' | base64 -d)
+
+      apply_secret woodpecker-secrets -n woodpecker \
+        --from-literal=WOODPECKER_AGENT_SECRET="${AGENT_SECRET}" \
+        --from-literal=WOODPECKER_FORGEJO_CLIENT="${CLIENT_IDS[Woodpecker]}" \
+        --from-literal=WOODPECKER_FORGEJO_SECRET="${CLIENT_SECRETS[Woodpecker]}"
+
+      # Restart Woodpecker to pick up new OAuth2 credentials
+      kubectl rollout restart statefulset woodpecker-server -n woodpecker 2>/dev/null || true
+      kubectl rollout restart statefulset woodpecker-agent -n woodpecker 2>/dev/null || true
+    else
+      if ! kubectl get secret woodpecker-secrets -n woodpecker \
+        -o jsonpath='{.data.WOODPECKER_FORGEJO_CLIENT}' 2>/dev/null \
+        | base64 -d >/dev/null 2>&1; then
+        echo "Warning: Woodpecker OAuth2 app exists but secret is missing OAuth2 credentials."
+        echo "Delete the app in Forgejo and re-run, or update the secret manually."
+        exit 1
+      fi
+      echo "Woodpecker OAuth2 credentials already in secret."
+    fi
+
+    # -- OAuth2-Proxy secret — merge client creds into existing cookie-secret --
+    if [ -n "${CLIENT_SECRETS[OAuth2-Proxy]}" ]; then
+      echo "Creating OAuth2-Proxy secret..."
+      COOKIE_SECRET=$(kubectl get secret oauth2-proxy-secrets -n oauth2-proxy \
+        -o jsonpath='{.data.cookie-secret}' 2>/dev/null | base64 -d \
+        || openssl rand -base64 32 | head -c 32)
+
+      apply_secret oauth2-proxy-secrets -n oauth2-proxy \
+        --from-literal=client-id="${CLIENT_IDS[OAuth2-Proxy]}" \
+        --from-literal=client-secret="${CLIENT_SECRETS[OAuth2-Proxy]}" \
+        --from-literal=cookie-secret="${COOKIE_SECRET}"
+
+      # Restart OAuth2-Proxy to pick up new credentials
+      kubectl rollout restart deployment oauth2-proxy -n oauth2-proxy 2>/dev/null || true
+    else
+      if ! kubectl get secret oauth2-proxy-secrets -n oauth2-proxy \
+        -o jsonpath='{.data.client-id}' 2>/dev/null \
+        | base64 -d >/dev/null 2>&1; then
+        echo "Warning: OAuth2-Proxy app exists but secret is missing client credentials."
+        echo "Delete the app in Forgejo and re-run, or update the secret manually."
+        exit 1
+      fi
+      echo "OAuth2-Proxy credentials already in secret."
+    fi
+
+    # -- App auth secrets (Social, Minecraft, Arcade, Events, Hub, Console) --
+    # These include BETTER_AUTH_SECRET for session encryption.
+    # On PATCH (redirect URI update), client_secret changes but we MUST preserve
+    # the existing BETTER_AUTH_SECRET to avoid invalidating active sessions.
+
+    create_app_auth_secret() {
+      local APP_NAME="$1"
+      local SECRET_NAME="$2"
+      local NAMESPACE="$3"
+
+      if ! kubectl get ns "${NAMESPACE}" >/dev/null 2>&1; then
+        echo "Namespace '${NAMESPACE}' does not exist — skipping ${APP_NAME} auth secret."
+        return 0
+      fi
+
+      if [ -n "${CLIENT_SECRETS[$APP_NAME]}" ]; then
+        # Preserve existing BETTER_AUTH_SECRET if the secret already exists
+        EXISTING_AUTH_SECRET=""
+        if kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+          EXISTING_AUTH_SECRET=$(kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" \
+            -o jsonpath='{.data.secret}' 2>/dev/null | base64 -d || true)
+        fi
+        AUTH_SECRET="${EXISTING_AUTH_SECRET:-$(openssl rand -base64 32 | head -c 32)}"
+
+        echo "Creating ${APP_NAME} auth secret..."
+        apply_secret "${SECRET_NAME}" -n "${NAMESPACE}" \
+          --from-literal=client-id="${CLIENT_IDS[$APP_NAME]}" \
+          --from-literal=client-secret="${CLIENT_SECRETS[$APP_NAME]}" \
+          --from-literal=secret="${AUTH_SECRET}"
+      else
+        if ! kubectl get secret "${SECRET_NAME}" -n "${NAMESPACE}" \
+          -o jsonpath='{.data.client-id}' 2>/dev/null \
+          | base64 -d >/dev/null 2>&1; then
+          echo "Warning: ${APP_NAME} OAuth2 app exists but '${SECRET_NAME}' secret is missing."
+          echo "Delete the app in Forgejo and re-run, or create the secret manually."
+          exit 1
+        fi
+        echo "${APP_NAME} auth secret already exists."
+      fi
+    }
+
+    create_app_auth_secret "Social" "social-auth" "op-system-social"
+    create_app_auth_secret "Minecraft" "minecraft-auth" "op-system-minecraft"
+    create_app_auth_secret "Arcade" "arcade-auth" "op-system-arcade"
+    create_app_auth_secret "Events" "events-auth" "op-system-events"
+    create_app_auth_secret "Hub" "hub-auth" "op-system-hub"
+    create_app_auth_secret "Console" "console-auth" "op-system-console"
+
+    # -- Jitsi OIDC secret --
+    if kubectl get ns jitsi >/dev/null 2>&1; then
+      if [ -n "${CLIENT_SECRETS[Jitsi]}" ]; then
+        echo "Creating Jitsi OIDC secret..."
+        apply_secret jitsi-oidc -n jitsi \
+          --from-literal=client-id="${CLIENT_IDS[Jitsi]}" \
+          --from-literal=client-secret="${CLIENT_SECRETS[Jitsi]}"
+      elif kubectl get secret jitsi-oidc -n jitsi >/dev/null 2>&1; then
+        echo "Jitsi OIDC secret already exists."
+      else
+        echo "Warning: Jitsi OAuth2 app exists but 'jitsi-oidc' secret is missing."
+        echo "Delete the app in Forgejo and re-run, or create the secret manually."
+        exit 1
+      fi
+    else
+      echo "Skipping Jitsi OIDC secret (jitsi not enabled)."
+    fi
+
+    # -- Zulip OIDC secret --
+    if kubectl get ns zulip >/dev/null 2>&1; then
+      if [ -n "${CLIENT_SECRETS[Zulip]}" ]; then
+        echo "Creating Zulip OIDC secret..."
+        ZULIP_ARGS=(zulip-secrets -n zulip
+          --from-literal=oidc-client-id="${CLIENT_IDS[Zulip]}"
+          --from-literal=oidc-client-secret="${CLIENT_SECRETS[Zulip]}"
+        )
+        if kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+          EXISTING_RMQ=$(kubectl get secret zulip-secrets -n zulip \
+            -o jsonpath='{.data.rabbitmq-password}' 2>/dev/null | base64 -d || true)
+          EXISTING_SK=$(kubectl get secret zulip-secrets -n zulip \
+            -o jsonpath='{.data.secret-key}' 2>/dev/null | base64 -d || true)
+          if [ -n "$EXISTING_RMQ" ]; then
+            ZULIP_ARGS+=(--from-literal=rabbitmq-password="${EXISTING_RMQ}")
+          fi
+          if [ -n "$EXISTING_SK" ]; then
+            ZULIP_ARGS+=(--from-literal=secret-key="${EXISTING_SK}")
+          fi
+        fi
+        apply_secret "${ZULIP_ARGS[@]}"
+      elif kubectl get secret zulip-secrets -n zulip >/dev/null 2>&1; then
+        echo "Zulip OIDC secret already exists."
+      else
+        echo "Warning: Zulip OAuth2 app exists but 'zulip-secrets' secret is missing."
+        echo "Delete the app in Forgejo and re-run, or create the secret manually."
+        exit 1
+      fi
+    else
+      echo "Skipping Zulip OIDC secret (zulip not enabled)."
+    fi
+
+    # -- MCP-Auth OAuth2 secret (op-api) --
+    if [ -n "${CLIENT_SECRETS[MCP-Auth]}" ]; then
+      echo "Creating MCP-Auth OAuth2 secret..."
+      apply_secret op-api-oauth -n op-system-op-api \
+        --from-literal=client-id="${CLIENT_IDS[MCP-Auth]}" \
+        --from-literal=client-secret="${CLIENT_SECRETS[MCP-Auth]}"
+    elif kubectl get secret op-api-oauth -n op-system-op-api \
+      -o jsonpath='{.data.client-id}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+      echo "MCP-Auth OAuth2 secret already exists."
+    else
+      echo "Warning: MCP-Auth OAuth2 app exists but 'op-api-oauth' secret is missing."
+      echo "Delete the app in Forgejo and re-run, or create the secret manually."
+      exit 1
+    fi
+
+    # -- pgAdmin secrets --
+    if kubectl get ns pgadmin >/dev/null 2>&1; then
+      if [ -n "${CLIENT_SECRETS[pgAdmin]}" ]; then
+        echo "Creating pgAdmin secrets..."
+        EXISTING_PW=""
+        if kubectl get secret pgadmin-secrets -n pgadmin >/dev/null 2>&1; then
+          EXISTING_PW=$(kubectl get secret pgadmin-secrets -n pgadmin \
+            -o jsonpath='{.data.password}' 2>/dev/null | base64 -d || true)
+        fi
+        PGADMIN_PW="${EXISTING_PW:-$(openssl rand -base64 16 | head -c 16)}"
+
+        apply_secret pgadmin-secrets -n pgadmin \
+          --from-literal=password="${PGADMIN_PW}" \
+          --from-literal=OAUTH2_CLIENT_ID="${CLIENT_IDS[pgAdmin]}" \
+          --from-literal=OAUTH2_CLIENT_SECRET="${CLIENT_SECRETS[pgAdmin]}"
+      elif kubectl get secret pgadmin-secrets -n pgadmin >/dev/null 2>&1; then
+        echo "pgAdmin secrets already exist."
+      else
+        echo "Warning: pgAdmin OAuth2 app exists but 'pgadmin-secrets' secret is missing."
+        echo "Delete the app in Forgejo and re-run, or create the secret manually."
+        exit 1
+      fi
+    else
+      echo "Skipping pgAdmin secrets (pgadmin not enabled)."
+    fi
+
+    echo "Phase 2 complete: OAuth2 setup done."
+
+    # ============================================================================
+    # PHASE 3: System Org Setup
+    # Creates the system org in Forgejo, pushes platform config, app template,
+    # and app repositories.
+    # Ported from: scripts/setup-system-org.sh
+    # ============================================================================
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Phase 3: System org setup"
+    echo "══════════════════════════════════════════════════════════════"
+
+    # ── Git credential helper ──────────────────────────────────────────────────
+
+    ASKPASS_FILE=$(mktemp)
+    cat > "${ASKPASS_FILE}" <<'ASKPASS'
+    #!/bin/sh
+    case "$1" in
+      *Username*|*username*) echo "$GIT_USERNAME" ;;
+      *Password*|*password*) echo "$GIT_PASSWORD" ;;
+    esac
+    ASKPASS
+    chmod +x "${ASKPASS_FILE}"
+    trap "rm -f ${ASKPASS_FILE}" EXIT
+
+    git_push() {
+      local REPO_NAME="$1"
+      local BRANCH="$2"
+      local REPO_URL="${FORGEJO_GIT_URL}/system/${REPO_NAME}.git"
+
+      GIT_ASKPASS="${ASKPASS_FILE}" \
+      GIT_USERNAME="${ADMIN_USER}" \
+      GIT_PASSWORD="${ADMIN_PASS}" \
+        git push -q "${REPO_URL}" "${BRANCH}"
+    }
+
+    # ── Create system org ──────────────────────────────────────────────────────
+
+    if api "${FORGEJO_API_URL}/orgs/system" >/dev/null 2>&1; then
+      echo "Organization 'system' already exists."
+    else
+      echo "Creating 'system' organization..."
+      api -X POST "${FORGEJO_API_URL}/orgs" \
+        -H "Content-Type: application/json" \
+        -d '{"username": "system", "visibility": "private", "description": "Platform system repositories"}'
+      echo "Created 'system' organization."
+    fi
+
+    # ── Helper: create repo if it doesn't exist ───────────────────────────────
+
+    create_repo() {
+      local REPO_NAME="$1"
+      local DESCRIPTION="${2:-}"
+
+      if api "${FORGEJO_API_URL}/repos/system/${REPO_NAME}" >/dev/null 2>&1; then
+        echo "Repo 'system/${REPO_NAME}' already exists."
+        return 0
+      fi
+
+      echo "Creating repo 'system/${REPO_NAME}'..."
+      api -X POST "${FORGEJO_API_URL}/orgs/system/repos" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"${REPO_NAME}\", \"description\": \"${DESCRIPTION}\", \"auto_init\": false, \"private\": true}"
+      echo "Created repo 'system/${REPO_NAME}'."
+    }
+
+    # ── Helper: push directory content to a Forgejo repo ──────────────────────
+
+    push_content() {
+      local REPO_NAME="$1"
+      local SOURCE_DIR="$2"
+
+      # Check if repo already has commits
+      local COMMIT_COUNT
+      COMMIT_COUNT=$(api "${FORGEJO_API_URL}/repos/system/${REPO_NAME}/commits?limit=1&sha=main" \
+        2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+
+      if [ "$COMMIT_COUNT" != "0" ]; then
+        echo "Repo 'system/${REPO_NAME}' already has content — skipping push."
+        return 0
+      fi
+
+      echo "Pushing content to 'system/${REPO_NAME}'..."
+
+      local TMP_DIR
+      TMP_DIR=$(mktemp -d)
+
+      cp -r "${SOURCE_DIR}/"* "${TMP_DIR}/" 2>/dev/null || true
+      # Also copy dotfiles (like .woodpecker/) but exclude .git
+      cp -r "${SOURCE_DIR}/".[!.]* "${TMP_DIR}/" 2>/dev/null || true
+      rm -rf "${TMP_DIR}/.git"
+      # Remove build artifacts that may exist
+      rm -rf "${TMP_DIR}/node_modules" "${TMP_DIR}/.next" "${TMP_DIR}/bun.lock"
+      rm -f "${TMP_DIR}/tsconfig.tsbuildinfo"
+
+      cd "${TMP_DIR}"
+      git init -q
+      git checkout -b main
+      git add .
+      git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" \
+        commit -q -m "Initial commit"
+      git_push "${REPO_NAME}" main
+      cd /
+
+      rm -rf "${TMP_DIR}"
+      echo "Pushed content to 'system/${REPO_NAME}'."
+    }
+
+    # ── Push open-platform deployment content ─────────────────────────────────
+    # Content cloned from REPO_URL into /content by the setup step above
+
+    if [ ! -d "/content" ]; then
+      echo "Warning: /content not available — skipping all repo pushes."
+    else
+
+    create_repo "open-platform" "Platform configuration and deployment content"
+
+    _push_open_platform() {
+      local COMMIT_COUNT
+      COMMIT_COUNT=$(api "${FORGEJO_API_URL}/repos/system/open-platform/commits?limit=1&sha=main" \
+        2>/dev/null | jq 'length' 2>/dev/null || echo "0")
+      if [ "$COMMIT_COUNT" != "0" ]; then
+        echo "Repo 'system/open-platform' already has content — skipping push."
+        return 0
+      fi
+
+      echo "Pushing deployment content to 'system/open-platform'..."
+      local TMP_DIR
+      TMP_DIR=$(mktemp -d)
+
+      # Copy selective directories from cloned repo
+      local ROOT_DIR="/content"
+      for dir in platform scripts config manifests charts host templates; do
+        [ -d "${ROOT_DIR}/${dir}" ] && cp -r "${ROOT_DIR}/${dir}" "${TMP_DIR}/"
+      done
+      for file in Makefile open-platform.yaml.example; do
+        [ -f "${ROOT_DIR}/${file}" ] && cp "${ROOT_DIR}/${file}" "${TMP_DIR}/"
+      done
+      rm -rf "${TMP_DIR}/.git"
+
+      cd "${TMP_DIR}"
+      git init -q
+      git checkout -b main
+      git add .
+      git -c user.name="Open Platform" -c user.email="system@${DOMAIN}" \
+        commit -q -m "Initial commit"
+      git_push "open-platform" main
+      cd /
+
+      rm -rf "${TMP_DIR}"
+      echo "Pushed deployment content to 'system/open-platform'."
+    }
+    _push_open_platform
+
+    # ── Push app template ─────────────────────────────────────────────────────
+
+    create_repo "template" "Application template"
+    push_content "template" "/content/templates/app"
+
+    # Mark as template repo
+    echo "Marking 'system/template' as a template repo..."
+    api -X PATCH "${FORGEJO_API_URL}/repos/system/template" \
+      -H "Content-Type: application/json" \
+      -d '{"template": true}' >/dev/null
+    echo "Marked as template."
+
+    # ── Console and op-api ────────────────────────────────────────────────────
+
+    create_repo "console" "Platform console — dashboard, services, apps, users, terminal"
+    push_content "console" "/content/apps/console"
+
+    create_repo "op-api" "Platform API — REST and MCP interface for repos, pipelines, apps"
+    push_content "op-api" "/content/apps/op-api"
+
+    fi  # end /content check
+
+    # ── Branch protections ────────────────────────────────────────────────────
+
+    echo "Setting branch protections..."
+    SYSTEM_REPOS=$(api "${FORGEJO_API_URL}/orgs/system/repos?limit=50" | jq -r '.[].name')
+
+    for REPO in $SYSTEM_REPOS; do
+      STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+        -u "${ADMIN_USER}:${ADMIN_PASS}" \
+        "${FORGEJO_API_URL}/repos/system/${REPO}/branch_protections/main")
+
+      if [ "$STATUS" = "404" ]; then
+        api -X POST "${FORGEJO_API_URL}/repos/system/${REPO}/branch_protections" \
+          -H "Content-Type: application/json" \
+          -d '{"branch_name":"main","enable_push":false,"enable_force_push":false}' >/dev/null
+        echo "  Protected: system/${REPO}"
+      else
+        echo "  Already protected: system/${REPO}"
+      fi
+    done
+
+    echo "Phase 3 complete: System org setup done."
+
+    # ============================================================================
+    # PHASE 4: Woodpecker Setup
+    # Programmatic OAuth2 login, repo activation, org secrets, pipeline triggers.
+    # Ported from: scripts/setup-woodpecker-repos.sh
+    # ============================================================================
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Phase 4: Woodpecker setup"
+    echo "══════════════════════════════════════════════════════════════"
+
+    # Woodpecker API: in-cluster service DNS
+    WP_URL="${WP_API_URL}"
+    # Forgejo OAuth: MUST use external HTTPS URL — Forgejo sets Secure cookies
+    # that curl won't store/send over plain HTTP. CoreDNS resolves *.DOMAIN
+    # to Traefik (configured in Phase 1), so HTTPS works from inside the pod.
+    FORGEJO_OAUTH_URL="${FORGEJO_URL}"
+
+    # ── Wait for Woodpecker API ────────────────────────────────────────────────
+
+    # Ensure Woodpecker rollout is complete (may have been restarted in Phase 2)
+    kubectl rollout status statefulset woodpecker-server -n woodpecker --timeout=120s 2>/dev/null || true
+
+    echo "Waiting for Woodpecker API..."
+    for i in $(seq 1 30); do
+      if curl -fsSk "${WP_URL}/healthz" >/dev/null 2>&1; then
+        echo "Woodpecker API is ready."
+        break
+      fi
+      if [ "$i" -eq 30 ]; then
+        echo "Warning: Woodpecker API not responding — skipping Phase 4."
+        exit 0
+      fi
+      sleep 2
+    done
+
+    # Verify Forgejo can serve git operations (not just API)
+    echo "Verifying Forgejo git readiness..."
+    for i in $(seq 1 15); do
+      if git ls-remote "http://${ADMIN_USER}:${ADMIN_PASS}@forgejo-http.forgejo.svc.cluster.local:3000/system/open-platform.git" HEAD >/dev/null 2>&1; then
+        echo "Forgejo git service is ready."
+        break
+      fi
+      if [ "$i" -eq 15 ]; then
+        echo "Warning: Forgejo git not responding — pipelines may fail."
+      fi
+      sleep 2
+    done
+
+    # ── Woodpecker login via programmatic OAuth2 flow ─────────────────────────
+
+    COOKIE_DIR=$(mktemp -d)
+    FORGEJO_COOKIES="${COOKIE_DIR}/forgejo"
+    WP_COOKIES="${COOKIE_DIR}/woodpecker"
+
+    WP_TOKEN=""
+    WP_SESSION=""
+    WP_CSRF=""
+
+    # Check for existing API token and validate it
+    if kubectl get secret woodpecker-api-token -n woodpecker \
+      -o jsonpath='{.data.token}' 2>/dev/null | base64 -d >/dev/null 2>&1; then
+      SAVED_TOKEN=$(kubectl get secret woodpecker-api-token -n woodpecker \
+        -o jsonpath='{.data.token}' | base64 -d)
+      if curl -fsSk -H "Authorization: Bearer ${SAVED_TOKEN}" \
+        "${WP_URL}/api/user" >/dev/null 2>&1; then
+        WP_TOKEN="$SAVED_TOKEN"
+        echo "Using existing Woodpecker API token (validated)."
+      else
+        echo "Saved Woodpecker API token is stale — will create a new one."
+      fi
+    fi
+
+    # Always establish a session (needed for repo activation which requires session+CSRF)
+    echo "Logging into Woodpecker via Forgejo OAuth2..."
+
+    # Rewrite Woodpecker callback URLs from external to in-cluster
+    rewrite_wp_callback() {
+      local url="$1"
+      url="${url//https:\/\/${PREFIX}ci.${DOMAIN}/${WP_URL}}"
+      url="${url//http:\/\/${PREFIX}ci.${DOMAIN}/${WP_URL}}"
+      echo "$url"
+    }
+
+    # Step 1: Login to Forgejo via external HTTPS URL
+    # (Forgejo sets Secure cookies — must use HTTPS, not in-cluster HTTP)
+    echo "  Logging into Forgejo (${FORGEJO_OAUTH_URL})..."
+    curl -sSk -c "${FORGEJO_COOKIES}" -o /dev/null \
+      "${FORGEJO_OAUTH_URL}/user/login" 2>/dev/null || true
+    LOGIN_STATUS=$(curl -sSk -c "${FORGEJO_COOKIES}" -b "${FORGEJO_COOKIES}" -L \
+      -w "%{http_code}" -o /dev/null \
+      -d "user_name=${ADMIN_USER}&password=${ADMIN_PASS}" \
+      "${FORGEJO_OAUTH_URL}/user/login" 2>/dev/null || echo "000")
+    echo "  Forgejo login: ${LOGIN_STATUS}"
+
+    # Step 2: Start OAuth2 flow — Woodpecker redirects to Forgejo authorize
+    STEP2_HEADERS=$(mktemp)
+    curl -sSk -o /dev/null -D "${STEP2_HEADERS}" "${WP_URL}/authorize" 2>/dev/null || true
+    AUTHORIZE_URL=$(grep -i '^location:' "${STEP2_HEADERS}" | tr -d '\r' | awk '{print $2}' || true)
+    rm -f "${STEP2_HEADERS}"
+
+    if [ -z "$AUTHORIZE_URL" ]; then
+      echo "Warning: Woodpecker did not redirect to Forgejo — skipping Phase 4."
+      rm -rf "${COOKIE_DIR}"
+      exit 0
+    fi
+
+    # Step 3: Fetch Forgejo authorize page (already external HTTPS — no rewrite needed)
+    STEP3_HEADERS=$(mktemp)
+    curl -sSk -b "${FORGEJO_COOKIES}" -c "${FORGEJO_COOKIES}" \
+      -o "${COOKIE_DIR}/grant_body" -D "${STEP3_HEADERS}" "${AUTHORIZE_URL}" 2>/dev/null || true
+
+    STEP3_STATUS=$(grep -E '^HTTP' "${STEP3_HEADERS}" | tail -1 | awk '{print $2}' || true)
+    echo "  Authorize response: ${STEP3_STATUS}"
+
+    if [ "$STEP3_STATUS" = "303" ] || [ "$STEP3_STATUS" = "302" ]; then
+      # Already authorized — redirect contains auth code callback
+      CALLBACK_URL=$(grep -i '^location:' "${STEP3_HEADERS}" | tr -d '\r' | awk '{print $2}' || true)
+      CALLBACK_URL=$(rewrite_wp_callback "$CALLBACK_URL")
+      curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+        -o /dev/null "${CALLBACK_URL}" 2>/dev/null || true
+    else
+      # First time — grant page shown. Extract form fields and submit.
+      GRANT_PAGE=$(cat "${COOKIE_DIR}/grant_body" 2>/dev/null || true)
+      GRANT_STATE=$(echo "$GRANT_PAGE" | grep -o 'name="state" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"//' || true)
+      GRANT_CLIENT=$(echo "$GRANT_PAGE" | grep -o 'name="client_id" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"//' || true)
+      GRANT_REDIRECT=$(echo "$GRANT_PAGE" | grep -o 'name="redirect_uri" value="[^"]*"' | head -1 | sed 's/.*value="//;s/"//' || true)
+
+      if [ -z "$GRANT_STATE" ] || [ -z "$GRANT_CLIENT" ]; then
+        echo "Warning: Could not parse Forgejo grant page — skipping Phase 4."
+        rm -rf "${COOKIE_DIR}" "${STEP3_HEADERS}"
+        exit 0
+      fi
+
+      # Submit grant form — Forgejo redirects to Woodpecker callback with auth code
+      GRANT_HEADERS=$(mktemp)
+      curl -sSk -b "${FORGEJO_COOKIES}" -c "${FORGEJO_COOKIES}" \
+        --data-urlencode "client_id=${GRANT_CLIENT}" \
+        --data-urlencode "state=${GRANT_STATE}" \
+        --data-urlencode "scope=" \
+        --data-urlencode "nonce=" \
+        --data-urlencode "redirect_uri=${GRANT_REDIRECT}" \
+        --data-urlencode "granted=true" \
+        -o /dev/null -D "${GRANT_HEADERS}" "${FORGEJO_OAUTH_URL}/login/oauth/grant" 2>/dev/null || true
+
+      GRANT_CALLBACK=$(grep -i '^location:' "${GRANT_HEADERS}" | tr -d '\r' | awk '{print $2}' || true)
+      rm -f "${GRANT_HEADERS}"
+      GRANT_CALLBACK=$(rewrite_wp_callback "$GRANT_CALLBACK")
+      curl -sSk -b "${FORGEJO_COOKIES}" -c "${WP_COOKIES}" -L \
+        -o /dev/null "${GRANT_CALLBACK}" 2>/dev/null || true
+    fi
+    rm -f "${STEP3_HEADERS}"
+
+    # Step 4: Extract session and CSRF
+    WP_SESSION=$(grep user_sess "${WP_COOKIES}" 2>/dev/null | awk '{print $NF}' || echo "")
+    WP_CSRF=$(curl -sSk -b "user_sess=${WP_SESSION}" "${WP_URL}/web-config.js" 2>/dev/null \
+      | grep WOODPECKER_CSRF | sed 's/.*= "//;s/".*//' || echo "")
+
+    if [ -z "$WP_SESSION" ] || [ -z "$WP_CSRF" ]; then
+      echo "Warning: Could not establish Woodpecker session — skipping Phase 4."
+      rm -rf "${COOKIE_DIR}"
+      exit 0
+    fi
+
+    echo "Woodpecker session established."
+
+    # Step 5: Create API token if we don't have one
+    if [ -z "$WP_TOKEN" ]; then
+      echo "Creating Woodpecker API token..."
+      WP_TOKEN=$(curl -sSk -X POST \
+        -b "user_sess=${WP_SESSION}" \
+        -H "X-CSRF-Token: ${WP_CSRF}" \
+        "${WP_URL}/api/user/token" 2>/dev/null)
+
+      if [ -n "$WP_TOKEN" ] && [ "$WP_TOKEN" != "null" ]; then
+        apply_secret woodpecker-api-token -n woodpecker \
+          --from-literal=token="${WP_TOKEN}"
+        echo "Created and stored Woodpecker API token."
+      else
+        echo "Warning: Failed to create Woodpecker API token."
+        rm -rf "${COOKIE_DIR}"
+        exit 0
+      fi
+    fi
+
+    # Helper: session+CSRF auth (for repo activation)
+    wp_session() {
+      curl -sSk -b "user_sess=${WP_SESSION}" -H "X-CSRF-Token: ${WP_CSRF}" "$@"
+    }
+
+    # Helper: Bearer token auth (for secrets and queries)
+    wp_api() {
+      curl -fsSk -H "Authorization: Bearer ${WP_TOKEN}" "$@"
+    }
+
+    # ── Repo activation ───────────────────────────────────────────────────────
+    # Discover all repos across all orgs (except meta repos)
+
+    SKIP_REPOS="system/open-platform system/template system/deploy-bundle"
+
+    # Get all orgs
+    ALL_ORGS=$(api "${FORGEJO_API_URL}/admin/orgs?limit=50" 2>/dev/null \
+      | jq -r '.[].username' 2>/dev/null || \
+      api "${FORGEJO_API_URL}/orgs/system" 2>/dev/null \
+      | jq -r '.username' 2>/dev/null || echo "system")
+
+    REPO_LIST=""
+    for ORG_NAME in $ALL_ORGS; do
+      ORG_REPOS=$(api "${FORGEJO_API_URL}/orgs/${ORG_NAME}/repos?limit=50" 2>/dev/null | \
+        jq -r '.[].full_name' 2>/dev/null || true)
+      if [ -n "$ORG_REPOS" ]; then
+        REPO_LIST="${REPO_LIST}${REPO_LIST:+$'\n'}${ORG_REPOS}"
+      fi
+    done
+
+    # Also include user repos (repos not in any org)
+    USER_REPOS=$(api "${FORGEJO_API_URL}/user/repos?limit=50" 2>/dev/null | \
+      jq -r '.[] | select(.owner.type == "Organization" | not) | .full_name' 2>/dev/null || true)
+    if [ -n "$USER_REPOS" ]; then
+      REPO_LIST="${REPO_LIST}${REPO_LIST:+$'\n'}${USER_REPOS}"
+    fi
+
+    # Deduplicate
+    REPO_LIST=$(echo "$REPO_LIST" | sort -u)
+
+    # Filter out skip repos and template repos
+    FILTERED_LIST=""
+    for repo in $REPO_LIST; do
+      skip=false
+      for skip_repo in $SKIP_REPOS; do
+        if [ "$repo" = "$skip_repo" ]; then
+          skip=true
+          break
+        fi
+      done
+      # Also skip repos marked as template
+      if [ "$skip" = "false" ]; then
+        IS_TEMPLATE=$(api "${FORGEJO_API_URL}/repos/${repo}" 2>/dev/null \
+          | jq -r '.template // false' 2>/dev/null || echo "false")
+        if [ "$IS_TEMPLATE" = "true" ]; then
+          skip=true
+        fi
+      fi
+      if [ "$skip" = "false" ]; then
+        FILTERED_LIST="${FILTERED_LIST}${FILTERED_LIST:+$'\n'}${repo}"
+      fi
+    done
+
+    if [ -z "$FILTERED_LIST" ]; then
+      echo "No deployable repos found — skipping activation."
+      REPOS=()
+    else
+      REPOS=()
+      while IFS= read -r line; do
+        [ -n "$line" ] && REPOS+=("$line")
+      done <<< "$FILTERED_LIST"
+      echo "Found ${#REPOS[@]} deployable repos: ${REPOS[*]}"
+    fi
+
+    for REPO_FULL in "${REPOS[@]}"; do
+      # Check if already active
+      WP_REPO=$(wp_api "${WP_URL}/api/repos/lookup/${REPO_FULL}" 2>/dev/null || echo "")
+      if [ -n "$WP_REPO" ] && echo "$WP_REPO" | jq -e '.active == true' >/dev/null 2>&1; then
+        echo "Repo '${REPO_FULL}' already active in Woodpecker."
+        continue
+      fi
+
+      # Get forge_remote_id from Forgejo
+      FORGE_ID=$(api "${FORGEJO_API_URL}/repos/${REPO_FULL}" 2>/dev/null | jq -r '.id // empty')
+      if [ -z "$FORGE_ID" ]; then
+        echo "Warning: Repo '${REPO_FULL}' not found in Forgejo — skipping."
+        continue
+      fi
+
+      # Activate (requires session+CSRF, not Bearer)
+      RESULT=$(wp_session -X POST "${WP_URL}/api/repos?forge_remote_id=${FORGE_ID}" 2>/dev/null)
+      if echo "$RESULT" | jq -e '.active == true' >/dev/null 2>&1; then
+        echo "Activated '${REPO_FULL}' in Woodpecker."
+      else
+        echo "Warning: Failed to activate '${REPO_FULL}': $(echo "$RESULT" | head -1)"
+      fi
+    done
+
+    # ── Org-level secrets ─────────────────────────────────────────────────────
+
+    # Create a Forgejo admin PAT for CI pipelines
+    FORGEJO_CI_TOKEN=""
+    STORED_TOKEN=$(kubectl get secret forgejo-ci-token -n forgejo \
+      -o jsonpath='{.data.token}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+    if [ -n "$STORED_TOKEN" ]; then
+      if curl -fsSk -H "Authorization: token ${STORED_TOKEN}" \
+        "${FORGEJO_API_URL}/user" >/dev/null 2>&1; then
+        FORGEJO_CI_TOKEN="$STORED_TOKEN"
+        echo "Using existing Forgejo CI token (validated)."
+      else
+        echo "Stored Forgejo CI token is stale — creating a new one."
+      fi
+    fi
+
+    if [ -z "$FORGEJO_CI_TOKEN" ]; then
+      echo "Creating Forgejo admin PAT for CI..."
+      TOKEN_RESPONSE=$(api -X POST "${FORGEJO_API_URL}/users/${ADMIN_USER}/tokens" \
+        -H "Content-Type: application/json" \
+        -d '{"name":"woodpecker-ci","scopes":["write:repository"]}' 2>/dev/null || echo "")
+
+      # Handle name conflict (token already exists but K8s secret was lost)
+      if [ -z "$TOKEN_RESPONSE" ] || ! echo "$TOKEN_RESPONSE" | jq -e '.sha1' >/dev/null 2>&1; then
+        api -X DELETE "${FORGEJO_API_URL}/users/${ADMIN_USER}/tokens/woodpecker-ci" >/dev/null 2>&1 || true
+        TOKEN_RESPONSE=$(api -X POST "${FORGEJO_API_URL}/users/${ADMIN_USER}/tokens" \
+          -H "Content-Type: application/json" \
+          -d '{"name":"woodpecker-ci","scopes":["write:repository"]}' 2>/dev/null)
+      fi
+
+      FORGEJO_CI_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.sha1 // empty')
+      if [ -n "$FORGEJO_CI_TOKEN" ]; then
+        apply_secret forgejo-ci-token -n forgejo \
+          --from-literal=token="${FORGEJO_CI_TOKEN}"
+        echo "Created and stored Forgejo CI token."
+      else
+        echo "Warning: Failed to create Forgejo CI token — protect-branch step will be skipped."
+      fi
+    fi
+
+    # Create org-level secrets for ALL Woodpecker orgs
+    WP_ORGS=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null | jq -r '.[].id' 2>/dev/null || echo "")
+    if [ -z "$WP_ORGS" ]; then
+      echo "Warning: No Woodpecker orgs found — skipping secrets."
+    else
+      for ORG_ID in $WP_ORGS; do
+        ORG_NAME=$(wp_api "${WP_URL}/api/orgs" 2>/dev/null \
+          | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
+        echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
+
+        for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix forgejo_admin_token; do
+          EXISTING=$(wp_api "${WP_URL}/api/orgs/${ORG_ID}/secrets/${SECRET_NAME}" 2>/dev/null || echo "")
+          if [ -n "$EXISTING" ] && echo "$EXISTING" | jq -e '.name' >/dev/null 2>&1; then
+            continue
+          fi
+
+          case "$SECRET_NAME" in
+            registry_username) VALUE="${ADMIN_USER}" ;;
+            registry_token) VALUE="${ADMIN_PASS}" ;;
+            platform_domain) VALUE="${DOMAIN}" ;;
+            registry_host) VALUE="${PREFIX}forgejo.${DOMAIN}" ;;
+            registry_push_host) VALUE="forgejo-http.forgejo.svc.cluster.local:3000" ;;
+            service_prefix) VALUE="${PREFIX}" ;;
+            forgejo_admin_token) VALUE="${FORGEJO_CI_TOKEN}" ;;
+          esac
+
+          # Woodpecker rejects empty values — use a space for empty secrets
+          if [ -z "$VALUE" ]; then
+            VALUE=" "
+          fi
+
+          if wp_api -X POST "${WP_URL}/api/orgs/${ORG_ID}/secrets" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\": \"${SECRET_NAME}\", \"value\": \"${VALUE}\", \"events\": [\"push\", \"pull_request\", \"manual\"]}" >/dev/null 2>&1; then
+            echo "  Created '${SECRET_NAME}' for org '${ORG_NAME}'."
+          else
+            echo "  Warning: Failed to create '${SECRET_NAME}' for org '${ORG_NAME}' — skipping."
+          fi
+        done
+      done
+    fi
+
+    # ── Trigger pipelines ─────────────────────────────────────────────────────
+
+    echo ""
+    echo "Triggering CI pipelines..."
+
+    trigger_main_pipeline() {
+      local REPO_FULL="$1"
+
+      # Get numeric repo ID via lookup
+      local REPO_ID
+      REPO_ID=$(wp_api "${WP_URL}/api/repos/lookup/${REPO_FULL}" 2>/dev/null \
+        | jq -r '.id // empty')
+      if [ -z "$REPO_ID" ]; then
+        echo "Warning: Could not find repo ID for '${REPO_FULL}' — skipping."
+        return 1
+      fi
+
+      # Check if a successful deploy pipeline already exists
+      local DEPLOY_OK
+      DEPLOY_OK=$(wp_api "${WP_URL}/api/repos/${REPO_ID}/pipelines" 2>/dev/null | \
+        jq -r '[.[] | select((.event == "push" or .event == "manual") and .status == "success")] | length' \
+        2>/dev/null || echo "0")
+      if [ "$DEPLOY_OK" != "0" ]; then
+        echo "Repo '${REPO_FULL}' already has a successful deploy — skipping."
+        return 0
+      fi
+
+      echo "Triggering main branch pipeline for '${REPO_FULL}'..."
+      local RESULT
+      for attempt in $(seq 1 5); do
+        RESULT=$(wp_api -X POST "${WP_URL}/api/repos/${REPO_ID}/pipelines" \
+          -H "Content-Type: application/json" \
+          -d '{"branch": "main"}' 2>/dev/null || echo "")
+
+        if [ -n "$RESULT" ] && echo "$RESULT" | jq -e '.id' >/dev/null 2>&1; then
+          local PIPELINE_ID
+          PIPELINE_ID=$(echo "$RESULT" | jq -r '.id')
+          echo "Triggered pipeline #${PIPELINE_ID} for '${REPO_FULL}'."
+          return 0
+        fi
+
+        if [ "$attempt" -lt 5 ]; then
+          echo "  Retry ${attempt}/5 — waiting for Forgejo..."
+          sleep 5
+        fi
+      done
+
+      echo "Warning: Failed to trigger pipeline for '${REPO_FULL}' after 5 attempts."
+      return 1
+    }
+
+    if [ ${#REPOS[@]} -gt 0 ]; then
+      for REPO_FULL in "${REPOS[@]}"; do
+        trigger_main_pipeline "$REPO_FULL" || true
+      done
+    fi
+
+    # Trigger social PR preview pipeline (close/reopen to fire webhook)
+    PR_NUMBER=$(api "${FORGEJO_API_URL}/repos/system/social/pulls?state=open&head=feat/markdown-posts" \
+      2>/dev/null | jq -r '.[0].number // empty' || echo "")
+    if [ -n "$PR_NUMBER" ]; then
+      SOCIAL_ID=$(wp_api "${WP_URL}/api/repos/lookup/system/social" 2>/dev/null \
+        | jq -r '.id // empty')
+      PR_PIPELINE=$(wp_api "${WP_URL}/api/repos/${SOCIAL_ID}/pipelines" 2>/dev/null | \
+        jq -r '[.[] | select(.event == "pull_request" and .status == "success")] | length' \
+        2>/dev/null || echo "0")
+
+      if [ "$PR_PIPELINE" != "0" ]; then
+        echo "Social PR already has a successful preview pipeline — skipping trigger."
+      else
+        echo "Triggering social PR preview pipeline..."
+        api -X PATCH "${FORGEJO_API_URL}/repos/system/social/pulls/${PR_NUMBER}" \
+          -H "Content-Type: application/json" \
+          -d '{"state":"closed"}' >/dev/null 2>&1 || true
+        sleep 1
+        api -X PATCH "${FORGEJO_API_URL}/repos/system/social/pulls/${PR_NUMBER}" \
+          -H "Content-Type: application/json" \
+          -d '{"state":"open"}' >/dev/null 2>&1 || true
+        echo "Social PR reopened — preview pipeline triggered."
+      fi
+    fi
+
+    # Cleanup
+    rm -rf "${COOKIE_DIR}"
+
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+    echo "Bootstrap complete."
+    echo "══════════════════════════════════════════════════════════════"
+
+  postgres-cluster.yaml: |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: postgres
+      namespace: postgres
+    spec:
+      enableSuperuserAccess: true
+      instances: 1
+      storage:
+        size: 10Gi
+      bootstrap:
+        initdb:
+          database: forgejo
+          owner: forgejo
+          secret:
+            name: forgejo-db-credentials
+          postInitSQL:
+            - CREATE DATABASE platform_ledger
+            - CREATE DATABASE product_garden
+            {{- if .Values.services.zulip.enabled }}
+            - CREATE DATABASE zulip
+            - CREATE ROLE zulip WITH LOGIN
+            - ALTER DATABASE zulip OWNER TO zulip
+            {{- end }}
+      postgresql:
+        parameters:
+          max_connections: "200"
+          shared_buffers: "256MB"
+        {{- if .Values.services.pgadmin.enabled }}
+        pg_hba:
+          - host all postgres 10.42.0.0/16 trust
+          - host all postgres 10.43.0.0/16 trust
+        {{- end }}
+      resources:
+        requests:
+          memory: "256Mi"
+          cpu: "100m"
+        limits:
+          memory: "1Gi"
+          cpu: "1"
+      {{- if .Values.multinode.enabled }}
+      affinity:
+        nodeSelector:
+          open-platform.sh/node-role: infra
+      {{- end }}
+
+  traefik-tls.yaml: |
+    apiVersion: traefik.io/v1alpha1
+    kind: TLSStore
+    metadata:
+      name: default
+      namespace: kube-system
+    spec:
+      defaultCertificate:
+        secretName: wildcard-tls
+
+  traefik-middleware.yaml: |
+    apiVersion: traefik.io/v1alpha1
+    kind: Middleware
+    metadata:
+      name: oauth2-proxy-auth
+      namespace: oauth2-proxy
+    spec:
+      forwardAuth:
+        address: http://oauth2-proxy.oauth2-proxy.svc:4180/oauth2/auth
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-Auth-Request-User
+          - X-Auth-Request-Email
+    ---
+    apiVersion: traefik.io/v1alpha1
+    kind: Middleware
+    metadata:
+      name: oauth2-proxy-redirect
+      namespace: oauth2-proxy
+    spec:
+      errors:
+        status:
+          - "401"
+        service:
+          name: auth-redirect
+          port: 80
+        query: "/"

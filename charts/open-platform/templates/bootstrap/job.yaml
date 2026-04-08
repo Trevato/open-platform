@@ -1,0 +1,76 @@
+{{/*
+Bootstrap Job — runs after Helm install/upgrade to configure platform services.
+Replaces the imperative shell scripts (setup-oauth2, setup-system-org, setup-woodpecker-repos,
+setup-coredns) with an in-cluster Job using K8s service DNS.
+
+Uses ubuntu:24.04 — tools (kubectl, curl, jq, git, openssl) installed at container start.
+Repo content for system org pushes is cloned from bootstrap.repoUrl.
+
+CRD-dependent resources (CNPG Cluster, Traefik TLSStore/Middleware) are applied by this Job
+after Flux has installed the operators. This avoids the chicken-and-egg problem of Helm
+needing CRDs that don't exist until operators are deployed.
+
+Phases:
+  0. Infrastructure — wait for operators, apply CNPG Cluster + Traefik CRDs
+  1. CoreDNS — detect Traefik IP, update coredns-custom ConfigMap, restart CoreDNS
+  2. OAuth2 — create apps in Forgejo, store client credentials as K8s secrets
+  3. System org — create org, push repos (open-platform, template, console, op-api)
+  4. Woodpecker — OAuth2 login, activate repos, set org secrets, trigger pipelines
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "op.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "50"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}-bootstrap
+    spec:
+      serviceAccountName: {{ include "op.fullname" . }}-bootstrap
+      restartPolicy: Never
+      containers:
+        - name: bootstrap
+          image: {{ .Values.bootstrap.image }}
+          env:
+            - name: DOMAIN
+              value: {{ include "op.domain" . | quote }}
+            - name: PREFIX
+              value: {{ include "op.prefix" . | quote }}
+            - name: TLS_MODE
+              value: {{ include "op.tlsMode" . | quote }}
+            - name: FORGEJO_URL
+              value: {{ include "op.forgejoUrl" . | quote }}
+            - name: FORGEJO_API_URL
+              value: "http://forgejo-http.forgejo.svc.cluster.local:3000/api/v1"
+            - name: FORGEJO_GIT_URL
+              value: "http://forgejo-http.forgejo.svc.cluster.local:3000"
+            - name: WP_API_URL
+              value: "http://woodpecker-server.woodpecker.svc.cluster.local:80"
+            - name: REPO_URL
+              value: {{ .Values.bootstrap.repoUrl | quote }}
+            - name: REPO_BRANCH
+              value: {{ .Values.bootstrap.repoBranch | default "main" | quote }}
+          command: ["/bin/bash", "/scripts/bootstrap.sh"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+            - name: content
+              mountPath: /content
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "op.fullname" . }}-bootstrap-scripts
+            defaultMode: 0755
+        - name: content
+          emptyDir: {}

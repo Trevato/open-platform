@@ -1,0 +1,124 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: forgejo
+  namespace: forgejo
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 10m
+  chartRef:
+    kind: OCIRepository
+    name: forgejo
+    namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    gitea:
+      admin:
+        existingSecret: forgejo-admin-credentials
+        email: {{ include "op.adminEmail" . | quote }}
+      additionalConfigFromEnvs:
+        - name: FORGEJO__database__PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-db-config
+              key: password
+        - name: FORGEJO__mailer__USER
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-smtp-config
+              key: username
+              optional: true
+        - name: FORGEJO__mailer__PASSWD
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-smtp-config
+              key: password
+              optional: true
+        - name: FORGEJO__storage_0X2E_packages__MINIO_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-minio-config
+              key: accessKey
+        - name: FORGEJO__storage_0X2E_packages__MINIO_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: forgejo-minio-config
+              key: secretKey
+      config:
+        server:
+          DOMAIN: {{ include "op.svcHost" (list . "forgejo") }}
+          ROOT_URL: {{ include "op.svcUrl" (list . "forgejo") }}
+          SSH_DOMAIN: {{ include "op.svcHost" (list . "forgejo") }}
+          SSH_PORT: 22
+          SSH_LISTEN_PORT: 2222
+          LFS_START_SERVER: true
+        database:
+          DB_TYPE: postgres
+          HOST: postgres-rw.postgres.svc.cluster.local:5432
+          NAME: forgejo
+          USER: forgejo
+          SSL_MODE: disable
+        service:
+          DISABLE_REGISTRATION: true
+          DEFAULT_ALLOW_CREATE_ORGANIZATION: false
+        repository:
+          DEFAULT_PRIVATE: true
+        oauth2:
+          ENABLED: true
+        openid:
+          ENABLE_OPENID_SIGNIN: true
+        mailer:
+          ENABLED: true
+          PROTOCOL: smtp
+          SMTP_ADDR: {{ include "op.smtpHost" . }}
+          SMTP_PORT: {{ include "op.smtpPort" . }}
+          FROM: {{ include "op.smtpFrom" . | quote }}
+        packages:
+          ENABLED: true
+        storage.packages:
+          STORAGE_TYPE: minio
+          MINIO_ENDPOINT: minio.minio.svc:9000
+          MINIO_BUCKET: forgejo-packages
+          MINIO_USE_SSL: false
+        webhook:
+          ALLOWED_HOST_LIST: {{ printf "*.%s" (include "op.domain" .) | quote }}
+          SKIP_TLS_VERIFY: {{ include "op.skipTlsVerify" . }}
+    ingress:
+      enabled: true
+      className: traefik
+      hosts:
+        - host: {{ include "op.svcHost" (list . "forgejo") }}
+          paths:
+            - path: /
+              pathType: Prefix
+    {{- if .Values.multinode.enabled }}
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 80
+            preference:
+              matchExpressions:
+                - key: open-platform.sh/node-role
+                  operator: In
+                  values:
+                    - infra
+    {{- end }}
+    persistence:
+      enabled: true
+      size: 10Gi
+    postgresql:
+      enabled: false
+    redis-cluster:
+      enabled: false
+    redis:
+      enabled: false
+{{- end }}

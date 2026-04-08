@@ -1,0 +1,73 @@
+{{/*
+Cloudflare Tunnel — routes *.{domain} through Cloudflare to Traefik.
+Conditional on tls.mode=cloudflare.
+Ported from config/templates/platform/infrastructure/configs/cloudflared.yaml.tmpl
+*/}}
+{{- if eq (include "op.cloudflareEnabled" .) "true" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cloudflare
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    tunnel: {{ required "cloudflare.tunnelId is required when tls.mode=cloudflare" .Values.cloudflare.tunnelId }}
+    credentials-file: /etc/cloudflared/credentials.json
+    no-autoupdate: true
+    ingress:
+      - hostname: "*.{{ include "op.domain" . }}"
+        service: http://traefik.kube-system.svc.cluster.local
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cloudflare
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+    app: cloudflared
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yaml
+            - run
+          volumeMounts:
+            - name: credentials
+              mountPath: /etc/cloudflared/credentials.json
+              subPath: credentials.json
+              readOnly: true
+            - name: config
+              mountPath: /etc/cloudflared/config.yaml
+              subPath: config.yaml
+              readOnly: true
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: credentials
+          secret:
+            secretName: cloudflared-credentials
+        - name: config
+          configMap:
+            name: cloudflared-config
+{{- end }}

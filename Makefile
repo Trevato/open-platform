@@ -1,10 +1,38 @@
-.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join
+.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join chart-deploy chart-upgrade chart-template chart-lint
 
-deploy: ## Deploy everything (secrets, releases, OAuth2 — all automated)
+deploy: ## Deploy everything via helmfile (legacy — see chart-deploy for Helm chart)
 	./scripts/deploy.sh
 
 generate: ## Generate config from open-platform.yaml (run before deploy if config changed)
 	./scripts/generate-config.sh
+
+chart-deploy: ## Deploy via Helm chart (installs Flux + platform chart)
+	@if ! helm status flux2 -n flux-system >/dev/null 2>&1; then \
+		echo "Installing Flux controllers..."; \
+		helm repo add fluxcd-community https://fluxcd-community.github.io/helm-charts 2>/dev/null || true; \
+		helm repo update fluxcd-community; \
+		helm install flux2 fluxcd-community/flux2 -n flux-system --create-namespace --wait; \
+	fi
+	helm upgrade --install open-platform charts/open-platform \
+		-f open-platform.yaml \
+		-n open-platform --create-namespace --wait --timeout 15m
+	@echo ""
+	@echo "Platform chart installed. Flux will reconcile all services."
+	@echo "Run 'make chart-status' to check progress."
+
+chart-upgrade: ## Upgrade the platform Helm chart
+	helm upgrade open-platform charts/open-platform \
+		-f open-platform.yaml \
+		-n open-platform --wait --timeout 15m
+
+chart-template: ## Render chart templates to stdout (dry run)
+	helm template open-platform charts/open-platform -f open-platform.yaml
+
+chart-lint: ## Lint the Helm chart
+	helm lint charts/open-platform -f open-platform.yaml
+
+chart-status: ## Show Flux HelmRelease reconciliation status
+	@kubectl get helmreleases -A 2>/dev/null || echo "(no HelmReleases found)"
 
 deploy-infra: ## Deploy infrastructure only (traefik, cnpg, minio, forgejo)
 	helmfile sync -l tier=infra

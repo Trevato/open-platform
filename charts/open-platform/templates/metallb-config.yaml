@@ -1,0 +1,30 @@
+{{/*
+MetalLB IPAddressPool + L2Advertisement — bare-metal load balancer config.
+Conditional on network.mode=loadbalancer.
+Ported from config/templates/platform/infrastructure/configs/metallb-config.yaml.tmpl
+*/}}
+{{- if eq (include "op.metallbEnabled" .) "true" }}
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: shared-infra
+  namespace: metallb-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  addresses:
+    - {{ required "network.addressPool is required when network.mode=loadbalancer" .Values.network.addressPool }}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: shared-infra-l2
+  namespace: metallb-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  ipAddressPools:
+    - shared-infra
+  interfaces:
+    - {{ required "network.interface is required when network.mode=loadbalancer" .Values.network.interface }}
+{{- end }}

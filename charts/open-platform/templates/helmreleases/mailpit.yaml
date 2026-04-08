@@ -1,0 +1,39 @@
+{{- if and (eq .Values.infrastructure.mode "bundled") (not .Values.smtp.external) }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mailpit
+  namespace: mailpit
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: mailpit
+      version: "0.31.3"
+      sourceRef:
+        kind: HelmRepository
+        name: jouve
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hostname: {{ include "op.svcHost" (list . "mail") }}
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 25m
+      limits:
+        memory: 128Mi
+        cpu: 100m
+{{- end }}

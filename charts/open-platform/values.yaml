@@ -1,0 +1,83 @@
+domain: ""
+
+admin:
+  username: opadmin
+  email: ""
+
+servicePrefix: ""
+
+tls:
+  mode: selfsigned
+  email: ""
+  ca:
+    cert: ""
+    key: ""
+  wildcard:
+    cert: ""
+    key: ""
+
+cloudflare:
+  accountTag: ""
+  tunnelId: ""
+  tunnelSecret: ""
+
+smtp:
+  external: false
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+
+services:
+  jitsi:
+    enabled: true
+    allowGuests: true
+    jvbAdvertiseIp: ""
+  zulip:
+    enabled: true
+  pgadmin:
+    enabled: false
+
+infrastructure:
+  mode: bundled
+
+network:
+  mode: host
+  traefikIp: ""
+  addressPool: ""
+  interface: ""
+
+secrets:
+  forgejoAdminPassword: ""
+  forgejoDbPassword: ""
+  minioRootPassword: ""
+  woodpeckerAgentSecret: ""
+  oauth2ProxyCookieSecret: ""
+  betterAuthSecret: ""
+  jitsiJwtSecret: ""
+  zulipSecretKey: ""
+  zulipRabbitmqPassword: ""
+  zulipDbPassword: ""
+
+multinode:
+  enabled: false
+
+overrides:
+  traefik: {}
+  cnpg: {}
+  minio: {}
+  forgejo: {}
+  woodpecker: {}
+  oauth2Proxy: {}
+  mailpit: {}
+  jitsi: {}
+  zulip: {}
+  pgadmin: {}
+  certManager: {}
+  metallb: {}
+
+bootstrap:
+  image: ubuntu:24.04
+  repoUrl: https://github.com/trevato/open-platform.git
+  repoBranch: main

@@ -1,0 +1,137 @@
+{{/*
+Kubernetes Namespaces — always-present and conditional.
+Ported from config/templates/platform/infrastructure/configs/namespaces.yaml.tmpl
+*/}}
+{{- $multinodeLabels := dict }}
+{{- if .Values.multinode.enabled }}
+{{- $_ := set $multinodeLabels "open-platform.sh/node-role" "infra" }}
+{{- end }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: forgejo
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: woodpecker
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minio
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cnpg-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oauth2-proxy
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-system-console
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "console"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: op-system-op-api
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+    open-platform.sh/managed: "true"
+    open-platform.sh/org: "system"
+    open-platform.sh/repo: "op-api"
+    open-platform.sh/tier: "workload"
+    open-platform.sh/environment: "production"
+{{- if not .Values.smtp.external }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mailpit
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if .Values.services.jitsi.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: jitsi
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if .Values.services.zulip.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: zulip
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if .Values.services.pgadmin.enabled }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pgadmin
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if eq (include "op.cloudflareEnabled" .) "true" }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloudflare
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if eq (include "op.certManagerEnabled" .) "true" }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}
+{{- if eq (include "op.metallbEnabled" .) "true" }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metallb-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+{{- end }}

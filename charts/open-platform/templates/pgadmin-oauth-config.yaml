@@ -1,0 +1,35 @@
+{{/*
+pgAdmin OAuth ConfigMap — Python config for Forgejo OIDC integration.
+Conditional on services.pgadmin.enabled.
+Ported from config/templates/manifests/pgadmin-oauth-config.yaml.tmpl
+*/}}
+{{- if .Values.services.pgadmin.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgadmin-oauth-config
+  namespace: pgadmin
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+data:
+  config_local.py: |
+    import os
+    AUTHENTICATION_SOURCES = ['oauth2', 'internal']
+    OAUTH2_AUTO_CREATE_USER = True
+    MASTER_PASSWORD_REQUIRED = False
+    SERVER_MODE = True
+    OAUTH2_CONFIG = [{
+        'OAUTH2_NAME': 'Forgejo',
+        'OAUTH2_DISPLAY_NAME': 'Forgejo',
+        'OAUTH2_CLIENT_ID': os.environ.get('OAUTH2_CLIENT_ID', ''),
+        'OAUTH2_CLIENT_SECRET': os.environ.get('OAUTH2_CLIENT_SECRET', ''),
+        'OAUTH2_TOKEN_URL': '{{ include "op.forgejoUrl" . }}/login/oauth/access_token',
+        'OAUTH2_AUTHORIZATION_URL': '{{ include "op.forgejoUrl" . }}/login/oauth/authorize',
+        'OAUTH2_API_BASE_URL': '{{ include "op.forgejoUrl" . }}/',
+        'OAUTH2_USERINFO_ENDPOINT': '{{ include "op.forgejoUrl" . }}/login/oauth/userinfo',
+        'OAUTH2_SERVER_METADATA_URL': '{{ include "op.forgejoUrl" . }}/.well-known/openid-configuration',
+        'OAUTH2_SCOPE': 'openid email profile',
+        'OAUTH2_ICON': 'fa-openid',
+        'OAUTH2_BUTTON_COLOR': '#2c974b',
+    }]
+{{- end }}

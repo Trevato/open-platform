@@ -1,0 +1,49 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oauth2-proxy
+  namespace: oauth2-proxy
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: oauth2-proxy
+      sourceRef:
+        kind: HelmRepository
+        name: oauth2-proxy
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    config:
+      existingSecret: oauth2-proxy-secrets
+      configFile: |
+        provider = "oidc"
+        oidc_issuer_url = {{ include "op.forgejoUrl" . | quote }}
+        redirect_url = "{{ include "op.svcUrl" (list . "oauth2") }}/oauth2/callback"
+        upstreams = ["static://200"]
+        email_domains = ["*"]
+        skip_provider_button = true
+        ssl_insecure_skip_verify = {{ include "op.skipTlsVerify" . }}
+        cookie_secure = true
+        cookie_domains = [".{{ include "op.domain" . }}"]
+        whitelist_domains = [".{{ include "op.domain" . }}"]
+    ingress:
+      enabled: true
+      className: traefik
+      hosts:
+        - {{ include "op.svcHost" (list . "oauth2") }}
+      pathType: Prefix
+    service:
+      type: ClusterIP
+      portNumber: 4180
+{{- end }}

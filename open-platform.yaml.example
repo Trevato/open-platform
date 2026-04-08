@@ -50,8 +50,8 @@ domain: myplatform.example.com
 # Use loadbalancer for multi-node production clusters.
 # network:
 #   mode: loadbalancer
-#   traefik_ip: 10.0.16.10
-#   address_pool: 10.0.16.0/24
+#   traefikIp: 10.0.16.10
+#   addressPool: 10.0.16.0/24
 #   interface: eno3
 
 # Multinode (optional — single-node works without this)

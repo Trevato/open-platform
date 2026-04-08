@@ -1,0 +1,138 @@
+{{- if and (eq .Values.infrastructure.mode "bundled") .Values.services.zulip.enabled }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: zulip
+  namespace: zulip
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 10m
+  chart:
+    spec:
+      chart: zulip
+      version: "1.11.57"
+      sourceRef:
+        kind: HelmRepository
+        name: zulip
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+      retries: 3
+  values:
+    {{- if .Values.multinode.enabled }}
+    affinity:
+      nodeAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 60
+            preference:
+              matchExpressions:
+                - key: open-platform.sh/node-role
+                  operator: In
+                  values:
+                    - infra
+    {{- end }}
+    ingress:
+      enabled: true
+      className: traefik
+      hosts:
+        - host: {{ include "op.svcHost" (list . "chat") }}
+          paths:
+            - path: /
+    resources:
+      requests:
+        memory: 1Gi
+        cpu: 500m
+      limits:
+        memory: 2Gi
+        cpu: "2"
+    zulip:
+      environment:
+        SETTING_EXTERNAL_HOST: {{ include "op.svcHost" (list . "chat") | quote }}
+        SETTING_ZULIP_ADMINISTRATOR: {{ include "op.adminEmail" . | quote }}
+        DISABLE_HTTPS: "true"
+        SSL_CERTIFICATE_GENERATION: "self-signed"
+        SETTING_SECURE_PROXY_SSL_HEADER: "('HTTP_X_FORWARDED_PROTO', 'https')"
+        LOADBALANCER_IPS: "0.0.0.0/0"
+        SETTING_CSRF_TRUSTED_ORIGINS: {{ printf "[\"https://%s\"]" (include "op.svcHost" (list . "chat")) | quote }}
+        SETTING_SOCIAL_AUTH_REDIRECT_IS_HTTPS: "True"
+        SETTING_EMAIL_HOST: {{ include "op.smtpHost" . | quote }}
+        SETTING_EMAIL_HOST_PORT: {{ include "op.smtpPort" . | quote }}
+        SETTING_EMAIL_USE_TLS: "false"
+        SETTING_DEFAULT_FROM_EMAIL: {{ printf "zulip@%s" (include "op.domain" .) | quote }}
+        SETTING_NOREPLY_EMAIL_ADDRESS: {{ printf "noreply@%s" (include "op.domain" .) | quote }}
+        ZULIP_AUTH_BACKENDS: "GenericOpenIdConnectBackend"
+        # Disable PKCE — confidential client doesn't need it, and the code_verifier
+        # gets lost between Zulip's authorization redirect and callback.
+        SETTING_SOCIAL_AUTH_OIDC_PKCE_ENABLED: "False"
+        # Allow OIDC users to sign up without invitation
+        SETTING_INVITATION_REQUIRED: "False"
+        OIDC_CLIENT_ID:
+          valueFrom:
+            secretKeyRef:
+              name: zulip-secrets
+              key: oidc-client-id
+        OIDC_CLIENT_SECRET:
+          valueFrom:
+            secretKeyRef:
+              name: zulip-secrets
+              key: oidc-client-secret
+        SETTING_SOCIAL_AUTH_OIDC_ENABLED_IDPS: >-
+          {"forgejo":{"oidc_url":{{ include "op.forgejoUrl" . | quote }},"display_name":"Forgejo","display_icon":None,"auto_signup":True,"client_id":"$(OIDC_CLIENT_ID)","secret":"$(OIDC_CLIENT_SECRET)"}}
+      persistence:
+        enabled: true
+        size: 10Gi
+    # Use platform CNPG PostgreSQL cluster
+    postgresql:
+      enabled: false
+    externalPostgresql:
+      host: "postgres-rw.postgres.svc.cluster.local"
+      port: 5432
+      database: "zulip"
+      user: "zulip"
+      password:
+        valueFrom:
+          secretKeyRef:
+            name: zulip-db-credentials
+            key: password
+    # Bitnami subcharts for Zulip-internal services
+    rabbitmq:
+      enabled: true
+      auth:
+        username: zulip
+        password: {{ .Values.secrets.zulipRabbitmqPassword | quote }}
+      persistence:
+        enabled: false
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 50m
+        limits:
+          memory: 512Mi
+    memcached:
+      enabled: true
+      resources:
+        requests:
+          memory: 64Mi
+          cpu: 25m
+        limits:
+          memory: 256Mi
+    redis:
+      enabled: true
+      architecture: standalone
+      auth:
+        enabled: false
+      master:
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 25m
+          limits:
+            memory: 256Mi
+{{- end }}

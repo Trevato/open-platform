@@ -1,0 +1,83 @@
+{{/*
+Bootstrap RBAC — ServiceAccount, ClusterRole, ClusterRoleBinding.
+Created before the bootstrap Job so the pod can interact with K8s API.
+
+Hook weight -10 ensures this exists before the Job (weight 50).
+Delete policy is before-hook-creation only — the SA and RBAC must persist
+through the post-install phase so the Job can use them.
+*/}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "op.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "op.fullname" . }}-bootstrap
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+rules:
+  # Secrets: read admin creds, create/update OAuth2 client secrets
+  # ConfigMaps: update coredns-custom with Traefik IP
+  - apiGroups: [""]
+    resources: [secrets, configmaps]
+    verbs: [get, list, create, update, patch]
+  # Services: resolve Traefik ClusterIP for CoreDNS zone
+  # Pods: check readiness (kubectl wait)
+  # Namespaces: verify namespace existence before creating secrets
+  - apiGroups: [""]
+    resources: [services, pods, namespaces]
+    verbs: [get, list, watch]
+  # DaemonSets: detect Traefik hostNetwork mode
+  # Deployments: restart CoreDNS, OAuth2-Proxy after credential updates
+  # StatefulSets: restart Woodpecker after credential updates
+  - apiGroups: [apps]
+    resources: [daemonsets, deployments, statefulsets]
+    verbs: [get, list, patch]
+  # Nodes: fallback IP detection when ClusterIP unavailable
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [get, list]
+  # CRDs: check existence before applying CRD-dependent resources (Phase 0)
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    verbs: [get, list]
+  # CNPG: create/check Postgres Cluster (Phase 0)
+  - apiGroups: [postgresql.cnpg.io]
+    resources: [clusters]
+    verbs: [get, list, create, patch]
+  # Traefik: create TLSStore and Middleware CRDs (Phase 0)
+  - apiGroups: [traefik.io]
+    resources: [middlewares, tlsstores]
+    verbs: [get, list, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "op.fullname" . }}-bootstrap
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "op.fullname" . }}-bootstrap
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "op.fullname" . }}-bootstrap
+    namespace: {{ .Release.Namespace }}

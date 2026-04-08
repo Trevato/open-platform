@@ -1,0 +1,78 @@
+{{/*
+OAuth2-Proxy auth redirect — nginx + redirect page for PR preview auth.
+The Traefik Middleware CRDs are applied by the bootstrap Job after Traefik is installed.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: auth-redirect-page
+  namespace: oauth2-proxy
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>Redirecting...</title>
+      <script>
+        window.location.href = 'https://{{ include "op.svcHost" (list . "oauth2") }}/oauth2/start?rd=' + encodeURIComponent(window.location.href);
+      </script>
+    </head>
+    <body>
+      <p>Redirecting to sign in... <a href="https://{{ include "op.svcHost" (list . "oauth2") }}/oauth2/start">Click here</a> if not redirected.</p>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-redirect
+  namespace: oauth2-proxy
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-redirect
+  template:
+    metadata:
+      labels:
+        app: auth-redirect
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+      volumes:
+        - name: html
+          configMap:
+            name: auth-redirect-page
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-redirect
+  namespace: oauth2-proxy
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: auth-redirect
+  ports:
+    - port: 80
+      targetPort: 80

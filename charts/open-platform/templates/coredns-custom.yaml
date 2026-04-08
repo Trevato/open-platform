@@ -1,0 +1,36 @@
+{{/*
+CoreDNS custom zone — resolves *.{domain} to Traefik inside the cluster.
+Required for in-cluster services (oauth2-proxy, Flux) to reach Forgejo by domain name.
+
+The Traefik service ClusterIP is dynamic and not known at template render time.
+The bootstrap Job populates this ConfigMap with the correct IP after Traefik is running.
+This template creates the ConfigMap so Helm owns the resource lifecycle.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/resource-policy: keep
+    open-platform.sh/managed-by: bootstrap-job
+data: {}
+  {{/*
+  The bootstrap Job will update this ConfigMap with:
+
+  platform.server: |
+    {domain}:53 {
+      errors
+      cache 30
+      template IN A {
+        answer "{{ .Name }} 60 IN A <traefik-cluster-ip>"
+        fallthrough
+      }
+      template IN AAAA {
+        rcode NOERROR
+        fallthrough
+      }
+    }
+  */}}

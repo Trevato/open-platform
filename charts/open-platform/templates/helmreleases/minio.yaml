@@ -1,0 +1,50 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: minio
+  namespace: minio
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: minio
+      sourceRef:
+        kind: HelmRepository
+        name: minio
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    {{- if .Values.multinode.enabled }}
+    nodeSelector:
+      open-platform.sh/node-role: infra
+    {{- end }}
+    mode: standalone
+    replicas: 1
+    existingSecret: minio-credentials
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        memory: 256Mi
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - {{ include "op.svcHost" (list . "s3") }}
+    consoleIngress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - {{ include "op.svcHost" (list . "minio") }}
+{{- end }}

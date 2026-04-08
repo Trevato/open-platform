@@ -1,0 +1,72 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: woodpecker
+  namespace: woodpecker
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: woodpecker
+      sourceRef:
+        kind: HelmRepository
+        name: woodpecker
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    server:
+      enabled: true
+      {{- if .Values.multinode.enabled }}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: open-platform.sh/node-role
+                    operator: In
+                    values:
+                      - infra
+      {{- end }}
+      env:
+        WOODPECKER_FORGEJO: "true"
+        WOODPECKER_FORGEJO_URL: {{ include "op.forgejoUrl" . | quote }}
+        WOODPECKER_FORGEJO_SKIP_VERIFY: {{ include "op.skipTlsVerify" . | quote }}
+        WOODPECKER_CLONE_INSECURE_SKIP_VERIFY: {{ include "op.skipTlsVerify" . | quote }}
+        WOODPECKER_HOST: {{ include "op.svcUrl" (list . "ci") | quote }}
+        WOODPECKER_ADMIN: {{ include "op.adminUser" . | quote }}
+        WOODPECKER_OPEN: "false"
+      extraSecretNamesForEnvFrom:
+        - woodpecker-secrets
+      persistentVolume:
+        enabled: true
+        size: 10Gi
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        hosts:
+          - host: {{ include "op.svcHost" (list . "ci") }}
+            paths:
+              - path: /
+                pathType: Prefix
+    agent:
+      enabled: true
+      replicaCount: 1
+      env:
+        WOODPECKER_BACKEND: kubernetes
+        WOODPECKER_BACKEND_K8S_NAMESPACE: woodpecker
+        WOODPECKER_BACKEND_K8S_VOLUME_SIZE: "5G"
+        WOODPECKER_MAX_WORKFLOWS: "4"
+      extraSecretNamesForEnvFrom:
+        - woodpecker-secrets
+{{- end }}

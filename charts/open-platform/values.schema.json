@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["domain"],
+  "properties": {
+    "domain": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Platform domain (e.g., open-platform.sh)"
+    },
+    "admin": {
+      "type": "object",
+      "properties": {
+        "username": {
+          "type": "string",
+          "default": "opadmin"
+        },
+        "email": {
+          "type": "string"
+        }
+      }
+    },
+    "servicePrefix": {
+      "type": "string"
+    },
+    "tls": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["selfsigned", "letsencrypt", "cloudflare"],
+          "default": "selfsigned"
+        },
+        "email": {
+          "type": "string"
+        },
+        "ca": {
+          "type": "object",
+          "properties": {
+            "cert": { "type": "string" },
+            "key": { "type": "string" }
+          }
+        },
+        "wildcard": {
+          "type": "object",
+          "properties": {
+            "cert": { "type": "string" },
+            "key": { "type": "string" }
+          }
+        }
+      }
+    },
+    "cloudflare": {
+      "type": "object",
+      "properties": {
+        "accountTag": { "type": "string" },
+        "tunnelId": { "type": "string" },
+        "tunnelSecret": { "type": "string" }
+      }
+    },
+    "smtp": {
+      "type": "object",
+      "properties": {
+        "external": { "type": "boolean", "default": false },
+        "host": { "type": "string" },
+        "port": { "type": "integer", "default": 587 },
+        "username": { "type": "string" },
+        "password": { "type": "string" },
+        "from": { "type": "string" }
+      }
+    },
+    "services": {
+      "type": "object",
+      "properties": {
+        "jitsi": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "allowGuests": { "type": "boolean", "default": true },
+            "jvbAdvertiseIp": { "type": "string" }
+          }
+        },
+        "zulip": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "pgadmin": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false }
+          }
+        }
+      }
+    },
+    "infrastructure": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["bundled", "external"],
+          "default": "bundled"
+        }
+      }
+    },
+    "network": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["host", "loadbalancer"],
+          "default": "host"
+        },
+        "traefikIp": { "type": "string" },
+        "addressPool": { "type": "string" },
+        "interface": { "type": "string" }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "properties": {
+        "forgejoAdminPassword": { "type": "string" },
+        "forgejoDbPassword": { "type": "string" },
+        "minioRootPassword": { "type": "string" },
+        "woodpeckerAgentSecret": { "type": "string" },
+        "oauth2ProxyCookieSecret": { "type": "string" },
+        "betterAuthSecret": { "type": "string" },
+        "jitsiJwtSecret": { "type": "string" },
+        "zulipSecretKey": { "type": "string" },
+        "zulipRabbitmqPassword": { "type": "string" },
+        "zulipDbPassword": { "type": "string" }
+      }
+    },
+    "multinode": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "properties": {
+        "traefik": { "type": "object" },
+        "cnpg": { "type": "object" },
+        "minio": { "type": "object" },
+        "forgejo": { "type": "object" },
+        "woodpecker": { "type": "object" },
+        "oauth2Proxy": { "type": "object" },
+        "mailpit": { "type": "object" },
+        "jitsi": { "type": "object" },
+        "zulip": { "type": "object" },
+        "pgadmin": { "type": "object" },
+        "certManager": { "type": "object" },
+        "metallb": { "type": "object" }
+      }
+    },
+    "bootstrap": {
+      "type": "object",
+      "properties": {
+        "image": { "type": "string" },
+        "repoUrl": { "type": "string" },
+        "repoBranch": { "type": "string" }
+      }
+    }
+  }
+}

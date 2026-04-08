@@ -1,0 +1,37 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: forgejo-auth
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ include "op.adminUser" . }}
+  {{- $forgejoSecret := lookup "v1" "Secret" "forgejo" "forgejo-admin-credentials" }}
+  {{- if $forgejoSecret }}
+  password: {{ index $forgejoSecret.data "password" | b64dec }}
+  {{- else }}
+  password: {{ .Values.secrets.forgejoAdminPassword | default (randAlphaNum 32) }}
+  {{- end }}
+{{- if and (ne .Values.tls.mode "letsencrypt") .Values.tls.ca.cert }}
+data:
+  ca.crt: {{ .Values.tls.ca.cert }}
+{{- end }}
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: open-platform
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 1m
+  url: https://{{ include "op.svcHost" (list . "forgejo") }}/system/open-platform.git
+  ref:
+    branch: main
+  secretRef:
+    name: forgejo-auth
+{{- end }}

@@ -1,0 +1,149 @@
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: traefik
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://traefik.github.io/charts
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cnpg
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://cloudnative-pg.github.io/charts
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: minio
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://charts.min.io/
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: woodpecker
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://woodpecker-ci.org/
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: oauth2-proxy
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://oauth2-proxy.github.io/manifests
+---
+{{- if not .Values.smtp.external }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jouve
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://jouve.github.io/charts
+---
+{{- end }}
+{{- if .Values.services.jitsi.enabled }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jitsi
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://jitsi-contrib.github.io/jitsi-helm/
+---
+{{- end }}
+{{- if .Values.services.pgadmin.enabled }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: runix
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://helm.runix.net
+---
+{{- end }}
+{{- if eq (include "op.tlsMode" .) "letsencrypt" }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jetstack
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://charts.jetstack.io
+---
+{{- end }}
+{{- if eq .Values.network.mode "loadbalancer" }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: metallb
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: https://metallb.github.io/metallb
+---
+{{- end }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: forgejo
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: oci://code.forgejo.org/forgejo-helm/forgejo
+  ref:
+    semver: "16.x"
+---
+{{- if .Values.services.zulip.enabled }}
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: zulip
+  namespace: flux-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  interval: 12h
+  url: oci://ghcr.io/zulip/helm-charts/zulip
+  ref:
+    tag: "1.11.57"
+{{- end }}
+{{- end }}
