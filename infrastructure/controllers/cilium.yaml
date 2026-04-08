@@ -1,0 +1,46 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: cilium
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://helm.cilium.io/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: cilium
+  namespace: kube-system
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: cilium
+      version: "1.16.x"
+      sourceRef:
+        kind: HelmRepository
+        name: cilium
+        namespace: flux-system
+  install:
+    createNamespace: true
+  values:
+    operator:
+      replicas: 1
+    ipam:
+      mode: kubernetes
+    routingMode: native
+    kubeProxyReplacement: true
+    k8sServiceHost: "10.0.0.10"
+    k8sServicePort: "6443"
+    ipv4NativeRoutingCIDR: "10.42.0.0/16"
+    enableIPv4Masquerade: true
+    bpf:
+      masquerade: true
+    hubble:
+      enabled: true
+      relay:
+        enabled: true
+      ui:
+        enabled: true
