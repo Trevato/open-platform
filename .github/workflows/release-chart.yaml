@@ -35,6 +35,7 @@ jobs:
       - name: Package and push
         run: |
           VERSION=$(grep '^version:' charts/open-platform/Chart.yaml | awk '{print $2}')
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           helm package charts/open-platform
-          helm push open-platform-${VERSION}.tgz oci://ghcr.io/${{ github.repository_owner }}
-          echo "Published: oci://ghcr.io/${{ github.repository_owner }}/open-platform:${VERSION}"
+          helm push open-platform-${VERSION}.tgz oci://ghcr.io/${OWNER}
+          echo "Published: oci://ghcr.io/${OWNER}/open-platform:${VERSION}"
