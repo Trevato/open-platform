@@ -128,7 +128,9 @@ data:
     done
 
     # Generate self-signed wildcard TLS cert if needed
-    if [ "${TLS_MODE}" = "selfsigned" ]; then
+    # Both selfsigned and cloudflare modes use internal TLS (Traefik serves the cert).
+    # letsencrypt mode uses cert-manager instead.
+    if [ "${TLS_MODE}" != "letsencrypt" ]; then
       if kubectl get secret wildcard-tls -n kube-system >/dev/null 2>&1; then
         echo "Wildcard TLS cert already exists."
       else
@@ -180,6 +182,20 @@ data:
 
         rm -rf "${CERT_DIR}"
       fi
+    fi
+
+    # Distribute platform-ca to service namespaces (regardless of TLS mode)
+    # The CA may have been generated on a previous run or in selfsigned mode.
+    if kubectl get configmap platform-ca -n kube-system >/dev/null 2>&1; then
+      CA_DATA=$(kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}')
+      for ns in forgejo jitsi woodpecker pgadmin; do
+        if kubectl get ns "${ns}" >/dev/null 2>&1; then
+          kubectl create configmap platform-ca -n "${ns}" \
+            --from-literal=ca.crt="${CA_DATA}" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
+        fi
+      done
+      echo "Platform CA distributed to service namespaces."
     fi
 
     # Apply Traefik TLSStore and Middleware

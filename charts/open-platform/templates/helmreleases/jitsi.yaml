@@ -41,19 +41,27 @@ spec:
             paths: ["/"]
       extraEnvs:
         TOKEN_AUTH_URL: {{ printf "https://%s/room/{room}" (include "op.svcHost" (list . "meet-auth")) | quote }}
-      initContainers:
-        - name: build-ca-bundle
+      extraContainers:
+        - name: ca-bundle-builder
           image: alpine:3.22
           command: [sh, -c]
           args:
-            - cat /etc/ssl/certs/ca-certificates.crt /platform-ca/ca.crt > /custom-certs/ca-certificates.crt 2>/dev/null || cp /etc/ssl/certs/ca-certificates.crt /custom-certs/ca-certificates.crt
+            - |
+              cat /etc/ssl/certs/ca-certificates.crt /platform-ca/ca.crt > /custom-certs/ca-certificates.crt 2>/dev/null || cp /etc/ssl/certs/ca-certificates.crt /custom-certs/ca-certificates.crt
+              sleep infinity
           volumeMounts:
             - name: platform-ca
               mountPath: /platform-ca
               readOnly: true
             - name: custom-certs
               mountPath: /custom-certs
-      extraContainers:
+          resources:
+            requests:
+              cpu: 1m
+              memory: 4Mi
+            limits:
+              cpu: 10m
+              memory: 16Mi
         - name: jitsi-oidc
           image: ghcr.io/marcelcoding/jitsi-openid:latest
           imagePullPolicy: Always

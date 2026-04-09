@@ -8,7 +8,7 @@ metadata:
     {{- include "op.labels" . | nindent 4 }}
 spec:
   interval: 15m
-  timeout: 5m
+  timeout: 15m
   chart:
     spec:
       chart: pgadmin4
@@ -74,13 +74,15 @@ spec:
         readOnly: true
     extraVolumes:
       - name: platform-ca
-        secret:
-          secretName: platform-ca
+        configMap:
+          name: platform-ca
     extraVolumeMounts:
       - name: platform-ca
         mountPath: /etc/ssl/certs/platform-ca.crt
         subPath: ca.crt
         readOnly: true
+    startupProbe:
+      failureThreshold: 60
     resources:
       requests:
         memory: 128Mi

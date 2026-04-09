@@ -9,14 +9,10 @@ metadata:
 spec:
   interval: 15m
   timeout: 10m
-  chart:
-    spec:
-      chart: zulip
-      version: "1.11.57"
-      sourceRef:
-        kind: HelmRepository
-        name: zulip
-        namespace: flux-system
+  chartRef:
+    kind: OCIRepository
+    name: zulip
+    namespace: flux-system
   install:
     createNamespace: true
     remediation:
@@ -106,7 +102,8 @@ spec:
       enabled: true
       auth:
         username: zulip
-        password: {{ .Values.secrets.zulipRabbitmqPassword | quote }}
+        existingPasswordSecret: zulip-secrets
+        existingSecretPasswordKey: rabbitmq-password
       persistence:
         enabled: false
       resources:
