@@ -45,13 +45,16 @@ done
 # Clean up pods that may linger
 kubectl delete pods --all -n postgres --force --grace-period=0 2>/dev/null || true
 
-# ── Phase 4: Helmfile destroy ───────────────────────────────────────────────
+# ── Phase 4: Destroy helm releases ──────────────────────────────────────────
 
 echo "Phase 4: Destroying helm releases..."
-helmfile destroy 2>/dev/null || true
+# Uninstall the platform chart (removes Flux-managed HelmReleases)
+helm uninstall open-platform -n open-platform --timeout=60s 2>/dev/null || true
+# Uninstall Flux controllers
+helm uninstall flux2 -n flux-system --timeout=60s 2>/dev/null || true
 
 # Clean up any stuck helm release secrets
-for ns in forgejo woodpecker minio oauth2-proxy cnpg-system flux-system kube-system; do
+for ns in forgejo woodpecker minio oauth2-proxy cnpg-system flux-system kube-system jitsi zulip mailpit pgadmin headlamp cloudflare open-platform; do
   kubectl delete secrets -n "$ns" -l owner=helm 2>/dev/null || true
 done
 
@@ -74,7 +77,7 @@ done
 # ── Phase 6: Force-finalize stuck namespaces ────────────────────────────────
 
 echo "Phase 6: Cleaning up namespaces..."
-PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo woodpecker minio oauth2-proxy"
+PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo woodpecker minio oauth2-proxy jitsi zulip mailpit pgadmin headlamp cloudflare open-platform op-system-console op-system-op-api"
 
 for ns in $PLATFORM_NAMESPACES; do
   # Delete namespace (may already be terminating)
@@ -111,11 +114,25 @@ for pv in $(kubectl get pv -o name 2>/dev/null); do
   kubectl delete "$pv" --timeout=5s 2>/dev/null || true
 done
 
-# ── Phase 8: Clean cluster-scoped resources ────────────────────────────────
+# ── Phase 8: Clean kube-system platform resources ───────────────────────────
 
-echo "Phase 8: Cleaning up cluster-scoped resources..."
-kubectl delete clusterrole woodpecker-deployer minecraft-manager 2>/dev/null || true
-kubectl delete clusterrolebinding woodpecker-deployer woodpecker-pipeline-deployer oidc-admin 2>/dev/null || true
+echo "Phase 8: Cleaning up kube-system platform resources..."
+# CoreDNS custom zones (stale entries cause zone conflicts on redeploy)
+kubectl delete configmap coredns-custom -n kube-system 2>/dev/null || true
+kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+# Platform CA and TLS secrets
+kubectl delete secret platform-ca-key wildcard-tls -n kube-system 2>/dev/null || true
+kubectl delete configmap platform-ca -n kube-system 2>/dev/null || true
+# Distribute CA cleanup to service namespaces
+for ns in forgejo jitsi woodpecker pgadmin; do
+  kubectl delete configmap platform-ca -n "$ns" 2>/dev/null || true
+done
+
+# ── Phase 9: Clean cluster-scoped resources ────────────────────────────────
+
+echo "Phase 9: Cleaning up cluster-scoped resources..."
+kubectl delete clusterrole woodpecker-deployer minecraft-manager op-api 2>/dev/null || true
+kubectl delete clusterrolebinding woodpecker-deployer woodpecker-pipeline-deployer oidc-admin op-api 2>/dev/null || true
 
 # ── Done ────────────────────────────────────────────────────────────────────
 

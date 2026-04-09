@@ -278,6 +278,17 @@ data:
       curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
     }
 
+    # Sync DB user passwords — postInitSQL creates roles without passwords,
+    # so we set them from the K8s secrets on every run.
+    {{- if .Values.services.zulip.enabled }}
+    ZULIP_DB_PASS=$(kubectl get secret zulip-db-credentials -n zulip \
+      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+    if [ -n "${ZULIP_DB_PASS}" ]; then
+      kubectl exec -n postgres postgres-1 -c postgres -- \
+        psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>/dev/null || true
+    fi
+    {{- end }}
+
     echo "Phase 0 complete: Infrastructure ready."
 
     # ============================================================================
