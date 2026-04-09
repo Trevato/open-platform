@@ -48,6 +48,14 @@ Admin endpoints (`/api/v1/platform/*`) additionally verify the user is a Forgejo
 | GET    | `/api/v1/orgs` | List orgs               |
 | POST   | `/api/v1/orgs` | Create org (admin only) |
 
+### Organization Domains
+
+| Method | Path                        | Description                  |
+| ------ | --------------------------- | ---------------------------- |
+| GET    | `/api/v1/orgs/domains`      | List available domains       |
+| GET    | `/api/v1/orgs/:name/domain` | Get domain assigned to org   |
+| PUT    | `/api/v1/orgs/:name/domain` | Assign domain to org (admin) |
+
 ### Repositories
 
 | Method | Path                                | Description                 |
@@ -118,13 +126,20 @@ Admin endpoints (`/api/v1/platform/*`) additionally verify the user is a Forgejo
 
 ### Platform (admin only)
 
-| Method | Path                        | Description                     |
-| ------ | --------------------------- | ------------------------------- |
-| GET    | `/api/v1/platform/services` | Platform service health         |
-| GET    | `/api/v1/platform/users`    | List all Forgejo users          |
-| POST   | `/api/v1/platform/users`    | Create Forgejo user             |
-| GET    | `/api/v1/platform/apps`     | List deployed apps and orgs     |
-| POST   | `/api/v1/platform/apps`     | Create app from system template |
+| Method | Path                                       | Description                     |
+| ------ | ------------------------------------------ | ------------------------------- |
+| GET    | `/api/v1/platform/services`                | Platform service health         |
+| GET    | `/api/v1/platform/users`                   | List all Forgejo users          |
+| POST   | `/api/v1/platform/users`                   | Create Forgejo user             |
+| GET    | `/api/v1/platform/apps`                    | List deployed apps and orgs     |
+| POST   | `/api/v1/platform/apps`                    | Create app from system template |
+| POST   | `/api/v1/platform/apps/:org/:repo/archive` | Archive app (soft delete)       |
+| POST   | `/api/v1/platform/apps/:org/:repo/restore` | Restore archived app            |
+| POST   | `/api/v1/platform/apps/:org/:repo/stop`    | Stop app (scale to 0)           |
+| POST   | `/api/v1/platform/apps/:org/:repo/start`   | Start app (scale to 1)          |
+| DELETE | `/api/v1/platform/apps/:org/:repo`         | Permanently delete app          |
+| GET    | `/api/v1/platform/config`                  | Read platform configuration     |
+| PATCH  | `/api/v1/platform/config`                  | Update platform configuration   |
 
 ## Error Format
 

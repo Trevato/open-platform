@@ -48,13 +48,20 @@ When op-api calls Forgejo on behalf of a user (repos, issues, PRs, files, branch
 
 All routes under `/platform` require admin access (403 if not admin):
 
-| Endpoint                 | Purpose                     |
-| ------------------------ | --------------------------- |
-| `GET /platform/services` | Platform service health     |
-| `GET /platform/users`    | List all Forgejo users      |
-| `POST /platform/users`   | Create a Forgejo user       |
-| `GET /platform/apps`     | List deployed apps and orgs |
-| `POST /platform/apps`    | Create app from template    |
+| Endpoint                                 | Purpose                     |
+| ---------------------------------------- | --------------------------- |
+| `GET /platform/services`                 | Platform service health     |
+| `GET /platform/users`                    | List all Forgejo users      |
+| `POST /platform/users`                   | Create a Forgejo user       |
+| `GET /platform/apps`                     | List deployed apps and orgs |
+| `POST /platform/apps`                    | Create app from template    |
+| `POST /platform/apps/:org/:repo/archive` | Archive app (soft delete)   |
+| `POST /platform/apps/:org/:repo/restore` | Restore archived app        |
+| `POST /platform/apps/:org/:repo/stop`    | Stop app (scale to 0)       |
+| `POST /platform/apps/:org/:repo/start`   | Start app (scale to 1)      |
+| `DELETE /platform/apps/:org/:repo`       | Permanently delete app      |
+| `GET /platform/config`                   | Read platform configuration |
+| `PATCH /platform/config`                 | Update platform config      |
 
 Org creation also checks `user.isAdmin` directly:
 

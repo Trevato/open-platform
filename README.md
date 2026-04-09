@@ -1,6 +1,6 @@
 # Open Platform
 
-Self-hosted developer platform. One command deploys Git hosting, CI/CD, a Kubernetes dashboard, object storage, a management console, and PostgreSQL -- all authenticated through a single identity provider and served on one wildcard domain.
+Self-hosted developer platform. One command deploys Git hosting, CI/CD, object storage, video conferencing, team messaging, a management console, and PostgreSQL -- all authenticated through a single identity provider and served on one wildcard domain.
 
 ```
 *.yourdomain.com
@@ -10,6 +10,9 @@ Self-hosted developer platform. One command deploys Git hosting, CI/CD, a Kubern
   s3.        -- S3-compatible API
   console.   -- Management dashboard
   api.       -- REST API + MCP server (43 tools for AI agents)
+  meet.      -- Video conferencing (Jitsi Meet)
+  chat.      -- Team messaging (Zulip)
+  mail.      -- Email testing (Mailpit, dev mode)
   {app}.     -- Your apps (push-to-deploy from template)
 ```
 
@@ -29,6 +32,8 @@ After bootstrap, Flux GitOps takes over. Push to the platform repo on Forgejo an
 
 **MCP Server.** 43 tools across 10 categories give AI agents programmatic access to repos, issues, PRs, pipelines, and apps. Streamable HTTP transport with session management.
 
+**Multi-domain.** Assign different domains to different orgs. Apps deploy on their org's domain. Cloudflare Tunnel routes are configured automatically for each domain.
+
 **CLI.** The `op` command handles everything: apps, PRs, issues, pipelines, users. Authenticates via Forgejo personal access token.
 
 ## Architecture
@@ -40,6 +45,9 @@ Browser --> Traefik (ingress, wildcard DNS)
               |-- minio / s3 --> MinIO (S3-compatible object storage)
               |-- console    --> Console (management dashboard)
               |-- api        --> Platform API (REST + MCP, 43 AI tools)
+              |-- meet       --> Jitsi Meet (video conferencing)
+              |-- chat       --> Zulip (team messaging)
+              |-- mail       --> Mailpit (dev email)
               |-- {apps}     --> Apps (from template, push-to-deploy)
 
 Flux (GitOps) --> system/open-platform on Forgejo --> reconciles all services
@@ -58,6 +66,10 @@ All services authenticate through Forgejo as the single OIDC/OAuth2 identity pro
 | MinIO        | `minio.{domain}` / `s3.{domain}` | S3-compatible object storage                    |
 | Console      | `console.{domain}`               | Platform management dashboard                   |
 | Platform API | `api.{domain}`                   | REST + MCP (43 tools)                           |
+| Jitsi Meet   | `meet.{domain}`                  | Video conferencing (OIDC via Forgejo)           |
+| Zulip        | `chat.{domain}`                  | Team messaging (OIDC via Forgejo)               |
+| Mailpit      | `mail.{domain}`                  | Dev email catch-all (disabled in production)    |
+| OAuth2-Proxy | `oauth2.{domain}`                | Auth gate for PR preview environments           |
 | PostgreSQL   | internal                         | CNPG-managed database cluster                   |
 | Flux         | internal                         | GitOps -- self-managing after bootstrap         |
 
@@ -210,10 +222,23 @@ admin:
 
 tls:
   mode: letsencrypt # letsencrypt | selfsigned | cloudflare
-  email: admin@example.com
-```
 
-Optional sections: `service_prefix` (subdomain prefix), `cloudflare` (tunnel config).
+
+# Optional: additional domains for multi-org deployments
+# extraDomains:
+#   - name: client-a.com
+#     tls:
+#       mode: cloudflare
+#   - name: client-b.com
+#     tls:
+#       mode: cloudflare
+
+# Optional: Cloudflare Tunnel (when tls.mode is cloudflare)
+# cloudflare:
+#   accountTag: ""
+#   tunnelId: ""
+#   tunnelSecret: ""
+```
 
 ## Makefile Targets
 

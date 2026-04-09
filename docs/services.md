@@ -18,20 +18,20 @@ Detailed configuration, secrets, and endpoints for each platform service. For ar
 
 ## Woodpecker (CI/CD)
 
-| Key          | Value                                                                                                                        |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Config       | `platform/apps/woodpecker.yaml` (Flux HelmRelease)                                                                           |
-| Namespace    | `woodpecker`                                                                                                                 |
-| Domain       | `ci.{PLATFORM_DOMAIN}`                                                                                                       |
-| Helm chart   | `woodpecker/woodpecker`                                                                                                      |
-| Auth         | Forgejo OAuth2. Redirect URI: `https://ci.{PLATFORM_DOMAIN}/authorize`                                                       |
-| Backend      | Kubernetes-native (pipelines run as pods)                                                                                    |
-| Forgejo URL  | `WOODPECKER_FORGEJO_URL: "https://forgejo.{PLATFORM_DOMAIN}"`                                                                |
-| Secret       | `woodpecker-secrets` — `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`                   |
-| RBAC         | `woodpecker-deployer` ClusterRole — deployments, services, secrets, configmaps, pods, ingresses, jobs, namespaces, pods/exec |
-| Image builds | Kaniko (`woodpeckerci/plugin-kaniko`), cache enabled                                                                         |
-| Auto-setup   | Bootstrap Job — programmatic login, repo activation, org secrets                                                             |
-| Org secrets  | `registry_username`, `registry_token`, `platform_domain`, `registry_host` (system org level)                                 |
+| Key          | Value                                                                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config       | `platform/apps/woodpecker.yaml` (Flux HelmRelease)                                                                                                                                                   |
+| Namespace    | `woodpecker`                                                                                                                                                                                         |
+| Domain       | `ci.{PLATFORM_DOMAIN}`                                                                                                                                                                               |
+| Helm chart   | `woodpecker/woodpecker`                                                                                                                                                                              |
+| Auth         | Forgejo OAuth2. Redirect URI: `https://ci.{PLATFORM_DOMAIN}/authorize`                                                                                                                               |
+| Backend      | Kubernetes-native (pipelines run as pods)                                                                                                                                                            |
+| Forgejo URL  | `WOODPECKER_FORGEJO_URL: "https://forgejo.{PLATFORM_DOMAIN}"`                                                                                                                                        |
+| Secret       | `woodpecker-secrets` — `WOODPECKER_AGENT_SECRET`, `WOODPECKER_FORGEJO_CLIENT`, `WOODPECKER_FORGEJO_SECRET`                                                                                           |
+| RBAC         | `woodpecker-deployer` ClusterRole — deployments, services, secrets, configmaps, pods, ingresses, jobs, namespaces, pods/exec                                                                         |
+| Image builds | Kaniko (`woodpeckerci/plugin-kaniko`), cache enabled                                                                                                                                                 |
+| Auto-setup   | Bootstrap Job — programmatic login, repo activation, org secrets                                                                                                                                     |
+| Org secrets  | `registry_username`, `registry_token`, `forgejo_admin_token`, `platform_domain`, `registry_host`, `registry_push_host`, `service_prefix`, `extra_domains` (auto-provisioned per org on app creation) |
 
 ## MinIO (Object Storage)
 
@@ -46,15 +46,15 @@ Detailed configuration, secrets, and endpoints for each platform service. For ar
 
 ## PostgreSQL (CNPG)
 
-| Key             | Value                                                          |
-| --------------- | -------------------------------------------------------------- |
-| Config          | `platform/infrastructure/configs/postgres-cluster.yaml` (Flux) |
-| Namespace       | `postgres`                                                     |
-| Access          | `postgres-rw.postgres.svc.cluster.local:5432`                  |
-| Instances       | 1 (non-HA)                                                     |
-| Databases       | `forgejo`, `platform_ledger`, `product_garden`                 |
-| Resources       | 256Mi-1Gi memory, 100m-1000m CPU, 10Gi storage                 |
-| Max connections | 200                                                            |
+| Key             | Value                                                                        |
+| --------------- | ---------------------------------------------------------------------------- |
+| Config          | `platform/infrastructure/configs/postgres-cluster.yaml` (Flux)               |
+| Namespace       | `postgres`                                                                   |
+| Access          | `postgres-rw.postgres.svc.cluster.local:5432`                                |
+| Instances       | 1 (non-HA)                                                                   |
+| Databases       | `forgejo`, `platform_ledger`, `zulip` (plus per-app databases created by CI) |
+| Resources       | 256Mi-1Gi memory, 100m-1000m CPU, 10Gi storage                               |
+| Max connections | 200                                                                          |
 
 ## OAuth2-Proxy (Preview Auth)
 
@@ -81,6 +81,55 @@ Detailed configuration, secrets, and endpoints for each platform service. For ar
 | Helm chart | `fluxcd-community/flux2`                                                           |
 | Role       | Watches `system/open-platform` on Forgejo, reconciles all HelmReleases + manifests |
 | Secret     | `forgejo-auth` (flux-system ns) — admin credentials for git access                 |
+
+## Jitsi Meet (Video Conferencing)
+
+| Key        | Value                                                    |
+| ---------- | -------------------------------------------------------- |
+| Config     | `platform/apps/jitsi.yaml` (Flux HelmRelease)            |
+| Namespace  | `jitsi`                                                  |
+| Domain     | `meet.{PLATFORM_DOMAIN}`                                 |
+| Helm chart | `jitsi/jitsi-meet`                                       |
+| Auth       | JWT via `jitsi-openid` OIDC adapter (sidecar, port 3000) |
+| Token URL  | `https://meet-auth.{PLATFORM_DOMAIN}/room/{room}`        |
+| Secret     | `jitsi-oidc` — `JITSI_SECRET`, OIDC client credentials   |
+| Enabled    | Default: true. Toggle: `jitsi.enabled: false` in values  |
+
+## Zulip (Team Messaging)
+
+| Key        | Value                                                                                                                  |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Config     | `platform/apps/zulip.yaml` (Flux HelmRelease)                                                                          |
+| Namespace  | `zulip`                                                                                                                |
+| Domain     | `chat.{PLATFORM_DOMAIN}`                                                                                               |
+| Helm chart | `zulip/zulip`                                                                                                          |
+| Auth       | OIDC via Forgejo (python-social-auth, PKCE disabled)                                                                   |
+| Database   | `zulip` on `postgres-rw.postgres.svc.cluster.local:5432`                                                               |
+| Secrets    | `zulip-secrets` — secret key, RabbitMQ password; `zulip-db-credentials` — DB password; `zulip-oidc` — client ID/secret |
+| Enabled    | Default: true. Toggle: `zulip.enabled: false` in values                                                                |
+
+## Mailpit (Dev Email)
+
+| Key        | Value                                                            |
+| ---------- | ---------------------------------------------------------------- |
+| Config     | `platform/apps/mailpit.yaml` (Flux HelmRelease)                  |
+| Namespace  | `mailpit`                                                        |
+| Domain     | `mail.{PLATFORM_DOMAIN}`                                         |
+| Helm chart | `jouve/mailpit`                                                  |
+| Role       | SMTP catch-all for dev/staging. Disabled when external SMTP set. |
+| SMTP       | `mailpit-smtp.mailpit.svc.cluster.local:1025` (internal)         |
+| Enabled    | Default: true (skipped when `smtp.external: true`)               |
+
+## pgAdmin (Database Management)
+
+| Key        | Value                                                     |
+| ---------- | --------------------------------------------------------- |
+| Config     | `platform/apps/pgadmin.yaml` (Flux HelmRelease)           |
+| Namespace  | `pgadmin`                                                 |
+| Domain     | `db.{PLATFORM_DOMAIN}`                                    |
+| Helm chart | `runix/pgadmin4`                                          |
+| Auth       | OIDC via Forgejo                                          |
+| Enabled    | Default: false. Toggle: `pgadmin.enabled: true` in values |
 
 ## Secrets Inventory
 

@@ -215,7 +215,7 @@ After deploy completes, all services are live at `*.{domain}`:
 | Console    | `console.{domain}`               | Management dashboard                                      |
 | API        | `api.{domain}`                   | REST API and MCP server                                   |
 
-The `system` org on Forgejo contains pre-deployed example apps: social, minecraft, arcade, events, and hub.
+The `system` org on Forgejo contains the platform repos (open-platform, template, console, op-api).
 
 ## First Login
 
@@ -270,7 +270,7 @@ The `op` CLI authenticates via Forgejo personal access token:
 op login https://api.{domain} --token <forgejo-pat>
 ```
 
-Config is saved to `~/.op/config.yaml`. Environment variables `OP_API_URL` and `FORGEJO_TOKEN` also work as an alternative to `op login`. Use `-k` for self-signed TLS deployments.
+Config is saved to `~/.op/config.yaml`. Environment variables `OP_API_URL` and `FORGEJO_TOKEN` also work as an alternative to `op login`. For self-signed TLS deployments, trust the CA system-wide or prefix commands with `NODE_TLS_REJECT_UNAUTHORIZED=0`.
 
 Common commands:
 
@@ -292,7 +292,7 @@ op pipeline logs org/repo N               # Pipeline logs
 
 ```
 
-Full command reference: [docs/cli.md](cli.md)
+Full command reference: [CLI](cli.md)
 
 ## MCP for AI Agents
 
@@ -316,7 +316,7 @@ Replace `{domain}` with your platform domain and `<your-forgejo-pat>` with a val
 
 API documentation is available at `https://api.{domain}/swagger`.
 
-Full tool catalog: [docs/mcp.md](mcp.md)
+Full tool catalog: [MCP Server](mcp.md)
 
 ## Configuration Reference
 
@@ -327,25 +327,31 @@ Example configuration with all options:
 ```yaml
 domain: yourdomain.com
 
-# Optional: prefix for service subdomains (multi-tenant mode)
-# service_prefix: myteam-
-
 admin:
   username: opadmin
   email: admin@yourdomain.com
 
 tls:
-  # letsencrypt — real certs via cert-manager (recommended for public deployments)
-  # selfsigned  — auto-generated CA (for local development)
-  # cloudflare  — TLS at Cloudflare edge via tunnel
-  mode: letsencrypt
+  mode: letsencrypt # letsencrypt | selfsigned | cloudflare
   email: admin@yourdomain.com
 
-# Optional: Cloudflare tunnel (only when tls.mode is cloudflare)
+# Optional: additional domains for multi-org deployments
+# extraDomains:
+#   - name: other-domain.com
+#     tls:
+#       mode: cloudflare
+
+# Optional: Cloudflare Tunnel
 # cloudflare:
-#   account_tag: ""
-#   tunnel_id: ""
-#   tunnel_secret: ""
+#   accountTag: ""
+#   tunnelId: ""
+#   tunnelSecret: ""
+
+# Optional: disable services
+# jitsi:
+#   enabled: false
+# zulip:
+#   enabled: false
 ```
 
 See `open-platform.yaml.example` for the canonical reference.

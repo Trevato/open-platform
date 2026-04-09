@@ -4,6 +4,27 @@
 
 domain: myplatform.example.com
 
+# tls:
+#   mode: letsencrypt            # letsencrypt | selfsigned | cloudflare
+#   email: admin@example.com     # required for letsencrypt
+
+# Additional domains for multi-org deployments.
+# Each org can be assigned a domain via the API or console.
+# Apps in that org deploy on the assigned domain.
+# extraDomains:
+#   - name: other-domain.com
+#     tls:
+#       mode: cloudflare
+#   - name: another-domain.com
+#     tls:
+#       mode: letsencrypt
+
+# Cloudflare Tunnel (when tls.mode is cloudflare)
+# cloudflare:
+#   accountTag: ""
+#   tunnelId: ""
+#   tunnelSecret: ""
+
 # admin:
 #   username: opadmin
 #   email: admin@example.com
@@ -39,9 +60,7 @@ domain: myplatform.example.com
 #             - cert-manager (if tls.mode=letsencrypt)
 #             - MetalLB (if network.mode=loadbalancer)
 #
-#           See docs/external-infrastructure.md for the full architecture
-#           and the nixos-k8s companion project for a reference
-#           infrastructure implementation.
+#           See docs/getting-started.md for setup details.
 #
 # infrastructure:
 #   mode: external

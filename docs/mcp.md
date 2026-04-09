@@ -4,7 +4,7 @@ Model Context Protocol server at `/mcp`. Streamable HTTP transport with session-
 
 ## Overview
 
-The MCP server runs as part of the `op-api` service. Each authenticated session gets its own `McpServer` instance with Forgejo and Woodpecker clients scoped to the user's token. Sessions expire after 30 minutes of inactivity and are cleaned up every 5 minutes.
+The MCP server runs as part of the `op-api` service. Each authenticated session gets its own `McpServer` instance with Forgejo and Woodpecker clients scoped to the user's token. Sessions expire after 4 hours of inactivity and are cleaned up every 5 minutes.
 
 ## Setup
 
@@ -39,7 +39,7 @@ Every request to `/mcp` requires a Bearer token in the `Authorization` header. T
 3. **Stream** -- GET to `/mcp` with the session ID to open an SSE stream for server-initiated messages.
 4. **Close** -- DELETE to `/mcp` with the session ID to terminate the session.
 
-Sessions have a 30-minute TTL. Stale sessions are closed automatically.
+Sessions have a 4-hour TTL. Stale sessions are closed automatically.
 
 ## Tool Catalog
 
