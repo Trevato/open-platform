@@ -233,7 +233,7 @@ data:
     # The CA may have been generated on this run, a previous run, or in selfsigned mode.
     if kubectl get configmap platform-ca -n kube-system >/dev/null 2>&1; then
       CA_DATA=$(kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}')
-      for ns in forgejo jitsi woodpecker pgadmin zulip; do
+      for ns in forgejo jitsi woodpecker pgadmin zulip minio; do
         if kubectl get ns "${ns}" >/dev/null 2>&1; then
           kubectl create configmap platform-ca -n "${ns}" \
             --from-literal=ca.crt="${CA_DATA}" \
@@ -399,6 +399,7 @@ data:
       "Zulip|https://${PREFIX}chat.${DOMAIN}/complete/oidc/|true"
       "MCP-Auth|https://${PREFIX}api.${DOMAIN}/oauth/callback|true"
       "pgAdmin|https://${PREFIX}db.${DOMAIN}/oauth2/authorize|true"
+      "MinIO|https://${PREFIX}minio.${DOMAIN}/oauth_callback|true"
     )
 
     # ── Fetch existing apps ────────────────────────────────────────────────────
@@ -664,6 +665,24 @@ data:
       fi
     else
       echo "Skipping pgAdmin secrets (pgadmin not enabled)."
+    fi
+
+    # -- MinIO OIDC secret --
+    if kubectl get ns minio >/dev/null 2>&1; then
+      if [ -n "${CLIENT_SECRETS[MinIO]}" ]; then
+        echo "Creating MinIO OIDC secret..."
+        apply_secret minio-oidc-credentials -n minio \
+          --from-literal=client-id="${CLIENT_IDS[MinIO]}" \
+          --from-literal=client-secret="${CLIENT_SECRETS[MinIO]}"
+      elif kubectl get secret minio-oidc-credentials -n minio >/dev/null 2>&1; then
+        echo "MinIO OIDC secret already exists."
+      else
+        echo "Warning: MinIO OAuth2 app exists but 'minio-oidc-credentials' secret is missing."
+        echo "Delete the app in Forgejo and re-run, or create the secret manually."
+        exit 1
+      fi
+    else
+      echo "Skipping MinIO OIDC secret (minio not enabled)."
     fi
 
     echo "Phase 2 complete: OAuth2 setup done."

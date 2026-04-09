@@ -47,4 +47,40 @@ spec:
       ingressClassName: traefik
       hosts:
         - {{ include "op.svcHost" (list . "minio") }}
+    oidc:
+      enabled: true
+      configUrl: "{{ include "op.forgejoUrl" . }}/.well-known/openid-configuration"
+      existingClientSecretName: "minio-oidc-credentials"
+      existingClientIdKey: "client-id"
+      existingClientSecretKey: "client-secret"
+      claimName: "groups"
+      scopes: "openid,profile,email,groups"
+      redirectUri: "https://{{ include "op.svcHost" (list . "minio") }}/oauth_callback"
+      displayName: "Forgejo"
+    environment:
+      MINIO_IDENTITY_OPENID_CLAIM_USERINFO: "on"
+    policies:
+      - name: system
+        statements:
+          - effect: Allow
+            resources:
+              - 'arn:aws:s3:::*'
+            actions:
+              - "s3:*"
+          - effect: Allow
+            resources:
+              - 'arn:aws:s3:::*'
+            actions:
+              - "admin:*"
+    {{- if ne (include "op.tlsMode" .) "letsencrypt" }}
+    extraVolumes:
+      - name: platform-ca
+        configMap:
+          name: platform-ca
+    extraVolumeMounts:
+      - name: platform-ca
+        mountPath: /etc/ssl/certs/platform-ca.crt
+        subPath: ca.crt
+        readOnly: true
+    {{- end }}
 {{- end }}
