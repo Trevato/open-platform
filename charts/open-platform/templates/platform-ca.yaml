@@ -11,6 +11,9 @@ Only applies when using self-signed certs (selfsigned or cloudflare mode).
 {{- if .Values.services.pgadmin.enabled }}
 {{- $namespaces = append $namespaces "pgadmin" }}
 {{- end }}
+{{- if .Values.services.zulip.enabled }}
+{{- $namespaces = append $namespaces "zulip" }}
+{{- end }}
 {{- range $ns := $namespaces }}
 ---
 apiVersion: v1

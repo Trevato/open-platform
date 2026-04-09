@@ -84,6 +84,70 @@ spec:
       persistence:
         enabled: true
         size: 10Gi
+    postSetup:
+      scripts:
+        {{- if ne (include "op.tlsMode" .) "letsencrypt" }}
+        install-platform-ca.sh: |
+          #!/bin/bash
+          # Install the platform CA so OIDC discovery and token exchange work
+          # against Forgejo's self-signed cert from inside the cluster.
+          {{- $ca := lookup "v1" "ConfigMap" "kube-system" "platform-ca" }}
+          {{- if and $ca $ca.data (index $ca.data "ca.crt") }}
+          cat > /usr/local/share/ca-certificates/platform-ca.crt << 'CERT'
+          {{- index $ca.data "ca.crt" | nindent 10 }}
+          CERT
+          {{- else }}
+          # CA not yet in cluster (first install) — extract from TLS handshake
+          FORGEJO_HOST="{{ include "op.svcHost" (list . "forgejo") }}"
+          echo | openssl s_client -showcerts -servername "${FORGEJO_HOST}" \
+            -connect "${FORGEJO_HOST}:443" 2>/dev/null | \
+            awk 'c{cert=cert $0 ORS} /BEGIN CERT/{c=1; cert=$0 ORS} /END CERT/{c=0; last=cert}END{printf "%s",last}' \
+            > /usr/local/share/ca-certificates/platform-ca.crt
+          {{- end }}
+          if [ -s /usr/local/share/ca-certificates/platform-ca.crt ]; then
+            update-ca-certificates
+            # python-social-auth (Zulip's OIDC) uses requests/certifi which has
+            # its own CA bundle, separate from the system trust store.
+            CERTIFI_BUNDLE=$(su zulip -c 'source /home/zulip/deployments/current/.venv/bin/activate && python3 -c "import certifi; print(certifi.where())"' 2>/dev/null)
+            if [ -n "${CERTIFI_BUNDLE}" ] && [ -f "${CERTIFI_BUNDLE}" ]; then
+              cat /usr/local/share/ca-certificates/platform-ca.crt >> "${CERTIFI_BUNDLE}"
+            fi
+            echo "Platform CA installed."
+          fi
+        {{- end }}
+        configure-smokescreen.sh: |
+          #!/bin/bash
+          # Allow smokescreen to connect to cluster-internal IPs (service and pod CIDRs).
+          # Without this, OIDC discovery fails because Forgejo resolves to a cluster IP
+          # and smokescreen blocks private ranges by default.
+          if ! grep -q '\[http_proxy\]' /etc/zulip/zulip.conf 2>/dev/null; then
+            cat >> /etc/zulip/zulip.conf << 'EOF'
+
+          [http_proxy]
+          allow_ranges = 10.42.0.0/16,10.43.0.0/16
+          EOF
+            /home/zulip/deployments/current/scripts/zulip-puppet-apply --noop 2>/dev/null
+            echo "y" | /home/zulip/deployments/current/scripts/zulip-puppet-apply 2>/dev/null
+            echo "Smokescreen configured for cluster-internal IPs."
+          fi
+        create-realm.sh: |
+          #!/bin/bash
+          su zulip -c '/home/zulip/deployments/current/manage.py shell -c "
+          from zerver.models import Realm
+          if not Realm.objects.filter(string_id=\"\").exists():
+              from zerver.actions.create_realm import do_create_realm
+              realm = do_create_realm(\"\", \"Open Platform\")
+              realm.invite_required = False
+              realm.save()
+              print(f\"Created realm: {realm.name} at {realm.host}\")
+          else:
+              r = Realm.objects.get(string_id=\"\")
+              if r.invite_required:
+                  r.invite_required = False
+                  r.save()
+                  print(\"Fixed: invite_required set to False\")
+              print(\"Realm already exists\")
+          "'
     # Use platform CNPG PostgreSQL cluster
     postgresql:
       enabled: false

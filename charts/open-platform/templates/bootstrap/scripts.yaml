@@ -233,7 +233,7 @@ data:
     # The CA may have been generated on this run, a previous run, or in selfsigned mode.
     if kubectl get configmap platform-ca -n kube-system >/dev/null 2>&1; then
       CA_DATA=$(kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}')
-      for ns in forgejo jitsi woodpecker pgadmin; do
+      for ns in forgejo jitsi woodpecker pgadmin zulip; do
         if kubectl get ns "${ns}" >/dev/null 2>&1; then
           kubectl create configmap platform-ca -n "${ns}" \
             --from-literal=ca.crt="${CA_DATA}" \
@@ -360,8 +360,11 @@ data:
         done
       fi
 
-      kubectl create configmap "${CM_ARGS[@]}" \
-        --dry-run=client -o yaml | kubectl apply -f -
+      # Use replace to ensure stale zone entries are removed (apply only
+      # merges and can leave old keys from previous domain configurations).
+      CM_YAML=$(kubectl create configmap "${CM_ARGS[@]}" --dry-run=client -o yaml)
+      echo "${CM_YAML}" | kubectl replace -f - 2>/dev/null \
+        || echo "${CM_YAML}" | kubectl create -f -
 
       # Restart CoreDNS to pick up the new zone and wait for rollout
       kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
