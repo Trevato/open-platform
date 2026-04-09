@@ -11,6 +11,7 @@ import {
   deleteAppBucket,
   scaleDeployment,
 } from "../services/k8s.js";
+import pool from "../services/db.js";
 import { PlatformConfigService } from "../services/platform-config.js";
 import { WoodpeckerClient } from "../services/woodpecker.js";
 
@@ -241,6 +242,23 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
         description: body.description,
       });
 
+      // Resolve org domain (custom or platform default)
+      const platformDomain = process.env.PLATFORM_DOMAIN || "";
+      const prefix = process.env.SERVICE_PREFIX || "";
+      const { rows } = await pool.query(
+        "SELECT domain FROM org_domains WHERE org_name = $1",
+        [body.org],
+      );
+      const orgDomain = rows.length > 0 ? rows[0].domain : platformDomain;
+
+      // Set repo website URL to the app's deployment URL
+      const appUrl = `https://${prefix}${body.name}.${orgDomain}`;
+      try {
+        await client.updateRepo(body.org, body.name, { website: appUrl });
+      } catch {
+        // Non-fatal — repo still created
+      }
+
       let pipeline = null;
       let activationError: string | undefined;
       try {
@@ -249,6 +267,10 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
           repo.id,
           `${body.org}/${body.name}`,
         );
+
+        // Ensure all org secrets are set before triggering the pipeline
+        await woodpecker.ensureOrgSecrets(body.org, orgDomain);
+
         pipeline = await woodpecker.triggerPipeline(activated.id);
       } catch (err) {
         activationError =
@@ -312,7 +334,7 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
       const client = new ForgejoClient(user.token);
       await client.unarchiveRepo(org, repo);
 
-      // Best-effort: reactivate Woodpecker and trigger deploy
+      // Best-effort: reactivate Woodpecker, ensure secrets, and trigger deploy
       try {
         const woodpecker = new WoodpeckerClient();
         const forgejoRepo = await client.getRepo(org, repo);
@@ -321,6 +343,13 @@ export const platformPlugin = new Elysia({ prefix: "/platform" })
             forgejoRepo.id,
             `${org}/${repo}`,
           );
+          const platformDomain = process.env.PLATFORM_DOMAIN || "";
+          const { rows } = await pool.query(
+            "SELECT domain FROM org_domains WHERE org_name = $1",
+            [org],
+          );
+          const orgDomain = rows.length > 0 ? rows[0].domain : platformDomain;
+          await woodpecker.ensureOrgSecrets(org, orgDomain);
           await woodpecker.triggerPipeline(activated.id);
         }
       } catch {}

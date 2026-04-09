@@ -1,4 +1,5 @@
 import type { WoodpeckerPipeline, WoodpeckerRepo } from "./types.js";
+import { readSecret } from "./k8s.js";
 
 const WOODPECKER_URL =
   process.env.WOODPECKER_INTERNAL_URL ||
@@ -118,6 +119,40 @@ export class WoodpeckerClient {
       const body = await postRes.text();
       throw new Error(`Woodpecker API ${postRes.status}: ${body}`);
     }
+  }
+
+  /** Ensure all required org secrets exist for CI pipelines. */
+  async ensureOrgSecrets(orgName: string, domain: string): Promise<void> {
+    const orgs = await this.listOrgs();
+    const wpOrg = orgs.find((o) => o.name === orgName);
+    if (!wpOrg) return;
+
+    const prefix = process.env.SERVICE_PREFIX || "";
+    const extraDomains = process.env.EXTRA_DOMAINS || "";
+
+    // Read credentials from K8s secrets
+    const [registryUsername, registryToken, ciToken] = await Promise.all([
+      readSecret("forgejo", "forgejo-admin-credentials", "username"),
+      readSecret("forgejo", "forgejo-admin-credentials", "password"),
+      readSecret("forgejo", "forgejo-ci-token", "token"),
+    ]);
+
+    const secrets: Record<string, string> = {
+      registry_username: registryUsername || "",
+      registry_token: registryToken || "",
+      forgejo_admin_token: ciToken || "",
+      platform_domain: domain,
+      registry_host: `${prefix}forgejo.${domain}`,
+      registry_push_host: "forgejo-http.forgejo.svc.cluster.local:3000",
+      service_prefix: prefix,
+      extra_domains: extraDomains,
+    };
+
+    await Promise.all(
+      Object.entries(secrets).map(([name, value]) =>
+        this.setOrgSecret(wpOrg.id, name, value),
+      ),
+    );
   }
 
   async deleteRepo(repoId: number): Promise<void> {

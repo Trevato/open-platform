@@ -145,6 +145,20 @@ export class ForgejoClient {
     });
   }
 
+  async updateRepo(
+    owner: string,
+    name: string,
+    fields: { website?: string; description?: string },
+  ): Promise<ForgejoRepo> {
+    return this.fetchJSON(
+      `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(fields),
+      },
+    );
+  }
+
   async archiveRepo(owner: string, name: string): Promise<boolean> {
     const res = await fetch(
       `${FORGEJO_URL}/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,

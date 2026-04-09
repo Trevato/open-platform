@@ -462,6 +462,22 @@ export async function dropAppDatabase(
   await runEphemeralPod("postgres", podName, pod);
 }
 
+/** Read a single key from a K8s Secret, returning the decoded string value. */
+export async function readSecret(
+  namespace: string,
+  name: string,
+  key: string,
+): Promise<string | null> {
+  try {
+    const secret = await coreV1.readNamespacedSecret({ namespace, name });
+    const encoded = secret.data?.[key];
+    if (!encoded) return null;
+    return Buffer.from(encoded, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
 /** Delete the S3 bucket for an app. */
 export async function deleteAppBucket(
   org: string,

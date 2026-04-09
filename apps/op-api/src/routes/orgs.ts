@@ -104,16 +104,12 @@ export const orgsPlugin = new Elysia({ prefix: "/orgs" })
         );
       }
 
+      // Sync all org secrets (domain change affects registry_host too)
       const woodpecker = new WoodpeckerClient();
-      const orgs = await woodpecker.listOrgs();
-      const wpOrg = orgs.find((o) => o.name === params.name);
-      if (wpOrg) {
-        await woodpecker.setOrgSecret(
-          wpOrg.id,
-          "platform_domain",
-          body.domain || PLATFORM_DOMAIN,
-        );
-      }
+      await woodpecker.ensureOrgSecrets(
+        params.name,
+        body.domain || PLATFORM_DOMAIN,
+      );
 
       return {
         org: params.name,
