@@ -66,7 +66,7 @@ All services authenticate through Forgejo as the single OIDC/OAuth2 identity pro
 ### Prerequisites
 
 - Kubernetes cluster (k3s recommended, any distribution works)
-- [Helm](https://helm.sh/) and [Helmfile](https://github.com/helmfile/helmfile)
+- [Helm](https://helm.sh/)
 - `kubectl`, `curl`, `jq`, `git`
 - Wildcard DNS (`*.yourdomain.com`) pointing to your cluster's ingress IP
 
@@ -112,7 +112,7 @@ sudo security add-trusted-cert -d -r trustRoot \
 
 ### After Deploy
 
-1. Open `https://forgejo.{domain}` and sign in with the admin credentials from `open-platform.state.yaml`
+1. Open `https://forgejo.{domain}` and sign in with the admin credentials (`kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d`)
 2. All other services use Forgejo SSO -- click "Sign in with Forgejo"
 3. Run `make urls` to see all service URLs
 
@@ -218,10 +218,11 @@ Optional sections: `service_prefix` (subdomain prefix), `cloudflare` (tunnel con
 ## Makefile Targets
 
 ```
-make deploy      Full deploy -- generates config, syncs releases, bootstraps Flux (idempotent)
-make generate    Regenerate config from open-platform.yaml
-make diff        Preview changes without applying
-make status      Check Helm release status
+make deploy      Install Flux + platform Helm chart (idempotent)
+make upgrade     Upgrade the platform chart
+make status      Check Flux HelmRelease reconciliation
+make template    Render chart templates (dry run)
+make lint        Lint the Helm chart
 make urls        Show all service URLs
 make teardown    Destroy all resources (requires confirmation)
 make test-smoke  Run smoke tests (curl-based)
@@ -231,24 +232,23 @@ make test-e2e    Run Playwright E2E tests
 ## How It Works
 
 1. `open-platform.yaml` defines your platform (domain, admin, TLS, optional features)
-2. `generate-config.sh` templates all Helm values, Flux manifests, and env files
-3. `deploy.sh` bootstraps in 5 tiers: infra, storage, identity, apps, gitops
-4. Automated hooks configure OAuth2 between services, set up the system org, and seed repos
-5. Flux adopts all releases -- the platform is now self-managing
+2. `make deploy` installs Flux controllers and the platform Helm chart
+3. The Helm chart renders Flux CRDs (HelmReleases, Kustomizations) that Flux reconciles in dependency order
+4. A bootstrap Job configures OAuth2 between services, sets up the system org, and seeds repos
+5. Flux manages all releases -- the platform is self-managing from here
 6. Push changes to `system/open-platform` on Forgejo and Flux reconciles within a minute
 
 ## Documentation
 
-| Document                                   | Description                                  |
-| ------------------------------------------ | -------------------------------------------- |
-| [Getting Started](docs/getting-started.md) | Install, deploy, first login, create an app  |
-| [REST API](docs/api.md)                    | Endpoint reference, auth, error format       |
-| [CLI](docs/cli.md)                         | Full command reference for `op`              |
-| [MCP Server](docs/mcp.md)                  | Tool catalog for AI agents                   |
-| [Permissions](docs/permissions.md)         | Auth model and roles                         |
-| [Services](docs/services.md)               | Per-service config, secrets, env vars        |
-| [Bootstrap](docs/bootstrap.md)             | Deploy pipeline, scripts, template inventory |
-| [Known Issues](docs/known-issues.md)       | Implementation notes and debugging           |
+| Document                                   | Description                                 |
+| ------------------------------------------ | ------------------------------------------- |
+| [Getting Started](docs/getting-started.md) | Install, deploy, first login, create an app |
+| [REST API](docs/api.md)                    | Endpoint reference, auth, error format      |
+| [CLI](docs/cli.md)                         | Full command reference for `op`             |
+| [MCP Server](docs/mcp.md)                  | Tool catalog for AI agents                  |
+| [Permissions](docs/permissions.md)         | Auth model and roles                        |
+| [Services](docs/services.md)               | Per-service config, secrets, env vars       |
+| [Known Issues](docs/known-issues.md)       | Implementation notes and debugging          |
 
 ## License
 

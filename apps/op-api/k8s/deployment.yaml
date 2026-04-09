@@ -54,6 +54,8 @@ spec:
               value: "__PLATFORM_DOMAIN__"
             - name: SERVICE_PREFIX
               value: "__SERVICE_PREFIX__"
+            - name: EXTRA_DOMAINS
+              value: "__EXTRA_DOMAINS__"
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

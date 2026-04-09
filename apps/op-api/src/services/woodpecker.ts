@@ -82,6 +82,44 @@ export class WoodpeckerClient {
     });
   }
 
+  async listOrgs(): Promise<Array<{ id: number; name: string }>> {
+    return this.fetchJSON("/api/orgs");
+  }
+
+  async setOrgSecret(
+    orgId: number,
+    name: string,
+    value: string,
+  ): Promise<void> {
+    const patchRes = await fetch(
+      `${WOODPECKER_URL}/api/orgs/${orgId}/secrets/${name}`,
+      {
+        method: "PATCH",
+        headers: this.headers(),
+        body: JSON.stringify({
+          name,
+          value,
+          event: ["push", "tag", "pull_request", "cron", "manual"],
+        }),
+      },
+    );
+    if (patchRes.ok) return;
+
+    const postRes = await fetch(`${WOODPECKER_URL}/api/orgs/${orgId}/secrets`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        name,
+        value,
+        event: ["push", "tag", "pull_request", "cron", "manual"],
+      }),
+    });
+    if (!postRes.ok) {
+      const body = await postRes.text();
+      throw new Error(`Woodpecker API ${postRes.status}: ${body}`);
+    }
+  }
+
   async deleteRepo(repoId: number): Promise<void> {
     await this.fetchJSON(`/api/repos/${repoId}`, { method: "DELETE" });
   }

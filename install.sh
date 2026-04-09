@@ -158,26 +158,6 @@ else
   ok "helm installed"
 fi
 
-# ── Install Helmfile ─────────────────────────────────────────────────────────
-
-if command -v helmfile >/dev/null 2>&1; then
-  ok "helmfile $(helmfile --version 2>/dev/null | head -1)"
-else
-  info "Installing helmfile..."
-  HELMFILE_VERSION=$(curl -sSL https://api.github.com/repos/helmfile/helmfile/releases/latest | grep tag_name | cut -d'"' -f4)
-  curl -fsSL "https://github.com/helmfile/helmfile/releases/download/${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION#v}_linux_${ARCH}.tar.gz" | sudo tar xz -C /usr/local/bin helmfile
-  sudo chmod +x /usr/local/bin/helmfile
-  ok "helmfile installed"
-fi
-
-# helm-diff plugin
-if helm plugin list 2>/dev/null | grep -q diff; then
-  ok "helm-diff plugin"
-else
-  info "Installing helm-diff plugin..."
-  helm plugin install https://github.com/databus23/helm-diff
-  ok "helm-diff plugin installed"
-fi
 
 # ── Interactive Prompts ──────────────────────────────────────────────────────
 
@@ -237,10 +217,7 @@ EOF
 
 ok "open-platform.yaml"
 
-# ── Generate Config + Deploy ─────────────────────────────────────────────────
-
-info "Generating config..."
-./scripts/generate-config.sh
+# ── Deploy ───────────────────────────────────────────────────────────────────
 
 echo ""
 info "Deploying Open Platform..."
@@ -262,6 +239,6 @@ echo "  MinIO:      https://minio.${DOMAIN}"
 echo ""
 echo -e "${YELLOW}DNS:${NC} Point *.${DOMAIN} to ${SERVER_IP}"
 echo ""
-echo "Admin credentials are in: ${INSTALL_DIR}/.env"
-echo "Update: cd ${INSTALL_DIR} && git pull && make deploy"
+echo "Admin credentials: kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d"
+echo "Update: cd ${INSTALL_DIR} && git pull && make upgrade"
 echo ""

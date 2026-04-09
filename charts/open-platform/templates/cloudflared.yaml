@@ -19,6 +19,13 @@ data:
     ingress:
       - hostname: "*.{{ include "op.domain" . }}"
         service: http://traefik.kube-system.svc.cluster.local
+      {{- range .Values.extraDomains }}
+      {{- $mode := (.tls).mode | default "" }}
+      {{- if eq $mode "cloudflare" }}
+      - hostname: "*.{{ .name }}"
+        service: http://traefik.kube-system.svc.cluster.local
+      {{- end }}
+      {{- end }}
       - service: http_status:404
 ---
 apiVersion: apps/v1

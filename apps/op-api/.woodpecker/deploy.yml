@@ -99,7 +99,7 @@ steps:
     commands:
       - APP_NS="op-$CI_REPO_OWNER-$CI_REPO_NAME"
       - SP=$(echo "$SERVICE_PREFIX" | tr -d ' ')
-      - sed -i "s|__SERVICE_PREFIX__|$SP|g; s|__PLATFORM_DOMAIN__|$PLATFORM_DOMAIN|g; s|APP_NAMESPACE|$APP_NS|g; s|REGISTRY_HOST|$REGISTRY_HOST|g; s|ORG_NAME|$CI_REPO_OWNER|g; s|PROJECT_NAME|$CI_REPO_NAME|g" k8s/*.yaml
+      - sed -i "s|__SERVICE_PREFIX__|$SP|g; s|__PLATFORM_DOMAIN__|$PLATFORM_DOMAIN|g; s|__EXTRA_DOMAINS__|$EXTRA_DOMAINS|g; s|APP_NAMESPACE|$APP_NS|g; s|REGISTRY_HOST|$REGISTRY_HOST|g; s|ORG_NAME|$CI_REPO_OWNER|g; s|PROJECT_NAME|$CI_REPO_NAME|g" k8s/*.yaml
       - sed -i "s/:latest/:${CI_COMMIT_SHA:0:8}/g" k8s/deployment.yaml
       - kubectl apply -f k8s/rbac.yaml || echo "RBAC already exists or escalation not permitted — continuing"
       - kubectl apply -f k8s/deployment.yaml -f k8s/service.yaml -f k8s/ingress.yaml
@@ -111,3 +111,5 @@ steps:
         from_secret: registry_host
       PLATFORM_DOMAIN:
         from_secret: platform_domain
+      EXTRA_DOMAINS:
+        from_secret: extra_domains

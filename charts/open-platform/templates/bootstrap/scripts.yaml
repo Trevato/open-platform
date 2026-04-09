@@ -130,62 +130,111 @@ data:
     # Generate self-signed wildcard TLS cert if needed
     # Both selfsigned and cloudflare modes use internal TLS (Traefik serves the cert).
     # letsencrypt mode uses cert-manager instead.
+    #
+    # A single multi-SAN cert covers all domains (primary + extras), so Traefik's
+    # default TLSStore serves the correct cert for any domain via SNI matching.
     if [ "${TLS_MODE}" != "letsencrypt" ]; then
+      # Build the list of all domains that need self-signed certs
+      ALL_CERT_DOMAINS=("${DOMAIN}")
+      if [ -n "${EXTRA_DOMAINS:-}" ]; then
+        IFS='|' read -ra DOMAIN_ENTRIES <<< "${EXTRA_DOMAINS}"
+        for entry in "${DOMAIN_ENTRIES[@]}"; do
+          ED_NAME="${entry%%:*}"
+          ED_MODE="${entry#*:}"
+          ED_MODE="${ED_MODE:-${TLS_MODE}}"
+          if [ "${ED_MODE}" != "letsencrypt" ]; then
+            ALL_CERT_DOMAINS+=("${ED_NAME}")
+          fi
+        done
+      fi
+
+      # Build SAN string: *.domain1,domain1,*.domain2,domain2,...
+      SAN_PARTS=()
+      for d in "${ALL_CERT_DOMAINS[@]}"; do
+        SAN_PARTS+=("DNS:*.${d}" "DNS:${d}")
+      done
+      SAN_STRING=$(IFS=,; echo "${SAN_PARTS[*]}")
+
+      # Check if existing cert's SANs match the desired set
+      NEEDS_REGEN=false
       if kubectl get secret wildcard-tls -n kube-system >/dev/null 2>&1; then
-        echo "Wildcard TLS cert already exists."
+        EXISTING_SANS=$(kubectl get secret wildcard-tls -n kube-system \
+          -o jsonpath='{.data.tls\.crt}' | base64 -d | \
+          openssl x509 -noout -ext subjectAltName 2>/dev/null | \
+          grep -oP 'DNS:[^,\s]+' | sort | tr '\n' ',' | sed 's/,$//')
+        DESIRED_SANS=$(echo "${SAN_PARTS[@]}" | tr ' ' '\n' | sort | tr '\n' ',' | sed 's/,$//')
+        if [ "${EXISTING_SANS}" != "${DESIRED_SANS}" ]; then
+          echo "Wildcard TLS cert SANs changed — regenerating."
+          echo "  Current: ${EXISTING_SANS}"
+          echo "  Desired: ${DESIRED_SANS}"
+          kubectl delete secret wildcard-tls -n kube-system 2>/dev/null || true
+          NEEDS_REGEN=true
+        else
+          echo "Wildcard TLS cert already exists with correct SANs."
+        fi
       else
-        echo "Generating self-signed CA and wildcard cert for *.${DOMAIN}..."
-        CERT_DIR=$(mktemp -d)
+        NEEDS_REGEN=true
+      fi
 
-        # Generate CA
-        openssl genrsa -out "${CERT_DIR}/ca.key" 4096 2>/dev/null
-        openssl req -x509 -new -nodes -key "${CERT_DIR}/ca.key" \
-          -sha256 -days 3650 -out "${CERT_DIR}/ca.crt" \
-          -subj "/CN=Open Platform CA" \
-          -addext "basicConstraints=critical,CA:TRUE" \
-          -addext "subjectKeyIdentifier=hash" \
-          -addext "authorityKeyIdentifier=keyid:always,issuer" 2>/dev/null
+      if [ "${NEEDS_REGEN}" = "true" ]; then
+        CA_DIR=$(mktemp -d)
 
-        # Generate wildcard cert
-        openssl genrsa -out "${CERT_DIR}/tls.key" 4096 2>/dev/null
-        openssl req -new -key "${CERT_DIR}/tls.key" \
-          -out "${CERT_DIR}/tls.csr" \
+        # Reuse existing CA if available
+        if kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}' >/dev/null 2>&1; then
+          kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}' > "${CA_DIR}/ca.crt"
+          kubectl get secret platform-ca-key -n kube-system -o jsonpath='{.data.ca\.key}' 2>/dev/null \
+            | base64 -d > "${CA_DIR}/ca.key" 2>/dev/null || true
+        fi
+
+        if [ ! -s "${CA_DIR}/ca.key" ]; then
+          echo "Generating platform CA..."
+          openssl genrsa -out "${CA_DIR}/ca.key" 4096 2>/dev/null
+          openssl req -x509 -new -nodes -key "${CA_DIR}/ca.key" \
+            -sha256 -days 3650 -out "${CA_DIR}/ca.crt" \
+            -subj "/CN=Open Platform CA" \
+            -addext "basicConstraints=critical,CA:TRUE" \
+            -addext "subjectKeyIdentifier=hash" \
+            -addext "authorityKeyIdentifier=keyid:always,issuer" 2>/dev/null
+
+          # Persist CA key for future domain additions
+          kubectl create secret generic platform-ca-key -n kube-system \
+            --from-file=ca.key="${CA_DIR}/ca.key" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+          kubectl annotate secret platform-ca-key -n kube-system \
+            helm.sh/resource-policy=keep 2>/dev/null || true
+
+          kubectl create configmap platform-ca -n kube-system \
+            --from-file=ca.crt="${CA_DIR}/ca.crt" \
+            --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
+          echo "Platform CA generated."
+        fi
+
+        echo "Generating multi-SAN wildcard cert for: ${ALL_CERT_DOMAINS[*]}"
+        openssl genrsa -out "${CA_DIR}/tls.key" 4096 2>/dev/null
+        openssl req -new -key "${CA_DIR}/tls.key" \
+          -out "${CA_DIR}/tls.csr" \
           -subj "/CN=*.${DOMAIN}" 2>/dev/null
-        openssl x509 -req -in "${CERT_DIR}/tls.csr" \
-          -CA "${CERT_DIR}/ca.crt" -CAkey "${CERT_DIR}/ca.key" \
-          -CAcreateserial -out "${CERT_DIR}/tls.crt" \
+        openssl x509 -req -in "${CA_DIR}/tls.csr" \
+          -CA "${CA_DIR}/ca.crt" -CAkey "${CA_DIR}/ca.key" \
+          -CAcreateserial -out "${CA_DIR}/tls.crt" \
           -days 3650 -sha256 \
-          -extfile <(printf "subjectAltName=DNS:*.%s,DNS:%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth" "${DOMAIN}" "${DOMAIN}") 2>/dev/null
+          -extfile <(printf "subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth" "${SAN_STRING}") 2>/dev/null
 
-        # Create wildcard-tls secret
         kubectl create secret tls wildcard-tls \
           -n kube-system \
-          --cert="${CERT_DIR}/tls.crt" \
-          --key="${CERT_DIR}/tls.key" 2>/dev/null
+          --cert="${CA_DIR}/tls.crt" \
+          --key="${CA_DIR}/tls.key" 2>/dev/null
         kubectl annotate secret wildcard-tls -n kube-system \
           helm.sh/resource-policy=keep 2>/dev/null || true
-        echo "Wildcard TLS cert created."
+        echo "Wildcard TLS cert created (SANs: ${SAN_STRING})."
 
-        # Store CA as platform-ca ConfigMap for services that need it
-        kubectl create configmap platform-ca \
-          -n kube-system \
-          --from-file=ca.crt="${CERT_DIR}/ca.crt" \
-          --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null
-        # Copy to namespaces that need it
-        for ns in forgejo jitsi woodpecker; do
-          kubectl create configmap platform-ca \
-            -n "${ns}" \
-            --from-file=ca.crt="${CERT_DIR}/ca.crt" \
-            --dry-run=client -o yaml | kubectl apply -f - 2>/dev/null || true
-        done
-        echo "Platform CA distributed."
-
-        rm -rf "${CERT_DIR}"
+        rm -rf "${CA_DIR}"
       fi
+
     fi
 
-    # Distribute platform-ca to service namespaces (regardless of TLS mode)
-    # The CA may have been generated on a previous run or in selfsigned mode.
+    # Distribute platform-ca to service namespaces (regardless of TLS mode).
+    # The CA may have been generated on this run, a previous run, or in selfsigned mode.
     if kubectl get configmap platform-ca -n kube-system >/dev/null 2>&1; then
       CA_DATA=$(kubectl get configmap platform-ca -n kube-system -o jsonpath='{.data.ca\.crt}')
       for ns in forgejo jitsi woodpecker pgadmin; do
@@ -234,7 +283,6 @@ data:
     # ============================================================================
     # PHASE 1: CoreDNS Setup
     # Creates a custom zone so *.{DOMAIN} resolves to Traefik inside the cluster.
-    # Ported from: scripts/setup-coredns.sh
     # ============================================================================
 
     echo ""
@@ -270,14 +318,17 @@ data:
     if [ -z "${TRAEFIK_IP:-}" ]; then
       echo "Warning: Traefik service not found — skipping CoreDNS setup."
     else
-      # Build the CoreDNS custom zone.
+      # Build CoreDNS zone helper.
       # The {{ .Name }} inside the template block is CoreDNS syntax, not Go templates —
       # it is rendered by CoreDNS at runtime.
-      PLATFORM_ZONE="${DOMAIN}:53 {
+      make_zone() {
+        local ZONE_DOMAIN="$1"
+        local ZONE_IP="$2"
+        echo "${ZONE_DOMAIN}:53 {
       errors
       cache 30
       template IN A {
-        answer \"{{ "{{" }} .Name {{ "}}" }} 60 IN A ${TRAEFIK_IP}\"
+        answer \"{{ "{{" }} .Name {{ "}}" }} 60 IN A ${ZONE_IP}\"
         fallthrough
       }
       template IN AAAA {
@@ -285,9 +336,24 @@ data:
         fallthrough
       }
     }"
+      }
 
-      kubectl create configmap coredns-custom -n kube-system \
-        --from-literal="platform.server=${PLATFORM_ZONE}" \
+      # Build configmap args — primary domain first
+      CM_ARGS=(coredns-custom -n kube-system)
+      CM_ARGS+=(--from-literal="platform.server=$(make_zone "${DOMAIN}" "${TRAEFIK_IP}")")
+
+      # Add extra domain zones
+      if [ -n "${EXTRA_DOMAINS:-}" ]; then
+        IFS='|' read -ra DOMAIN_ENTRIES <<< "${EXTRA_DOMAINS}"
+        for entry in "${DOMAIN_ENTRIES[@]}"; do
+          ED_NAME="${entry%%:*}"
+          SLUG=$(echo "${ED_NAME}" | tr '.' '-')
+          CM_ARGS+=(--from-literal="${SLUG}.server=$(make_zone "${ED_NAME}" "${TRAEFIK_IP}")")
+          echo "CoreDNS: adding zone for *.${ED_NAME}"
+        done
+      fi
+
+      kubectl create configmap "${CM_ARGS[@]}" \
         --dry-run=client -o yaml | kubectl apply -f -
 
       # Restart CoreDNS to pick up the new zone and wait for rollout
@@ -295,13 +361,12 @@ data:
       kubectl rollout status deployment coredns -n kube-system --timeout=60s 2>/dev/null || true
       # Brief pause for DNS cache to settle
       sleep 3
-      echo "CoreDNS custom zone: *.${DOMAIN} -> ${TRAEFIK_IP} (hostNetwork=${HOST_NETWORK})"
+      echo "CoreDNS custom zones: *.${DOMAIN} -> ${TRAEFIK_IP} (hostNetwork=${HOST_NETWORK})"
     fi
 
     # ============================================================================
     # PHASE 2: OAuth2 App Creation
     # Creates OAuth2 applications in Forgejo and stores credentials as K8s secrets.
-    # Ported from: scripts/setup-oauth2.sh
     # ============================================================================
 
     echo ""
@@ -597,7 +662,6 @@ data:
     # PHASE 3: System Org Setup
     # Creates the system org in Forgejo, pushes platform config, app template,
     # and app repositories.
-    # Ported from: scripts/setup-system-org.sh
     # ============================================================================
 
     echo ""
@@ -794,7 +858,6 @@ data:
     # ============================================================================
     # PHASE 4: Woodpecker Setup
     # Programmatic OAuth2 login, repo activation, org secrets, pipeline triggers.
-    # Ported from: scripts/setup-woodpecker-repos.sh
     # ============================================================================
 
     echo ""
@@ -1127,7 +1190,7 @@ data:
           | jq -r ".[] | select(.id == ${ORG_ID}) | .name" 2>/dev/null || echo "org-${ORG_ID}")
         echo "Setting secrets for Woodpecker org '${ORG_NAME}' (id=${ORG_ID})..."
 
-        for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix forgejo_admin_token; do
+        for SECRET_NAME in registry_username registry_token platform_domain registry_host registry_push_host service_prefix forgejo_admin_token extra_domains; do
           case "$SECRET_NAME" in
             registry_username) VALUE="${ADMIN_USER}" ;;
             registry_token) VALUE="${ADMIN_PASS}" ;;
@@ -1136,6 +1199,18 @@ data:
             registry_push_host) VALUE="forgejo-http.forgejo.svc.cluster.local:3000" ;;
             service_prefix) VALUE="${PREFIX}" ;;
             forgejo_admin_token) VALUE="${FORGEJO_CI_TOKEN}" ;;
+            extra_domains)
+              # Convert pipe-delimited "name:tls|name:tls" to comma-separated domain names
+              ED_LIST=""
+              if [ -n "${EXTRA_DOMAINS:-}" ]; then
+                IFS='|' read -ra ED_ENTRIES <<< "${EXTRA_DOMAINS}"
+                for ed in "${ED_ENTRIES[@]}"; do
+                  ED_NAME="${ed%%:*}"
+                  if [ -n "$ED_LIST" ]; then ED_LIST="${ED_LIST},"; fi
+                  ED_LIST="${ED_LIST}${ED_NAME}"
+                done
+              fi
+              VALUE="${ED_LIST}" ;;
           esac
 
           # Woodpecker rejects empty values — use a space for empty secrets

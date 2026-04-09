@@ -14,7 +14,7 @@ Implementation gotchas discovered during development. Consult when debugging une
 - **SSH** — listens on port 2222 internally, exposed on port 22 via ingress/service.
 - **Container registry** — images at `forgejo.{PLATFORM_DOMAIN}/<owner>/<image>:<tag>`. Admin password works for registry auth; PATs may fail on the v2 token endpoint.
 - **Webhook `ALLOWED_HOST_LIST`** — default blocks outgoing webhooks to external IPs. Set to `"*.{PLATFORM_DOMAIN}"`.
-- **PATCH regenerates client_secret** — updating OAuth2 app redirect URIs regenerates the secret. `setup-oauth2.sh` handles this by updating K8s secrets while preserving `BETTER_AUTH_SECRET`.
+- **PATCH regenerates client_secret** — updating OAuth2 app redirect URIs regenerates the secret. The bootstrap Job handles this by updating K8s secrets while preserving `BETTER_AUTH_SECRET`.
 - **Team creation needs `units`** — `POST /api/v1/orgs/{org}/teams` requires `"units": ["repo.code", "repo.issues", "repo.pulls", ...]` — omitting it returns "units permission should not be empty".
 
 ## Kaniko
@@ -37,10 +37,6 @@ Implementation gotchas discovered during development. Consult when debugging une
 - **Env vars** — `BETTER_AUTH_SECRET` (session encryption), `BETTER_AUTH_URL` (public app URL), `AUTH_FORGEJO_URL` (Forgejo URL for OAuth2).
 - **DB tables** — `user`, `session`, `account`, `verification` with camelCase quoted column names. Must exist before app starts (created via schema.sql in CI).
 
-## Helmfile
-
-- **Global hooks** — unreliable across versions. We wire all bootstrap logic into the traefik presync (first release) instead.
-
 ## OAuth2-Proxy
 
 - **Redirect** — callback at `https://oauth2.{PLATFORM_DOMAIN}/oauth2/callback`. Cookie domain: `.{PLATFORM_DOMAIN}`.
@@ -48,11 +44,11 @@ Implementation gotchas discovered during development. Consult when debugging une
 
 ## Flux
 
-- **Flux + helmfile coexistence** — helmfile bootstraps releases, Flux adopts them via matching HelmReleases. Flux's helm-controller runs `helm upgrade --install` — if values match, it's a no-op. After bootstrap, Flux owns the releases. Bootstrap and Flux values MUST stay in sync or Flux thrashes config on every reconciliation.
+- **Flux reconciliation** — Flux's helm-controller runs `helm upgrade --install` for each HelmRelease. The `platform/` directory in `system/open-platform` on Forgejo is the source of truth. Changes pushed there auto-apply within ~1 minute.
 
 ## Git
 
-- **Credential security** — `setup-system-org.sh` uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
+- **Credential security** — the bootstrap Job uses `GIT_ASKPASS` helper to avoid embedding passwords in git URLs (which would expose them in process listings).
 
 ## Jitsi
 

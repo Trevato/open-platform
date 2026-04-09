@@ -1,0 +1,28 @@
+{{/*
+Traefik dashboard — exposed at traefik.{domain} behind OAuth2-Proxy auth.
+Uses api@internal TraefikService (no separate backend needed).
+Requires allowCrossNamespace: true on kubernetesCRD provider for the
+OAuth2-Proxy middleware reference from kube-system → oauth2-proxy namespace.
+*/}}
+{{- if eq .Values.infrastructure.mode "bundled" }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard
+  namespace: kube-system
+  labels:
+    {{- include "op.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - web
+    - websecure
+  routes:
+    - match: Host(`{{ include "op.svcHost" (list . "traefik") }}`) && (PathPrefix(`/dashboard`) || PathPrefix(`/api`))
+      kind: Rule
+      middlewares:
+        - name: oauth2-proxy-auth
+          namespace: oauth2-proxy
+      services:
+        - name: api@internal
+          kind: TraefikService
+{{- end }}

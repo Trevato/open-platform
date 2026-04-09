@@ -1,12 +1,6 @@
-.PHONY: deploy generate deploy-infra deploy-apps diff status lint teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join chart-deploy chart-upgrade chart-template chart-lint
+.PHONY: deploy upgrade template lint status teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join
 
-deploy: ## Deploy everything via helmfile (legacy — see chart-deploy for Helm chart)
-	./scripts/deploy.sh
-
-generate: ## Generate config from open-platform.yaml (run before deploy if config changed)
-	./scripts/generate-config.sh
-
-chart-deploy: ## Deploy via Helm chart (installs Flux + platform chart)
+deploy: ## Deploy via Helm chart (installs Flux + platform chart)
 	@if ! helm status flux2 -n flux-system >/dev/null 2>&1; then \
 		echo "Installing Flux controllers..."; \
 		helm repo add fluxcd-community https://fluxcd-community.github.io/helm-charts 2>/dev/null || true; \
@@ -18,39 +12,24 @@ chart-deploy: ## Deploy via Helm chart (installs Flux + platform chart)
 		-n open-platform --create-namespace --wait --timeout 15m
 	@echo ""
 	@echo "Platform chart installed. Flux will reconcile all services."
-	@echo "Run 'make chart-status' to check progress."
+	@echo "Run 'make status' to check progress."
 
-chart-upgrade: ## Upgrade the platform Helm chart
+upgrade: ## Upgrade the platform Helm chart
 	helm upgrade open-platform charts/open-platform \
 		-f open-platform.yaml \
 		-n open-platform --wait --timeout 15m
 
-chart-template: ## Render chart templates to stdout (dry run)
+template: ## Render chart templates to stdout (dry run)
 	helm template open-platform charts/open-platform -f open-platform.yaml
 
-chart-lint: ## Lint the Helm chart
+lint: ## Lint the Helm chart
 	helm lint charts/open-platform -f open-platform.yaml
 
-chart-status: ## Show Flux HelmRelease reconciliation status
+status: ## Show Flux HelmRelease reconciliation status
 	@kubectl get helmreleases -A 2>/dev/null || echo "(no HelmReleases found)"
-
-deploy-infra: ## Deploy infrastructure only (traefik, cnpg, minio, forgejo)
-	helmfile sync -l tier=infra
-
-deploy-apps: ## Deploy apps only (woodpecker, oauth2-proxy — skips infrastructure)
-	helmfile sync -l tier=apps
 
 check-infra: ## Validate external infrastructure components are present
 	./scripts/check-infra.sh
-
-diff: ## Preview changes without applying
-	helmfile diff
-
-status: ## Show release status
-	helmfile status
-
-lint: ## Validate all releases
-	helmfile lint
 
 teardown: ## Destroy all releases and clean up resources
 	@echo "This will destroy ALL Open Platform resources."
@@ -58,17 +37,13 @@ teardown: ## Destroy all releases and clean up resources
 	./scripts/teardown.sh
 
 urls: ## Print service URLs
-	$(eval DOMAIN := $(shell grep '^PLATFORM_DOMAIN=' .env 2>/dev/null | cut -d= -f2 || echo 'example.com'))
-	@echo "Platform (*.$(DOMAIN)):"
-	@echo "  Forgejo:    https://forgejo.$(DOMAIN)"
-	@echo "  Woodpecker: https://ci.$(DOMAIN)"
-	@echo "  MinIO:      https://minio.$(DOMAIN)"
-	@echo "  MinIO S3:   https://s3.$(DOMAIN)"
-	@echo ""
-	@echo "Apps:"
-	@kubectl get ns -l open-platform.sh/tier=workload -o jsonpath='{range .items[*]}{.metadata.labels.open-platform\.sh/repo}{"\n"}{end}' 2>/dev/null | sort | while read -r app; do \
-		[ -n "$$app" ] && echo "  $${app}: https://$${app}.$(DOMAIN)"; \
-	done || echo "  (no apps deployed yet)"
+	@DOMAIN=$$(grep '^domain:' open-platform.yaml 2>/dev/null | awk '{print $$2}' | tr -d '"'"'" || echo 'example.com'); \
+	echo "Platform (*.$$DOMAIN):"; \
+	echo "  Forgejo:    https://forgejo.$$DOMAIN"; \
+	echo "  Woodpecker: https://ci.$$DOMAIN"; \
+	echo "  MinIO:      https://minio.$$DOMAIN"; \
+	echo "  Console:    https://console.$$DOMAIN"; \
+	echo "  API:        https://api.$$DOMAIN"
 
 test-smoke: ## Run smoke tests (curl-based, fast)
 	./tests/smoke.sh

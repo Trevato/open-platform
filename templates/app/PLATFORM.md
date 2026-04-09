@@ -81,7 +81,7 @@ Forgejo OAuth2 via [better-auth](https://better-auth.com) with the `genericOAuth
 
 Sessions are stored in the database (not JWT). The `user`, `session`, `account`, and `verification` tables in `schema.sql` are managed by better-auth.
 
-OAuth2 apps are auto-created by the platform during bootstrap (`setup-oauth2.sh`). Redirect URIs cover both domains:
+OAuth2 apps are auto-created by the platform bootstrap Job. Redirect URIs cover both domains:
 
 - `https://PROJECT_NAME.dev.test/api/auth/oauth2/callback/forgejo`
 - `https://PROJECT_NAME.open-platform.sh/api/auth/oauth2/callback/forgejo`

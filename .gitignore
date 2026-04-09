@@ -1,9 +1,18 @@
 TODO
-.env
-certs/
 .DS_Store
 .claude/
-scripts/.git-askpass
+
+# Secrets and credentials
+.env
+certs/
+cf-token
+gh-env
+
+# Platform config (user-specific)
+open-platform.yaml
+open-platform.state.yaml
+open-platform.yaml.*
+!open-platform.yaml.example
 
 # Build artifacts
 node_modules/
@@ -11,41 +20,13 @@ bun.lock
 *.tsbuildinfo
 .next/
 
-# Tool-generated
-.playwright-mcp/
-
-# Validation artifacts
+# Test artifacts
 *.png
 auth-validation-screenshots/
-
-# E2E test artifacts
 test-results/
 tests/e2e/.auth/
 tests/e2e/test-results/
-
-# Credentials and tokens
-cf-token
-gh-env
-
-# Generated config (user-specific)
-open-platform.yaml
-open-platform.state.yaml
-open-platform.yaml.*
-!open-platform.yaml.example
-
-# Generated config (deployment-specific)
-# Source of truth: config/templates/ → scripts/generate-config.sh
-/platform/
-*-values.yaml
-!host/vcluster-values.yaml
-helmfile.yaml
-manifests/oidc-rbac.yaml
-
-# Generated Flux resources (top-level mirrors of platform/)
-apps/woodpecker.yaml
-apps/headlamp.yaml
-apps/oauth2-proxy.yaml
-infrastructure/configs/minio.yaml
+.playwright-mcp/
 
 # CLI build output
 tools/op-cli/dist/
@@ -53,6 +34,11 @@ tools/op-cli/dist/
 # Nix
 result
 .direnv/
+
+# Generated deployment artifacts (pushed to Forgejo, not tracked here)
+/platform/
+/manifests/
+/infrastructure/
 
 # Test scripts
 test-console-ui.mjs

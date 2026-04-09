@@ -50,6 +50,46 @@
         }
       }
     },
+    "extraDomains": {
+      "type": "array",
+      "description": "Additional domains for app deployment (primary domain hosts platform services)",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Domain name (e.g., espodev.com)"
+          },
+          "tls": {
+            "type": "object",
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": ["selfsigned", "letsencrypt", "cloudflare"],
+                "description": "TLS mode for this domain (default: inherits top-level tls.mode)"
+              },
+              "wildcard": {
+                "type": "object",
+                "properties": {
+                  "cert": { "type": "string" },
+                  "key": { "type": "string" }
+                }
+              }
+            }
+          },
+          "cloudflare": {
+            "type": "object",
+            "properties": {
+              "accountTag": { "type": "string" },
+              "tunnelId": { "type": "string" },
+              "tunnelSecret": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
     "cloudflare": {
       "type": "object",
       "properties": {

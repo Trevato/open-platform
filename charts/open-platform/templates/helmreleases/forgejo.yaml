@@ -90,7 +90,7 @@ spec:
           MINIO_BUCKET: forgejo-packages
           MINIO_USE_SSL: false
         webhook:
-          ALLOWED_HOST_LIST: {{ printf "*.%s" (include "op.domain" .) | quote }}
+          ALLOWED_HOST_LIST: "{{ printf "*.%s" (include "op.domain" .) }}{{ range .Values.extraDomains }},{{ printf "*.%s" .name }}{{ end }}"
           SKIP_TLS_VERIFY: {{ include "op.skipTlsVerify" . }}
     ingress:
       enabled: true

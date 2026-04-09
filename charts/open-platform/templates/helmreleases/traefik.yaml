@@ -63,6 +63,7 @@ spec:
       kubernetesCRD:
         allowExternalNameServices: true
         allowEmptyServices: true
+        allowCrossNamespace: true
       kubernetesIngress:
         allowExternalNameServices: true
         allowEmptyServices: true

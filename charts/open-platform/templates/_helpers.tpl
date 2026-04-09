@@ -177,14 +177,6 @@ Returns string "true" or "false".
 {{- end }}
 
 {{/*
-cert-manager enabled — true if tls.mode=letsencrypt.
-Returns string "true" or "false".
-*/}}
-{{- define "op.certManagerEnabled" -}}
-{{- if eq (include "op.tlsMode" .) "letsencrypt" }}true{{- else }}false{{- end }}
-{{- end }}
-
-{{/*
 MetalLB enabled — true if network.mode=loadbalancer.
 Returns string "true" or "false".
 */}}
@@ -193,9 +185,90 @@ Returns string "true" or "false".
 {{- end }}
 
 {{/*
-Cloudflare tunnel enabled — true if tls.mode=cloudflare.
+Cloudflare tunnel enabled — true if primary tls.mode=cloudflare OR any extraDomain uses cloudflare.
 Returns string "true" or "false".
 */}}
 {{- define "op.cloudflareEnabled" -}}
-{{- if eq (include "op.tlsMode" .) "cloudflare" }}true{{- else }}false{{- end }}
+{{- if eq (include "op.tlsMode" .) "cloudflare" -}}true
+{{- else -}}
+  {{- $found := false -}}
+  {{- range .Values.extraDomains -}}
+    {{- if eq ((.tls).mode | default "") "cloudflare" -}}
+      {{- $found = true -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $found -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+cert-manager enabled — true if primary tls.mode=letsencrypt OR any extraDomain uses letsencrypt.
+Returns string "true" or "false".
+*/}}
+{{- define "op.certManagerEnabled" -}}
+{{- if eq (include "op.tlsMode" .) "letsencrypt" -}}true
+{{- else -}}
+  {{- $found := false -}}
+  {{- range .Values.extraDomains -}}
+    {{- if eq ((.tls).mode | default "") "letsencrypt" -}}
+      {{- $found = true -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $found -}}true{{- else -}}false{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+All domains — returns a list of all domain names (primary + extras).
+Usage: {{ include "op.allDomains" . }}
+Returns a JSON array string. Use `fromJson` to iterate.
+*/}}
+{{- define "op.allDomains" -}}
+{{- $domains := list (include "op.domain" .) }}
+{{- range .Values.extraDomains }}
+{{- $domains = append $domains .name }}
+{{- end }}
+{{- $domains | toJson }}
+{{- end }}
+
+{{/*
+TLS mode for a specific domain — returns the domain's tls.mode or falls back to primary.
+Usage: {{ include "op.domainTlsMode" (list . "espodev.com") }}
+*/}}
+{{- define "op.domainTlsMode" -}}
+{{- $ctx := index . 0 -}}
+{{- $domainName := index . 1 -}}
+{{- if eq $domainName (include "op.domain" $ctx) -}}
+  {{- include "op.tlsMode" $ctx -}}
+{{- else -}}
+  {{- $mode := "" -}}
+  {{- range $ctx.Values.extraDomains -}}
+    {{- if eq .name $domainName -}}
+      {{- $mode = ((.tls).mode | default "") -}}
+    {{- end -}}
+  {{- end -}}
+  {{- if $mode -}}{{ $mode }}{{- else -}}{{ include "op.tlsMode" $ctx }}{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Domain slug — converts domain name to a k8s-safe label (dots to dashes).
+Usage: {{ include "op.domainSlug" "espodev.com" }}
+*/}}
+{{- define "op.domainSlug" -}}
+{{- . | replace "." "-" }}
+{{- end }}
+
+{{/*
+Extra domains env — serializes extraDomains for the bootstrap Job as pipe-delimited entries.
+Format: "name:tlsMode|name:tlsMode" (e.g., "espodev.com:letsencrypt|dev.test:selfsigned")
+Empty string if no extra domains.
+*/}}
+{{- define "op.extraDomainsEnv" -}}
+{{- $entries := list }}
+{{- range .Values.extraDomains }}
+  {{- $mode := (.tls).mode | default "" }}
+  {{- $entries = append $entries (printf "%s:%s" .name $mode) }}
+{{- end }}
+{{- join "|" $entries }}
 {{- end }}

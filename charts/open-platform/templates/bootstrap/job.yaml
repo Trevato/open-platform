@@ -1,7 +1,6 @@
 {{/*
 Bootstrap Job — runs after Helm install/upgrade to configure platform services.
-Replaces the imperative shell scripts (setup-oauth2, setup-system-org, setup-woodpecker-repos,
-setup-coredns) with an in-cluster Job using K8s service DNS.
+Configures OAuth2, system org, Woodpecker, and CoreDNS using in-cluster K8s service DNS.
 
 Uses ubuntu:24.04 — tools (kubectl, curl, jq, git, openssl) installed at container start.
 Repo content for system org pushes is cloned from bootstrap.repoUrl.
@@ -61,6 +60,8 @@ spec:
               value: {{ .Values.bootstrap.repoUrl | quote }}
             - name: REPO_BRANCH
               value: {{ .Values.bootstrap.repoBranch | default "main" | quote }}
+            - name: EXTRA_DOMAINS
+              value: {{ include "op.extraDomainsEnv" . | quote }}
           command: ["/bin/bash", "/scripts/bootstrap.sh"]
           volumeMounts:
             - name: scripts

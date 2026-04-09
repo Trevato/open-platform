@@ -16,6 +16,20 @@ tls:
     cert: ""
     key: ""
 
+extraDomains: []
+# Additional domains for app deployment. Primary domain hosts platform services.
+# Each entry:
+#   - name: espodev.com       # Required
+#     tls:
+#       mode: letsencrypt      # Optional — inherits top-level tls.mode
+#       wildcard:
+#         cert: ""             # Optional — pre-provided wildcard cert
+#         key: ""
+#     cloudflare:              # Only if tls.mode=cloudflare for this domain
+#       accountTag: ""
+#       tunnelId: ""
+#       tunnelSecret: ""
+
 cloudflare:
   accountTag: ""
   tunnelId: ""

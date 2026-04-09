@@ -58,3 +58,9 @@ CREATE TABLE IF NOT EXISTS platform (
   setup_completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS org_domains (
+  org_name TEXT PRIMARY KEY,
+  domain TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);

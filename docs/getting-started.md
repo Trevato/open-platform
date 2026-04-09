@@ -8,8 +8,6 @@ These tools are required regardless of platform:
 
 - **kubectl** -- Kubernetes CLI
 - **helm** -- Kubernetes package manager
-- **helmfile** v1.1.9+ -- declarative Helm chart management
-- **helm-diff plugin** -- required by helmfile for diff/sync operations
 - **curl**, **jq**, **git** -- standard utilities
 
 Platform-specific installation is covered in each section below.
@@ -21,16 +19,10 @@ Colima runs a lightweight Linux VM with k3s-compatible Kubernetes. This is the r
 ### 1. Install dependencies
 
 ```bash
-brew install colima docker kubernetes-cli helm helmfile jq
+brew install colima docker kubernetes-cli helm jq
 ```
 
-### 2. Install the helm-diff plugin
-
-```bash
-helm plugin install https://github.com/databus23/helm-diff
-```
-
-### 3. Start Colima with Kubernetes
+### 2. Start Colima with Kubernetes
 
 ```bash
 colima start op --kubernetes --cpu 4 --memory 8 --disk 50 --runtime containerd --network-address
@@ -38,7 +30,7 @@ colima start op --kubernetes --cpu 4 --memory 8 --disk 50 --runtime containerd -
 
 The `--network-address` flag assigns a routable IP to the VM, which is required for DNS resolution in later steps. You can adjust CPU, memory, and disk to match your machine.
 
-### 4. Verify the cluster
+### 3. Verify the cluster
 
 ```bash
 kubectl get nodes
@@ -46,7 +38,7 @@ kubectl get nodes
 
 You should see a single node in `Ready` state.
 
-### 5. Get the Colima VM IP
+### 4. Get the Colima VM IP
 
 ```bash
 colima list
@@ -54,7 +46,7 @@ colima list
 
 Note the `ADDRESS` column (e.g., `192.168.64.4`). You will use this IP in the next step.
 
-### 6. Configure local DNS
+### 5. Configure local DNS
 
 Open Platform uses wildcard subdomains (`*.dev.test`). You need local DNS resolution pointing all `*.dev.test` queries to the Colima VM IP.
 
@@ -71,7 +63,7 @@ Install and configure dnsmasq to resolve `*.dev.test` to the Colima VM IP:
 brew install dnsmasq
 ```
 
-Add the following line to `/opt/homebrew/etc/dnsmasq.conf` (replace `192.168.64.4` with your actual Colima IP from step 5):
+Add the following line to `/opt/homebrew/etc/dnsmasq.conf` (replace `192.168.64.4` with your actual Colima IP from step 4):
 
 ```
 address=/dev.test/192.168.64.4
@@ -91,7 +83,7 @@ dig forgejo.dev.test @127.0.0.1 +short
 
 This should return your Colima VM IP.
 
-### 7. Clone and configure
+### 6. Clone and configure
 
 ```bash
 git clone https://github.com/trevato/open-platform.git
@@ -113,15 +105,15 @@ tls:
   email: admin@dev.test
 ```
 
-### 8. Deploy
+### 7. Deploy
 
 ```bash
 make deploy
 ```
 
-This takes roughly 5 minutes on the first run. The deploy script generates all configuration from `open-platform.yaml`, bootstraps infrastructure via helmfile, configures OIDC, and activates CI pipelines.
+This takes roughly 5 minutes on the first run. The Helm chart installs all platform infrastructure, configures OIDC, and activates CI pipelines.
 
-### 9. Trust the self-signed CA
+### 8. Trust the self-signed CA
 
 The deploy generates a CA certificate at `certs/ca.crt`. Add it to the macOS trust store so browsers accept the self-signed certificates:
 
@@ -129,7 +121,7 @@ The deploy generates a CA certificate at `certs/ca.crt`. Add it to the macOS tru
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain certs/ca.crt
 ```
 
-### 10. Verify
+### 9. Verify
 
 ```bash
 make urls
@@ -171,27 +163,7 @@ kubectl get nodes
 curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 ```
 
-### 4. Install helmfile
-
-Download the latest release (v1.1.9 or newer) from [github.com/helmfile/helmfile/releases](https://github.com/helmfile/helmfile/releases) and place the binary on your `PATH`.
-
-On Debian/Ubuntu:
-
-```bash
-# Example for linux amd64 — check the releases page for the latest version
-curl -fsSL -o helmfile.tar.gz https://github.com/helmfile/helmfile/releases/download/v1.1.9/helmfile_1.1.9_linux_amd64.tar.gz
-tar xzf helmfile.tar.gz helmfile
-sudo mv helmfile /usr/local/bin/
-rm helmfile.tar.gz
-```
-
-### 5. Install the helm-diff plugin
-
-```bash
-helm plugin install https://github.com/databus23/helm-diff
-```
-
-### 6. Configure wildcard DNS
+### 4. Configure wildcard DNS
 
 Point `*.yourdomain.com` to your server's public IP. You need a wildcard A record:
 
@@ -201,7 +173,7 @@ Point `*.yourdomain.com` to your server's public IP. You need a wildcard A recor
 
 How you create this record depends on your DNS provider. The important thing is that any subdomain of your domain resolves to the server.
 
-### 7. Clone, configure, and deploy
+### 5. Clone, configure, and deploy
 
 ```bash
 git clone https://github.com/trevato/open-platform.git
@@ -247,7 +219,7 @@ The `system` org on Forgejo contains pre-deployed example apps: social, minecraf
 
 ## First Login
 
-1. Open `open-platform.state.yaml` in the project root (generated during deploy, gitignored). Find the admin username and password.
+1. Retrieve the admin password from the Kubernetes secret: `kubectl get secret forgejo-admin-credentials -n forgejo -o jsonpath='{.data.password}' | base64 -d`
 2. Go to `https://forgejo.{domain}` and sign in with those credentials.
 3. All other services use Forgejo for authentication. Click "Sign in with Forgejo" when prompted.
 
@@ -348,7 +320,7 @@ Full tool catalog: [docs/mcp.md](mcp.md)
 
 ## Configuration Reference
 
-`open-platform.yaml` is the single source of truth for platform configuration. All generated Helm values, manifests, secrets, and environment variables are derived from it.
+`open-platform.yaml` is the single source of truth for platform configuration. It is passed directly as a Helm values file to configure the platform chart.
 
 Example configuration with all options:
 
@@ -381,10 +353,10 @@ See `open-platform.yaml.example` for the canonical reference.
 ## Make Targets
 
 ```bash
-make deploy    # Full deploy — generate config, helmfile sync, OIDC setup, CI activation
-make generate  # Regenerate config from open-platform.yaml without deploying
-make diff      # Preview Helm changes without applying
+make deploy    # Full deploy — helm upgrade --install
+make upgrade   # Upgrade chart version
+make template  # Render chart locally (debug)
+make lint      # Validate chart
 make status    # Show Helm release status
-make urls      # Print all service URLs
 make teardown  # Destroy all resources (prompts for confirmation)
 ```

@@ -35,8 +35,8 @@ spec:
         skip_provider_button = true
         ssl_insecure_skip_verify = {{ include "op.skipTlsVerify" . }}
         cookie_secure = true
-        cookie_domains = [".{{ include "op.domain" . }}"]
-        whitelist_domains = [".{{ include "op.domain" . }}"]
+        cookie_domains = [".{{ include "op.domain" . }}"{{ range .Values.extraDomains }}, ".{{ .name }}"{{ end }}]
+        whitelist_domains = [".{{ include "op.domain" . }}"{{ range .Values.extraDomains }}, ".{{ .name }}"{{ end }}]
     ingress:
       enabled: true
       className: traefik
