@@ -241,6 +241,14 @@ data:
         fi
       done
       echo "Platform CA distributed to service namespaces."
+
+      # Patch Flux forgejo-auth secret with CA cert so GitRepository can verify TLS
+      if kubectl get secret forgejo-auth -n flux-system >/dev/null 2>&1; then
+        CA_B64=$(echo -n "${CA_DATA}" | base64 | tr -d '\n')
+        kubectl patch secret forgejo-auth -n flux-system \
+          --type merge -p "{\"data\":{\"ca.crt\":\"${CA_B64}\"}}" 2>/dev/null || true
+        echo "Flux forgejo-auth secret patched with CA cert."
+      fi
     fi
 
     # Apply Traefik TLSStore and Middleware
@@ -274,14 +282,29 @@ data:
       curl -fsSk -u "${ADMIN_USER}:${ADMIN_PASS}" "$@"
     }
 
+    # Sync Flux forgejo-auth secret with actual admin password
+    if kubectl get secret forgejo-auth -n flux-system >/dev/null 2>&1; then
+      PASS_B64=$(echo -n "${ADMIN_PASS}" | base64 | tr -d '\n')
+      kubectl patch secret forgejo-auth -n flux-system \
+        --type merge -p "{\"stringData\":{\"password\":\"${ADMIN_PASS}\"}}" 2>/dev/null || true
+      echo "Flux forgejo-auth secret synced with admin credentials."
+    fi
+
     # Sync DB user passwords — postInitSQL creates roles without passwords,
     # so we set them from the K8s secrets on every run.
     {{- if .Values.services.zulip.enabled }}
     ZULIP_DB_PASS=$(kubectl get secret zulip-db-credentials -n zulip \
       -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
     if [ -n "${ZULIP_DB_PASS}" ]; then
-      kubectl exec -n postgres postgres-1 -c postgres -- \
-        psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>/dev/null || true
+      for attempt in 1 2 3 4 5; do
+        if kubectl exec -n postgres postgres-1 -c postgres -- \
+          psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>&1; then
+          echo "Zulip DB password synced."
+          break
+        fi
+        echo "Zulip DB password sync attempt ${attempt} failed, retrying..."
+        sleep 5
+      done
     fi
     {{- end }}
 

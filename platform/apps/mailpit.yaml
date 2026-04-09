@@ -1,0 +1,32 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jouve
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: https://jouve.github.io/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: mailpit
+  namespace: mailpit
+spec:
+  interval: 15m
+  timeout: 5m
+  chart:
+    spec:
+      chart: mailpit
+      version: "0.31.3"
+      sourceRef:
+        kind: HelmRepository
+        name: jouve
+        namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3

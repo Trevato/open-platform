@@ -1,0 +1,29 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+  namespace: postgres
+spec:
+  instances: 1
+  storage:
+    size: 10Gi
+  bootstrap:
+    initdb:
+      database: forgejo
+      owner: forgejo
+      secret:
+        name: forgejo-db-credentials
+      postInitSQL:
+        - CREATE DATABASE platform_ledger
+        - CREATE DATABASE product_garden
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "1Gi"
+      cpu: "1"

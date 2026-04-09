@@ -14,7 +14,7 @@ spec:
     kind: GitRepository
     name: open-platform
   path: ./platform/infrastructure/controllers
-  prune: true
+  prune: false
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -34,7 +34,7 @@ spec:
     kind: GitRepository
     name: open-platform
   path: ./platform/infrastructure/configs
-  prune: true
+  prune: false
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -54,7 +54,7 @@ spec:
     kind: GitRepository
     name: open-platform
   path: ./platform/identity
-  prune: true
+  prune: false
   wait: true
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -74,6 +74,6 @@ spec:
     kind: GitRepository
     name: open-platform
   path: ./platform/apps
-  prune: true
+  prune: false
   wait: true
 {{- end }}

@@ -15,10 +15,6 @@ stringData:
   {{- else }}
   password: {{ .Values.secrets.forgejoAdminPassword | default (randAlphaNum 32) }}
   {{- end }}
-{{- if and (ne .Values.tls.mode "letsencrypt") .Values.tls.ca.cert }}
-data:
-  ca.crt: {{ .Values.tls.ca.cert }}
-{{- end }}
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository
@@ -29,7 +25,7 @@ metadata:
     {{- include "op.labels" . | nindent 4 }}
 spec:
   interval: 1m
-  url: https://{{ include "op.svcHost" (list . "forgejo") }}/system/open-platform.git
+  url: http://forgejo-http.forgejo.svc.cluster.local:3000/system/open-platform.git
   ref:
     branch: main
   secretRef:

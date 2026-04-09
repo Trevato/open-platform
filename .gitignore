@@ -35,8 +35,7 @@ tools/op-cli/dist/
 result
 .direnv/
 
-# Generated deployment artifacts (pushed to Forgejo, not tracked here)
-/platform/
+# Generated deployment artifacts
 /manifests/
 /infrastructure/
 

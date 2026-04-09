@@ -1,0 +1,31 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: zulip
+  namespace: flux-system
+spec:
+  interval: 12h
+  url: oci://ghcr.io/zulip/helm-charts/zulip
+  ref:
+    tag: "1.11.57"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: zulip
+  namespace: zulip
+spec:
+  interval: 15m
+  timeout: 10m
+  chartRef:
+    kind: OCIRepository
+    name: zulip
+    namespace: flux-system
+  install:
+    createNamespace: true
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      remediateLastFailure: true
+      retries: 3
