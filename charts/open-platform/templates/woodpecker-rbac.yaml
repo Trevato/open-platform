@@ -2,7 +2,6 @@
 Woodpecker RBAC — ClusterRole, ServiceAccount, and bindings for CI pipelines.
 Grants deployment permissions so Woodpecker can manage app namespaces, deployments,
 services, secrets, ingresses, and RBAC resources.
-Ported from config/templates/platform/apps/woodpecker-rbac.yaml.tmpl
 */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

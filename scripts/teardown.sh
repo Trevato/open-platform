@@ -26,7 +26,7 @@ for resource in kustomization gitrepository helmrelease ocirepository; do
   done
 done
 
-# ── Phase 2: Remove app deployments (not managed by helmfile) ───────────────
+# ── Phase 2: Remove app deployments ─────────────────────────────────────────
 
 echo "Phase 2: Removing workload namespaces..."
 # Delete all op-* workload namespaces (label-based cleanup catches everything)
@@ -54,7 +54,7 @@ helm uninstall open-platform -n open-platform --timeout=60s 2>/dev/null || true
 helm uninstall flux2 -n flux-system --timeout=60s 2>/dev/null || true
 
 # Clean up any stuck helm release secrets
-for ns in forgejo woodpecker minio oauth2-proxy cnpg-system flux-system kube-system jitsi zulip mailpit pgadmin headlamp cloudflare open-platform; do
+for ns in forgejo woodpecker minio oauth2-proxy cnpg-system flux-system kube-system jitsi zulip mailpit pgadmin cloudflare open-platform; do
   kubectl delete secrets -n "$ns" -l owner=helm 2>/dev/null || true
 done
 
@@ -77,7 +77,7 @@ done
 # ── Phase 6: Force-finalize stuck namespaces ────────────────────────────────
 
 echo "Phase 6: Cleaning up namespaces..."
-PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo woodpecker minio oauth2-proxy jitsi zulip mailpit pgadmin headlamp cloudflare open-platform op-system-console op-system-op-api"
+PLATFORM_NAMESPACES="flux-system cnpg-system postgres forgejo woodpecker minio oauth2-proxy jitsi zulip mailpit pgadmin cloudflare open-platform op-system-console op-system-op-api"
 
 for ns in $PLATFORM_NAMESPACES; do
   # Delete namespace (may already be terminating)

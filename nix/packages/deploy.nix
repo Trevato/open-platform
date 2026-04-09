@@ -2,7 +2,6 @@
   writeShellApplication,
   kubectl,
   kubernetes-helm,
-  helmfile,
   git,
   curl,
   openssl,
@@ -21,7 +20,6 @@ writeShellApplication {
   runtimeInputs = [
     kubectl
     kubernetes-helm
-    helmfile
     git
     curl
     openssl
@@ -35,7 +33,7 @@ writeShellApplication {
   ];
 
   text = ''
-    if [ ! -f scripts/deploy.sh ]; then
+    if [ ! -f Makefile ]; then
       CLONE_DIR="''${PWD}/open-platform"
       if [ -d "$CLONE_DIR/.git" ]; then
         echo "Updating $CLONE_DIR..."
@@ -47,7 +45,7 @@ writeShellApplication {
       cd "$CLONE_DIR"
     fi
 
-    exec bash scripts/deploy.sh "$@"
+    exec make deploy "$@"
   '';
 
   meta = {

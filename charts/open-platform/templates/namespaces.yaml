@@ -1,6 +1,5 @@
 {{/*
 Kubernetes Namespaces — always-present and conditional.
-Ported from config/templates/platform/infrastructure/configs/namespaces.yaml.tmpl
 */}}
 {{- $multinodeLabels := dict }}
 {{- if .Values.multinode.enabled }}

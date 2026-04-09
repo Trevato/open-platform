@@ -1,7 +1,6 @@
 {{/*
 MetalLB IPAddressPool + L2Advertisement — bare-metal load balancer config.
 Conditional on network.mode=loadbalancer.
-Ported from config/templates/platform/infrastructure/configs/metallb-config.yaml.tmpl
 */}}
 {{- if eq (include "op.metallbEnabled" .) "true" }}
 apiVersion: metallb.io/v1beta1

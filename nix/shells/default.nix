@@ -9,7 +9,6 @@ pkgs.mkShell {
       # Kubernetes
       kubectl
       kubernetes-helm
-      helmfile
       kustomize
       k9s
 
@@ -36,12 +35,6 @@ pkgs.mkShell {
     ];
 
   shellHook = ''
-    # Ensure helm-diff plugin is installed (helmfile requires it)
-    if ! helm plugin list 2>/dev/null | grep -q diff; then
-      echo "Installing helm-diff plugin..."
-      helm plugin install https://github.com/databus23/helm-diff 2>/dev/null
-    fi
-
     # CA trust reminder for macOS with self-signed certs
     if [ -f certs/ca.crt ] && [ "$(uname)" = "Darwin" ]; then
       if ! security find-certificate -a -c "Open Platform" /Library/Keychains/System.keychain &>/dev/null 2>&1; then

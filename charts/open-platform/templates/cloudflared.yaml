@@ -1,7 +1,6 @@
 {{/*
 Cloudflare Tunnel — routes *.{domain} through Cloudflare to Traefik.
 Conditional on tls.mode=cloudflare.
-Ported from config/templates/platform/infrastructure/configs/cloudflared.yaml.tmpl
 */}}
 {{- if eq (include "op.cloudflareEnabled" .) "true" }}
 apiVersion: v1

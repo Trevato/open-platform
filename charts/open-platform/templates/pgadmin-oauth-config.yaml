@@ -1,7 +1,6 @@
 {{/*
 pgAdmin OAuth ConfigMap — Python config for Forgejo OIDC integration.
 Conditional on services.pgadmin.enabled.
-Ported from config/templates/manifests/pgadmin-oauth-config.yaml.tmpl
 */}}
 {{- if .Values.services.pgadmin.enabled }}
 apiVersion: v1

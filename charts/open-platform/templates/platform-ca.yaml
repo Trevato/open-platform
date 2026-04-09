@@ -2,7 +2,6 @@
 Platform CA ConfigMaps — distributes the self-signed CA cert to services that need
 TLS verification against Forgejo (Jitsi OIDC adapter, pgAdmin).
 Only applies when using self-signed certs (selfsigned or cloudflare mode).
-Ported from scripts/ensure-secrets.sh (platform CA configmap section).
 */}}
 {{- if and (ne (include "op.tlsMode" .) "letsencrypt") .Values.tls.ca.cert }}
 {{- $namespaces := list "kube-system" }}

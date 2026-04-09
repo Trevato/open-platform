@@ -1,7 +1,6 @@
 {{/*
 cert-manager ClusterIssuer — Let's Encrypt production issuer with HTTP-01 challenge.
 Conditional on tls.mode=letsencrypt.
-Ported from config/templates/platform/infrastructure/configs/cluster-issuer.yaml.tmpl
 */}}
 {{- if eq (include "op.certManagerEnabled" .) "true" }}
 apiVersion: cert-manager.io/v1

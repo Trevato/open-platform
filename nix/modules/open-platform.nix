@@ -294,7 +294,6 @@ in
     environment.systemPackages = with pkgs; [
       kubectl
       kubernetes-helm
-      helmfile
       git
       curl
       openssl
@@ -340,29 +339,5 @@ in
       ];
     };
 
-    # --- helm-diff plugin (idempotent oneshot) ---
-    systemd.services.helm-diff-install = {
-      description = "Install helm-diff plugin for helmfile";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      path = [
-        pkgs.git
-        pkgs.bash
-        pkgs.coreutils
-        pkgs.gnutar
-        pkgs.gzip
-      ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        ExecStart = pkgs.writeShellScript "install-helm-diff" ''
-          export HOME=/root
-          if ! ${pkgs.kubernetes-helm}/bin/helm plugin list 2>/dev/null | grep -q diff; then
-            ${pkgs.kubernetes-helm}/bin/helm plugin install https://github.com/databus23/helm-diff
-          fi
-        '';
-      };
-    };
   };
 }

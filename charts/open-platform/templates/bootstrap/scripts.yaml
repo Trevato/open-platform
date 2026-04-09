@@ -1,10 +1,5 @@
 {{/*
-Bootstrap scripts ConfigMap — consolidated from:
-  - scripts/setup-coredns.sh (Phase 1)
-  - scripts/setup-oauth2.sh (Phase 2)
-  - scripts/setup-system-org.sh (Phase 3)
-  - scripts/setup-woodpecker-repos.sh (Phase 4)
-
+Bootstrap scripts ConfigMap.
 All dynamic Helm values are injected as env vars on the Job container.
 The script content is pure bash — no Go template expressions inside.
 */}}
