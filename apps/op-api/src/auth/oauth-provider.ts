@@ -1,4 +1,4 @@
-import { randomUUID, createHash, timingSafeEqual } from "crypto";
+import { randomUUID, randomBytes, createHash, timingSafeEqual } from "crypto";
 import { logger } from "../logger.js";
 
 // ---------------------------------------------------------------------------
@@ -21,6 +21,7 @@ export interface PendingAuth {
   codeChallengeMethod: string;
   originalState: string;
   forgejoState: string;
+  forgejoCodeVerifier: string;
   createdAt: number;
 }
 
@@ -171,6 +172,12 @@ export function startAuthorize(params: {
 
   const forgejoState = randomUUID();
 
+  // Generate PKCE pair for the op-api → Forgejo leg
+  const forgejoCodeVerifier = base64url(randomBytes(32));
+  const forgejoCodeChallenge = base64url(
+    createHash("sha256").update(forgejoCodeVerifier).digest(),
+  );
+
   authStates.set(forgejoState, {
     clientId,
     redirectUri,
@@ -178,6 +185,7 @@ export function startAuthorize(params: {
     codeChallengeMethod: params.code_challenge_method,
     originalState: params.state,
     forgejoState,
+    forgejoCodeVerifier,
     createdAt: Date.now(),
   });
 
@@ -195,7 +203,9 @@ export function startAuthorize(params: {
     `?client_id=${encodeURIComponent(mcpClientId)}` +
     `&redirect_uri=${encodeURIComponent(cb)}` +
     `&response_type=code` +
-    `&state=${encodeURIComponent(forgejoState)}`;
+    `&state=${encodeURIComponent(forgejoState)}` +
+    `&code_challenge=${encodeURIComponent(forgejoCodeChallenge)}` +
+    `&code_challenge_method=S256`;
 
   logger.debug(
     { clientId: params.client_id, forgejoState },
@@ -241,6 +251,7 @@ export async function handleCallback(
     code: forgejoCode,
     grant_type: "authorization_code",
     redirect_uri: cb,
+    code_verifier: pending.forgejoCodeVerifier,
   });
 
   logger.debug("oauth provider: exchanging code with Forgejo");
