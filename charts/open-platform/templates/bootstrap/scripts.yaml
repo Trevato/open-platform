@@ -188,13 +188,13 @@ data:
 
         if [ ! -s "${CA_DIR}/ca.key" ]; then
           echo "Generating platform CA..."
-          openssl genrsa -out "${CA_DIR}/ca.key" 4096 2>/dev/null
+          openssl genrsa -out "${CA_DIR}/ca.key" 4096 2>&1 | tail -1
           openssl req -x509 -new -nodes -key "${CA_DIR}/ca.key" \
             -sha256 -days 3650 -out "${CA_DIR}/ca.crt" \
             -subj "/CN=Open Platform CA" \
             -addext "basicConstraints=critical,CA:TRUE" \
             -addext "subjectKeyIdentifier=hash" \
-            -addext "authorityKeyIdentifier=keyid:always,issuer" 2>/dev/null
+            -addext "authorityKeyIdentifier=keyid:always,issuer" 2>&1 | tail -1
 
           # Persist CA key for future domain additions
           kubectl create secret generic platform-ca-key -n kube-system \
@@ -210,20 +210,21 @@ data:
         fi
 
         echo "Generating multi-SAN wildcard cert for: ${ALL_CERT_DOMAINS[*]}"
-        openssl genrsa -out "${CA_DIR}/tls.key" 4096 2>/dev/null
+        openssl genrsa -out "${CA_DIR}/tls.key" 4096 2>&1 | tail -1
         openssl req -new -key "${CA_DIR}/tls.key" \
           -out "${CA_DIR}/tls.csr" \
-          -subj "/CN=*.${DOMAIN}" 2>/dev/null
+          -subj "/CN=*.${DOMAIN}" 2>&1 | tail -1
         openssl x509 -req -in "${CA_DIR}/tls.csr" \
           -CA "${CA_DIR}/ca.crt" -CAkey "${CA_DIR}/ca.key" \
           -CAcreateserial -out "${CA_DIR}/tls.crt" \
           -days 3650 -sha256 \
-          -extfile <(printf "subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth" "${SAN_STRING}") 2>/dev/null
+          -extfile <(printf "subjectAltName=%s\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth" "${SAN_STRING}") 2>&1 | tail -1
 
         kubectl create secret tls wildcard-tls \
           -n kube-system \
           --cert="${CA_DIR}/tls.crt" \
-          --key="${CA_DIR}/tls.key" 2>/dev/null
+          --key="${CA_DIR}/tls.key" \
+          --dry-run=client -o yaml | kubectl apply -f -
         kubectl annotate secret wildcard-tls -n kube-system \
           helm.sh/resource-policy=keep 2>/dev/null || true
         echo "Wildcard TLS cert created (SANs: ${SAN_STRING})."
