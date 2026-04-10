@@ -9,7 +9,7 @@ deploy: ## Deploy via Helm chart (installs Flux + platform chart)
 	fi
 	helm upgrade --install open-platform charts/open-platform \
 		-f open-platform.yaml \
-		-n open-platform --create-namespace --wait --timeout 25m
+		-n open-platform --create-namespace --wait --timeout 45m
 	@echo ""
 	@echo "Platform chart installed. Flux will reconcile all services."
 	@echo "Syncing registry credentials to k3s nodes..."

@@ -102,11 +102,49 @@ data:
         echo "CNPG Cluster created."
       fi
 
-      # Wait for PostgreSQL readiness
-      echo "Waiting for PostgreSQL..."
-      kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s 2>/dev/null || {
-        echo "Warning: PostgreSQL not ready within timeout — continuing."
-      }
+      # Wait for PostgreSQL readiness (up to 15 minutes for cold start image pulls)
+      echo "Waiting for PostgreSQL pod to appear..."
+      PG_READY=false
+      for pg_attempt in $(seq 1 90); do
+        if kubectl get pod postgres-1 -n postgres >/dev/null 2>&1; then
+          echo "PostgreSQL pod found, waiting for readiness..."
+          if kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s 2>/dev/null; then
+            echo "PostgreSQL is ready."
+            PG_READY=true
+          else
+            echo "Warning: PostgreSQL pod exists but not ready within timeout."
+          fi
+          break
+        fi
+        if [ "$pg_attempt" -eq 90 ]; then
+          echo "Warning: PostgreSQL pod not found after 15 minutes — continuing."
+        fi
+        sleep 10
+      done
+
+      # Sync DB user passwords after postgres is ready.
+      # postInitSQL creates roles without passwords — set them before Flux deploys services.
+      {{- if .Values.services.zulip.enabled }}
+      if [ "${PG_READY}" = "true" ]; then
+        ZULIP_DB_PASS=$(kubectl get secret zulip-db-credentials -n zulip \
+          -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+        if [ -n "${ZULIP_DB_PASS}" ]; then
+          echo "Syncing Zulip DB password..."
+          for attempt in $(seq 1 30); do
+            if kubectl exec -n postgres postgres-1 -c postgres -- \
+              psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='zulip'" 2>/dev/null | grep -q 1; then
+              kubectl exec -n postgres postgres-1 -c postgres -- \
+                psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>&1 && \
+                echo "Zulip DB password synced." && break
+            fi
+            echo "Waiting for zulip role (attempt ${attempt}/30)..."
+            sleep 10
+          done
+        fi
+      else
+        echo "Skipping Zulip DB password sync — PostgreSQL not ready."
+      fi
+      {{- end }}
     fi
 
     # Wait for Traefik
@@ -887,26 +925,6 @@ data:
       fi
     done
 
-    # Sync DB user passwords — postInitSQL creates roles without passwords.
-    # Runs here (after Phase 3) to give CNPG time to finish postInitSQL.
-    {{- if .Values.services.zulip.enabled }}
-    ZULIP_DB_PASS=$(kubectl get secret zulip-db-credentials -n zulip \
-      -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
-    if [ -n "${ZULIP_DB_PASS}" ]; then
-      echo "Syncing Zulip DB password..."
-      for attempt in $(seq 1 12); do
-        if kubectl exec -n postgres postgres-1 -c postgres -- \
-          psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='zulip'" 2>/dev/null | grep -q 1; then
-          kubectl exec -n postgres postgres-1 -c postgres -- \
-            psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>&1 && \
-            echo "Zulip DB password synced." && break
-        fi
-        echo "Waiting for zulip role (attempt ${attempt}/12)..."
-        sleep 10
-      done
-    fi
-    {{- end }}
-
     echo "Phase 3 complete: System org setup done."
 
     # ============================================================================
@@ -1373,6 +1391,44 @@ data:
         echo "Social PR reopened — preview pipeline triggered."
       fi
     fi
+
+    # ============================================================================
+    # FINAL: Deferred DB password sync
+    # If PostgreSQL wasn't ready during Phase 0, sync passwords now.
+    {{- if .Values.services.zulip.enabled }}
+    if [ "${PG_READY}" != "true" ]; then
+      echo ""
+      echo "Deferred Zulip DB password sync (PostgreSQL was not ready in Phase 0)..."
+      # Wait for PostgreSQL pod
+      for pg_attempt in $(seq 1 30); do
+        if kubectl get pod postgres-1 -n postgres >/dev/null 2>&1; then
+          kubectl wait --for=condition=ready pod/postgres-1 -n postgres --timeout=300s 2>/dev/null && PG_READY=true || true
+          break
+        fi
+        sleep 10
+      done
+      if [ "${PG_READY}" = "true" ]; then
+        ZULIP_DB_PASS=$(kubectl get secret zulip-db-credentials -n zulip \
+          -o jsonpath='{.data.password}' 2>/dev/null | base64 -d)
+        if [ -n "${ZULIP_DB_PASS}" ]; then
+          for attempt in $(seq 1 12); do
+            if kubectl exec -n postgres postgres-1 -c postgres -- \
+              psql -U postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='zulip'" 2>/dev/null | grep -q 1; then
+              kubectl exec -n postgres postgres-1 -c postgres -- \
+                psql -U postgres -c "ALTER ROLE zulip WITH LOGIN PASSWORD '${ZULIP_DB_PASS}';" 2>&1 && \
+                echo "Zulip DB password synced (deferred)." && break
+            fi
+            echo "Waiting for zulip role (attempt ${attempt}/12)..."
+            sleep 10
+          done
+        fi
+        # Restart Zulip pod to pick up the password
+        kubectl delete pod zulip-0 -n zulip 2>/dev/null || true
+      else
+        echo "Warning: PostgreSQL still not ready — Zulip may need manual password sync."
+      fi
+    fi
+    {{- end }}
 
     # Cleanup
     rm -rf "${COOKIE_DIR}"

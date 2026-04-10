@@ -40,6 +40,10 @@ rules:
   - apiGroups: [""]
     resources: [services, pods, namespaces]
     verbs: [get, list, watch]
+  # Pods/exec: run psql to sync DB passwords (postInitSQL creates roles without passwords)
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
   # DaemonSets: detect Traefik hostNetwork mode
   # Deployments: restart CoreDNS, OAuth2-Proxy after credential updates
   # StatefulSets: restart Woodpecker after credential updates
