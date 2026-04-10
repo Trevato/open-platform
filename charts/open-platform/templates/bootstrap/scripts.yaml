@@ -873,6 +873,35 @@ data:
       done
       rm -rf "${TMP_DIR}/.git"
 
+      # Remove infrastructure components that are not being installed
+      if [ "${TRAEFIK_INSTALL}" != "true" ]; then
+        rm -f "${TMP_DIR}/platform/infrastructure/controllers/traefik.yaml"
+        echo "Excluded traefik.yaml from platform repo (traefik.install=false)"
+      fi
+      if [ "${CNPG_INSTALL}" != "true" ]; then
+        rm -f "${TMP_DIR}/platform/infrastructure/controllers/cnpg.yaml"
+        echo "Excluded cnpg.yaml from platform repo (cnpg.install=false)"
+      fi
+
+      # Regenerate kustomization.yaml based on remaining files
+      if [ -d "${TMP_DIR}/platform/infrastructure/controllers" ]; then
+        local KUST_FILE="${TMP_DIR}/platform/infrastructure/controllers/kustomization.yaml"
+        local RESOURCES=()
+        for f in "${TMP_DIR}/platform/infrastructure/controllers/"*.yaml; do
+          local BASENAME=$(basename "$f")
+          if [ "$BASENAME" != "kustomization.yaml" ]; then
+            RESOURCES+=("  - ${BASENAME}")
+          fi
+        done
+        if [ ${#RESOURCES[@]} -gt 0 ]; then
+          printf "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n" > "$KUST_FILE"
+          printf "%s\n" "${RESOURCES[@]}" >> "$KUST_FILE"
+        else
+          # No infra controllers to deploy — write empty kustomization
+          printf "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources: []\n" > "$KUST_FILE"
+        fi
+      fi
+
       cd "${TMP_DIR}"
       git init -q
       git checkout -b main

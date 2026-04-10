@@ -64,6 +64,10 @@ spec:
               value: {{ include "op.extraDomainsEnv" . | quote }}
             - name: COREDNS_MANAGE
               value: {{ include "op.corednsManage" . | quote }}
+            - name: TRAEFIK_INSTALL
+              value: {{ include "op.traefikInstall" . | quote }}
+            - name: CNPG_INSTALL
+              value: {{ include "op.cnpgInstall" . | quote }}
           command: ["/bin/bash", "/scripts/bootstrap.sh"]
           volumeMounts:
             - name: scripts
