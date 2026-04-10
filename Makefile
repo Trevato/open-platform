@@ -1,4 +1,4 @@
-.PHONY: deploy upgrade template lint status teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra node-join node-remove node-status colima-agent complete-mac-join
+.PHONY: deploy upgrade template lint status teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra sync-registry node-join node-remove node-status colima-agent complete-mac-join
 
 deploy: ## Deploy via Helm chart (installs Flux + platform chart)
 	@if ! helm status flux2 -n flux-system >/dev/null 2>&1; then \
@@ -9,9 +9,11 @@ deploy: ## Deploy via Helm chart (installs Flux + platform chart)
 	fi
 	helm upgrade --install open-platform charts/open-platform \
 		-f open-platform.yaml \
-		-n open-platform --create-namespace --wait --timeout 15m
+		-n open-platform --create-namespace --wait --timeout 25m
 	@echo ""
 	@echo "Platform chart installed. Flux will reconcile all services."
+	@echo "Syncing registry credentials to k3s nodes..."
+	@./scripts/sync-registry.sh 2>/dev/null || echo "Registry sync skipped (no SSH access to nodes). Run 'make sync-registry' manually."
 	@echo "Run 'make status' to check progress."
 
 upgrade: ## Upgrade the platform Helm chart
@@ -27,6 +29,9 @@ lint: ## Lint the Helm chart
 
 status: ## Show Flux HelmRelease reconciliation status
 	@kubectl get helmreleases -A 2>/dev/null || echo "(no HelmReleases found)"
+
+sync-registry: ## Sync registry CA + credentials to k3s nodes
+	./scripts/sync-registry.sh
 
 check-infra: ## Validate external infrastructure components are present
 	./scripts/check-infra.sh
