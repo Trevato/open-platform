@@ -35,6 +35,7 @@ Single source of truth: `open-platform.yaml` (used as Helm values file) → `hel
 - **`open-platform.yaml`** — User config (domain, admin, TLS mode, Cloudflare). See `open-platform.yaml.example`.
 - **TLS modes**: `selfsigned` (auto-generated CA), `letsencrypt` (cert-manager + HTTP-01), `cloudflare` (tunnel at edge)
 - **`service_prefix`** — Optional prefix prepended to all service subdomains (e.g., `myteam-` → `myteam-forgejo.open-platform.sh`). Empty by default.
+- **Infrastructure toggles** — Per-component `install` booleans (`traefik.install`, `cnpg.install`, `coredns.manage`). Disable to use pre-existing cluster infrastructure. Platform services always deploy.
 - **Secrets** — Managed by Helm `lookup` function. Auto-generated on first install, persisted in-cluster, preserved across upgrades.
 
 ### Domain Strategy

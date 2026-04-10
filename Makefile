@@ -1,7 +1,7 @@
 .PHONY: deploy upgrade template lint status teardown urls help test-smoke test-k8s test-e2e test-e2e-platform test-e2e-auth colima-start colima-stop colima-reset check-infra sync-registry node-join node-remove node-status colima-agent complete-mac-join
 
 deploy: ## Deploy via Helm chart (installs Flux + platform chart)
-	@if ! helm status flux2 -n flux-system >/dev/null 2>&1; then \
+	@if ! kubectl get deployment source-controller -n flux-system >/dev/null 2>&1; then \
 		echo "Installing Flux controllers..."; \
 		helm repo add fluxcd-community https://fluxcd-community.github.io/helm-charts 2>/dev/null || true; \
 		helm repo update fluxcd-community; \

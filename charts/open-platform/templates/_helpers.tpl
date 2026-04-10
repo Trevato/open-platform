@@ -219,6 +219,33 @@ Returns string "true" or "false".
 {{- end }}
 
 {{/*
+Per-component install flags.
+*/}}
+{{- define "op.traefikInstall" -}}
+{{- if hasKey (default dict .Values.traefik) "install" -}}
+{{- .Values.traefik.install -}}
+{{- else -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "op.cnpgInstall" -}}
+{{- if hasKey (default dict .Values.cnpg) "install" -}}
+{{- .Values.cnpg.install -}}
+{{- else -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "op.corednsManage" -}}
+{{- if hasKey (default dict .Values.coredns) "manage" -}}
+{{- .Values.coredns.manage -}}
+{{- else -}}
+{{- true -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 All domains — returns a list of all domain names (primary + extras).
 Usage: {{ include "op.allDomains" . }}
 Returns a JSON array string. Use `fromJson` to iterate.

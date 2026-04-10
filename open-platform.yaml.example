@@ -40,30 +40,21 @@ domain: myplatform.example.com
 # pgadmin:
 #   enabled: true
 
-# Infrastructure mode: "bundled" (default) or "external"
+# Infrastructure component toggles — disable to use pre-existing cluster services
+# traefik:
+#   install: false        # Use existing ingress controller
+# cnpg:
+#   install: false        # CNPG operator already present
+# coredns:
+#   manage: false         # User handles *.{DOMAIN} DNS resolution
 #
-# bundled: Open Platform installs and manages Traefik, MetalLB, cert-manager,
-#          CNPG, and Flux. Deploys directly on the host cluster.
-#          Best for fresh clusters where OP is the only tenant.
-#
-# external: Open Platform deploys into its own vCluster and consumes
-#           pre-existing infrastructure on the host cluster.
-#           Best for production clusters that host other workloads
-#           (KubeVirt VMs, DNS, monitoring, AI services) where
-#           infrastructure has its own lifecycle.
-#
-#           Required pre-existing components on host:
-#             - Traefik (watching all namespaces for Ingress resources)
-#             - CNPG operator (cloudnative-pg in cnpg-system namespace)
-#             - Flux (GitOps controllers in flux-system namespace)
-#             - vCluster operator
-#             - cert-manager (if tls.mode=letsencrypt)
-#             - MetalLB (if network.mode=loadbalancer)
-#
-#           See docs/getting-started.md for setup details.
-#
-# infrastructure:
-#   mode: external
+# Example — existing cluster with Traefik, Flux, and CNPG:
+# traefik:
+#   install: false
+# cnpg:
+#   install: false
+# coredns:
+#   manage: false
 
 # Network mode: host (default) or loadbalancer (MetalLB)
 # Use loadbalancer for multi-node production clusters.

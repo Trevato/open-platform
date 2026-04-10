@@ -62,6 +62,8 @@ spec:
               value: {{ .Values.bootstrap.repoBranch | default "main" | quote }}
             - name: EXTRA_DOMAINS
               value: {{ include "op.extraDomainsEnv" . | quote }}
+            - name: COREDNS_MANAGE
+              value: {{ include "op.corednsManage" . | quote }}
           command: ["/bin/bash", "/scripts/bootstrap.sh"]
           volumeMounts:
             - name: scripts

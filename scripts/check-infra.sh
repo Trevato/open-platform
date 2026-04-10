@@ -2,26 +2,20 @@
 set -euo pipefail
 
 # Validates that required infrastructure components are present.
-# Called during deploy when infrastructure.mode=external.
+# Run before deploy when using per-component install flags
+# (e.g., traefik.install=false means Traefik must already exist).
 #
-# Required:
-#   - Traefik (ingress controller watching all namespaces)
-#   - CNPG operator (CloudNative PostgreSQL)
-#
-# Conditional:
+# Checks:
+#   - Traefik (if traefik.install=false)
+#   - CNPG operator (if cnpg.install=false)
+#   - Flux (always required)
 #   - cert-manager (if tls.mode=letsencrypt)
 #   - MetalLB (if network.mode=loadbalancer)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Load config
-set -a
-# shellcheck source=/dev/null
-source "$ROOT_DIR/.env"
-set +a
-
-echo "Checking external infrastructure..."
+echo "Checking infrastructure prerequisites..."
 
 FAILED=false
 
@@ -63,19 +57,6 @@ if [ "${NETWORK_MODE:-host}" = "loadbalancer" ]; then
   fi
 fi
 
-# Check vCluster operator
-if kubectl get deployment -A -l app=vcluster -o name 2>/dev/null | grep -q deployment; then
-  echo "  [OK] vCluster operator found"
-elif kubectl get crd virtualclusters.management.loft.sh -o name 2>/dev/null | grep -q crd; then
-  echo "  [OK] vCluster CRDs found"
-elif command -v vcluster >/dev/null 2>&1; then
-  echo "  [OK] vCluster CLI available (will create vCluster during deploy)"
-else
-  echo "  [FAIL] vCluster not found. Install vCluster operator or CLI."
-  echo "         (helm install vcluster vcluster/vcluster -n vcluster --create-namespace)"
-  FAILED=true
-fi
-
 # Check Flux controllers
 if kubectl get deployment -n flux-system source-controller -o name 2>/dev/null | grep -q deployment; then
   echo "  [OK] Flux source-controller found in flux-system"
@@ -88,7 +69,7 @@ fi
 if [ "$FAILED" = true ]; then
   echo ""
   echo "External infrastructure check failed."
-  echo "Either install the missing components or set infrastructure.mode=bundled."
+  echo "Install the missing components or set their install flag to true in open-platform.yaml."
   exit 1
 fi
 

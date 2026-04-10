@@ -340,41 +340,42 @@ data:
     echo "Phase 1: CoreDNS setup"
     echo "══════════════════════════════════════════════════════════════"
 
-    HOST_NETWORK=$(kubectl get ds traefik -n kube-system \
-      -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null || echo "false")
+    if [ "${COREDNS_MANAGE}" = "true" ]; then
+      HOST_NETWORK=$(kubectl get ds traefik -n kube-system \
+        -o jsonpath='{.spec.template.spec.hostNetwork}' 2>/dev/null || echo "false")
 
-    if [ "$HOST_NETWORK" = "true" ]; then
-      # Use Traefik ClusterIP for in-cluster resolution
-      TRAEFIK_IP=$(kubectl get svc traefik -n kube-system \
-        -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
-      if [ -z "$TRAEFIK_IP" ]; then
-        # Fallback: first node IP (single-node case where ClusterIP isn't available yet)
-        TRAEFIK_IP=$(kubectl get nodes \
-          -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
-          | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
-      fi
-    else
-      # Deployment mode: prefer LoadBalancer external IP, fall back to ClusterIP
-      LB_IP=$(kubectl get svc traefik -n kube-system \
-        -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-      if [ -n "$LB_IP" ]; then
-        TRAEFIK_IP="$LB_IP"
-      else
+      if [ "$HOST_NETWORK" = "true" ]; then
+        # Use Traefik ClusterIP for in-cluster resolution
         TRAEFIK_IP=$(kubectl get svc traefik -n kube-system \
           -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+        if [ -z "$TRAEFIK_IP" ]; then
+          # Fallback: first node IP (single-node case where ClusterIP isn't available yet)
+          TRAEFIK_IP=$(kubectl get nodes \
+            -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' \
+            | tr ' ' '\n' | grep -E '^[0-9]+\.' | head -1)
+        fi
+      else
+        # Deployment mode: prefer LoadBalancer external IP, fall back to ClusterIP
+        LB_IP=$(kubectl get svc traefik -n kube-system \
+          -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        if [ -n "$LB_IP" ]; then
+          TRAEFIK_IP="$LB_IP"
+        else
+          TRAEFIK_IP=$(kubectl get svc traefik -n kube-system \
+            -o jsonpath='{.spec.clusterIP}' 2>/dev/null || echo "")
+        fi
       fi
-    fi
 
-    if [ -z "${TRAEFIK_IP:-}" ]; then
-      echo "Warning: Traefik service not found — skipping CoreDNS setup."
-    else
-      # Build CoreDNS zone helper.
-      # The {{ .Name }} inside the template block is CoreDNS syntax, not Go templates —
-      # it is rendered by CoreDNS at runtime.
-      make_zone() {
-        local ZONE_DOMAIN="$1"
-        local ZONE_IP="$2"
-        echo "${ZONE_DOMAIN}:53 {
+      if [ -z "${TRAEFIK_IP:-}" ]; then
+        echo "Warning: Traefik service not found — skipping CoreDNS setup."
+      else
+        # Build CoreDNS zone helper.
+        # The {{ .Name }} inside the template block is CoreDNS syntax, not Go templates —
+        # it is rendered by CoreDNS at runtime.
+        make_zone() {
+          local ZONE_DOMAIN="$1"
+          local ZONE_IP="$2"
+          echo "${ZONE_DOMAIN}:53 {
       errors
       cache 30
       template IN A {
@@ -386,35 +387,38 @@ data:
         fallthrough
       }
     }"
-      }
+        }
 
-      # Build configmap args — primary domain first
-      CM_ARGS=(coredns-custom -n kube-system)
-      CM_ARGS+=(--from-literal="platform.server=$(make_zone "${DOMAIN}" "${TRAEFIK_IP}")")
+        # Build configmap args — primary domain first
+        CM_ARGS=(coredns-custom -n kube-system)
+        CM_ARGS+=(--from-literal="platform.server=$(make_zone "${DOMAIN}" "${TRAEFIK_IP}")")
 
-      # Add extra domain zones
-      if [ -n "${EXTRA_DOMAINS:-}" ]; then
-        IFS='|' read -ra DOMAIN_ENTRIES <<< "${EXTRA_DOMAINS}"
-        for entry in "${DOMAIN_ENTRIES[@]}"; do
-          ED_NAME="${entry%%:*}"
-          SLUG=$(echo "${ED_NAME}" | tr '.' '-')
-          CM_ARGS+=(--from-literal="${SLUG}.server=$(make_zone "${ED_NAME}" "${TRAEFIK_IP}")")
-          echo "CoreDNS: adding zone for *.${ED_NAME}"
-        done
+        # Add extra domain zones
+        if [ -n "${EXTRA_DOMAINS:-}" ]; then
+          IFS='|' read -ra DOMAIN_ENTRIES <<< "${EXTRA_DOMAINS}"
+          for entry in "${DOMAIN_ENTRIES[@]}"; do
+            ED_NAME="${entry%%:*}"
+            SLUG=$(echo "${ED_NAME}" | tr '.' '-')
+            CM_ARGS+=(--from-literal="${SLUG}.server=$(make_zone "${ED_NAME}" "${TRAEFIK_IP}")")
+            echo "CoreDNS: adding zone for *.${ED_NAME}"
+          done
+        fi
+
+        # Use replace to ensure stale zone entries are removed (apply only
+        # merges and can leave old keys from previous domain configurations).
+        CM_YAML=$(kubectl create configmap "${CM_ARGS[@]}" --dry-run=client -o yaml)
+        echo "${CM_YAML}" | kubectl replace -f - 2>/dev/null \
+          || echo "${CM_YAML}" | kubectl create -f -
+
+        # Restart CoreDNS to pick up the new zone and wait for rollout
+        kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
+        kubectl rollout status deployment coredns -n kube-system --timeout=60s 2>/dev/null || true
+        # Brief pause for DNS cache to settle
+        sleep 3
+        echo "CoreDNS custom zones: *.${DOMAIN} -> ${TRAEFIK_IP} (hostNetwork=${HOST_NETWORK})"
       fi
-
-      # Use replace to ensure stale zone entries are removed (apply only
-      # merges and can leave old keys from previous domain configurations).
-      CM_YAML=$(kubectl create configmap "${CM_ARGS[@]}" --dry-run=client -o yaml)
-      echo "${CM_YAML}" | kubectl replace -f - 2>/dev/null \
-        || echo "${CM_YAML}" | kubectl create -f -
-
-      # Restart CoreDNS to pick up the new zone and wait for rollout
-      kubectl rollout restart deployment coredns -n kube-system 2>/dev/null || true
-      kubectl rollout status deployment coredns -n kube-system --timeout=60s 2>/dev/null || true
-      # Brief pause for DNS cache to settle
-      sleep 3
-      echo "CoreDNS custom zones: *.${DOMAIN} -> ${TRAEFIK_IP} (hostNetwork=${HOST_NETWORK})"
+    else
+      echo "CoreDNS management disabled — ensure *.${DOMAIN} resolves to your ingress controller inside the cluster."
     fi
 
     # ============================================================================

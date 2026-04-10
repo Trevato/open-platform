@@ -1,3 +1,4 @@
+{{- if eq (include "op.corednsManage" .) "true" }}
 {{/*
 CoreDNS custom zone — resolves *.{domain} to Traefik inside the cluster.
 Required for in-cluster services (oauth2-proxy, Flux) to reach Forgejo by domain name.
@@ -34,3 +35,4 @@ data: {}
       }
     }
   */}}
+{{- end }}

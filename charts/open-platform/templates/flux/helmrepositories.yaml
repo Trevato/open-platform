@@ -1,4 +1,4 @@
-{{- if eq .Values.infrastructure.mode "bundled" }}
+{{- if eq (include "op.traefikInstall" .) "true" }}
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -10,6 +10,8 @@ spec:
   interval: 12h
   url: https://traefik.github.io/charts
 ---
+{{- end }}
+{{- if eq (include "op.cnpgInstall" .) "true" }}
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -21,6 +23,7 @@ spec:
   interval: 12h
   url: https://cloudnative-pg.github.io/charts
 ---
+{{- end }}
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository
 metadata:
@@ -145,5 +148,4 @@ spec:
   url: oci://ghcr.io/zulip/helm-charts/zulip
   ref:
     tag: "1.11.57"
-{{- end }}
 {{- end }}

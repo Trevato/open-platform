@@ -6,7 +6,6 @@ set -euo pipefail
 #
 # Usage:
 #   ./tests/k8s-health.sh
-#   VCLUSTER_NS=vc-buster ./tests/k8s-health.sh   # check a vCluster
 
 PASS=0
 FAIL=0
@@ -24,36 +23,20 @@ check() {
   fi
 }
 
-# Determine namespaces to check
-if [ -n "${VCLUSTER_NS:-}" ]; then
-  echo "Checking vCluster: ${VCLUSTER_NS}"
-  NAMESPACES=$(kubectl get pods -n "$VCLUSTER_NS" --no-headers 2>/dev/null | \
-    awk '{print $1}' | sed 's/-x-.*$//' | sort -u | head -20)
-  NS_PREFIX="${VCLUSTER_NS}"
-else
-  echo "Checking host platform"
-  NAMESPACES="forgejo woodpecker minio oauth2-proxy postgres cnpg-system"
-  NS_PREFIX=""
-fi
+NAMESPACES="forgejo woodpecker minio oauth2-proxy postgres cnpg-system"
+echo "Checking platform health"
 echo ""
 
 # Check pods
 echo "Pods:"
 for ns in $NAMESPACES; do
-  target_ns="${NS_PREFIX:+${NS_PREFIX}}"
-  if [ -n "$NS_PREFIX" ]; then
-    target_ns="$NS_PREFIX"
-  else
-    target_ns="$ns"
-  fi
-
-  NOT_RUNNING=$(kubectl get pods -n "$target_ns" --no-headers 2>/dev/null | \
+  NOT_RUNNING=$(kubectl get pods -n "$ns" --no-headers 2>/dev/null | \
     grep -v "Running\|Completed\|Succeeded" | head -5 || echo "")
   if [ -z "$NOT_RUNNING" ]; then
-    check "$target_ns pods" "ok"
+    check "$ns pods" "ok"
   else
     BAD=$(echo "$NOT_RUNNING" | awk '{print $1 "(" $3 ")"}' | tr '\n' ' ')
-    check "$target_ns pods" "$BAD"
+    check "$ns pods" "$BAD"
   fi
 done
 
@@ -61,33 +44,26 @@ done
 echo ""
 echo "Deployments:"
 for ns in $NAMESPACES; do
-  target_ns="${NS_PREFIX:-$ns}"
-  DEPLOYS=$(kubectl get deploy -n "$target_ns" --no-headers 2>/dev/null || echo "")
+  DEPLOYS=$(kubectl get deploy -n "$ns" --no-headers 2>/dev/null || echo "")
   if [ -z "$DEPLOYS" ]; then
     continue
   fi
   UNREADY=$(echo "$DEPLOYS" | awk '{split($2,a,"/"); if(a[1]!=a[2]) print $1 "(" $2 ")"}' | head -5)
   if [ -z "$UNREADY" ]; then
-    check "$target_ns deploys" "ok"
+    check "$ns deploys" "ok"
   else
-    check "$target_ns deploys" "$UNREADY"
+    check "$ns deploys" "$UNREADY"
   fi
 done
 
 # Check ingresses have hosts
 echo ""
 echo "Ingresses:"
-if [ -n "$NS_PREFIX" ]; then
-  INGRESSES=$(kubectl get ingress -n "$NS_PREFIX" --no-headers 2>/dev/null || echo "")
-  HOST_COL=3
-else
-  INGRESSES=$(kubectl get ingress --all-namespaces --no-headers 2>/dev/null | \
-    grep -E "forgejo|woodpecker|minio|oauth2" || echo "")
-  HOST_COL=4
-fi
+INGRESSES=$(kubectl get ingress --all-namespaces --no-headers 2>/dev/null | \
+  grep -E "forgejo|woodpecker|minio|oauth2" || echo "")
 
 if [ -n "$INGRESSES" ]; then
-  NO_HOST=$(echo "$INGRESSES" | awk -v col="$HOST_COL" '$col == "" || $col == "*" {print $1}' | head -5)
+  NO_HOST=$(echo "$INGRESSES" | awk '$4 == "" || $4 == "*" {print $1}' | head -5)
   if [ -z "$NO_HOST" ]; then
     HOST_COUNT=$(echo "$INGRESSES" | wc -l | tr -d ' ')
     check "ingresses (${HOST_COUNT} found)" "ok"
@@ -101,16 +77,7 @@ fi
 # Check CNPG cluster
 echo ""
 echo "Database:"
-PG_PODS=0
-if [ -n "$NS_PREFIX" ]; then
-  PG_PODS=$(kubectl get pods -n "$NS_PREFIX" --no-headers 2>/dev/null | grep "postgres" | grep -c "Running" 2>/dev/null) || PG_PODS=0
-else
-  PG_PODS=$(kubectl get pods -n postgres --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null) || PG_PODS=0
-  # Host platform may run postgres inside vClusters
-  if [ "$PG_PODS" -eq 0 ]; then
-    PG_PODS=$(kubectl get pods --all-namespaces --no-headers 2>/dev/null | grep "postgres.*Running" | grep -c "vc-" 2>/dev/null) || PG_PODS=0
-  fi
-fi
+PG_PODS=$(kubectl get pods -n postgres --no-headers 2>/dev/null | grep -c "Running" 2>/dev/null) || PG_PODS=0
 if [ "$PG_PODS" -gt 0 ]; then
   check "postgres ($PG_PODS pods)" "ok"
 else

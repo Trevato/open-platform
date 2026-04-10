@@ -1,4 +1,3 @@
-{{- if eq .Values.infrastructure.mode "bundled" }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -83,4 +82,3 @@ spec:
         subPath: ca.crt
         readOnly: true
     {{- end }}
-{{- end }}

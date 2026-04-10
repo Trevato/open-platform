@@ -1,4 +1,3 @@
-{{- if eq .Values.infrastructure.mode "bundled" }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
@@ -121,4 +120,3 @@ spec:
       enabled: false
     redis:
       enabled: false
-{{- end }}

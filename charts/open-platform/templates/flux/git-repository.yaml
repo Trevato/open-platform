@@ -1,4 +1,3 @@
-{{- if eq .Values.infrastructure.mode "bundled" }}
 apiVersion: v1
 kind: Secret
 metadata:
@@ -30,4 +29,3 @@ spec:
     branch: main
   secretRef:
     name: forgejo-auth
-{{- end }}

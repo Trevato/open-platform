@@ -14,9 +14,7 @@ Only applies when using self-signed certs (selfsigned or cloudflare mode).
 {{- if .Values.services.zulip.enabled }}
 {{- $namespaces = append $namespaces "zulip" }}
 {{- end }}
-{{- if eq .Values.infrastructure.mode "bundled" }}
 {{- $namespaces = append $namespaces "minio" }}
-{{- end }}
 {{- range $ns := $namespaces }}
 ---
 apiVersion: v1

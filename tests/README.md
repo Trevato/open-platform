@@ -9,8 +9,8 @@ Fast curl-based probes. Verifies all services respond via HTTPS. No kubectl or b
 ```bash
 PLATFORM_DOMAIN=open-platform.sh ./tests/smoke.sh
 
-# Test a vCluster instance
-PLATFORM_DOMAIN=open-platform.sh SERVICE_PREFIX=buster- ./tests/smoke.sh
+# Test with a service prefix
+PLATFORM_DOMAIN=open-platform.sh SERVICE_PREFIX=myteam- ./tests/smoke.sh
 ```
 
 Checks: Forgejo API (200), Woodpecker healthz (200), MinIO (200/302/307), S3 (403), OAuth2-Proxy ping (200). Discovers and checks deployed apps via kubectl if available.
@@ -21,9 +21,6 @@ Validates pod status, deployment readiness, ingress configuration, and database 
 
 ```bash
 ./tests/k8s-health.sh
-
-# Check a specific vCluster
-VCLUSTER_NS=vc-buster ./tests/k8s-health.sh
 ```
 
 ## E2E Tests (Playwright)
@@ -51,12 +48,6 @@ bun x playwright test platform/
 
 # Auth flows only
 bun x playwright test platform/*-auth*
-
-# vCluster instance
-PLATFORM_DOMAIN=open-platform.sh \
-SERVICE_PREFIX=buster- \
-FORGEJO_ADMIN_PASSWORD=<password> \
-  bun x playwright test
 ```
 
 ### Environment Variables
@@ -64,7 +55,7 @@ FORGEJO_ADMIN_PASSWORD=<password> \
 | Variable                 | Required | Description                                          |
 | ------------------------ | -------- | ---------------------------------------------------- |
 | `PLATFORM_DOMAIN`        | Yes      | Platform domain (e.g., `open-platform.sh`)           |
-| `SERVICE_PREFIX`         | No       | Instance prefix with trailing dash (e.g., `buster-`) |
+| `SERVICE_PREFIX`         | No       | Instance prefix with trailing dash (e.g., `myteam-`) |
 | `FORGEJO_ADMIN_USER`     | No       | Admin username (default: `opadmin`)                  |
 | `FORGEJO_ADMIN_PASSWORD` | Yes      | Admin password                                       |
 | `TLS_SKIP_VERIFY`        | No       | Skip TLS verification (default: `true`)              |

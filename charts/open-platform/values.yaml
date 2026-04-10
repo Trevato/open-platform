@@ -53,8 +53,12 @@ services:
   pgadmin:
     enabled: false
 
-infrastructure:
-  mode: bundled
+traefik:
+  install: true
+cnpg:
+  install: true
+coredns:
+  manage: true
 
 network:
   mode: host

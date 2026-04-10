@@ -1,4 +1,4 @@
-{{- if and (eq .Values.infrastructure.mode "bundled") (eq (include "op.certManagerEnabled" .) "true") }}
+{{- if eq (include "op.certManagerEnabled" .) "true" }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

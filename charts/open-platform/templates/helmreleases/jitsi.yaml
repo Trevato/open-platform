@@ -1,4 +1,4 @@
-{{- if and (eq .Values.infrastructure.mode "bundled") .Values.services.jitsi.enabled }}
+{{- if .Values.services.jitsi.enabled }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

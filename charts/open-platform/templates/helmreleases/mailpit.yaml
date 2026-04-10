@@ -1,4 +1,4 @@
-{{- if and (eq .Values.infrastructure.mode "bundled") (not .Values.smtp.external) }}
+{{- if not .Values.smtp.external }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:

@@ -1,4 +1,4 @@
-{{- if eq .Values.infrastructure.mode "bundled" }}
+{{- if eq (include "op.traefikInstall" .) "true" }}
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
